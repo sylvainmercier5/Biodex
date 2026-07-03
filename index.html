@@ -47,9 +47,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.19 (PWA) ============
+// ============ BioDex v0.20 (PWA) ============
 
-const VERSION = "v0.19";
+const VERSION = "v0.20";
 
 const C = {
   fond: "#12160F",
@@ -327,16 +327,33 @@ function blobVersCanvasBase64(blob, zone) {
   });
 }
 
-async function identifierCloud(blob, zone, indice) {
+async function identifierCloud(blob, zone, contexte) {
   const image = await blobVersCanvasBase64(blob, zone);
   const r = await fetch("/.netlify/functions/identifier", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ image, media_type: "image/jpeg", indice }),
+    body: JSON.stringify({ mode: "identification", image, media_type: "image/jpeg", contexte }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.erreur) throw new Error(j.erreur || "Service indisponible");
-  return j.resultat; // { nom, nomSci, confiance, niveau, note }
+  return j.resultat; // { nom, nomSci, confiance, niveau, note, alternatives:[...] }
+}
+
+async function genererFiche(nom, nomSci) {
+  const r = await fetch("/.netlify/functions/identifier", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "fiche", nom, nomSci }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.erreur) throw new Error(j.erreur || "Service indisponible");
+  return j.resultat; // { description, alimentation, periode, habitat, repartition, conservation, faits, fiabilite }
+}
+
+// Lien de vérification sur iNaturalist (base communautaire fiable)
+function lienINaturalist(nomSci, nom) {
+  const terme = (nomSci || nom || "").trim();
+  return "https://www.inaturalist.org/search?q=" + encodeURIComponent(terme);
 }
 
 // ---------- Sélecteur de zone (cadre tactile sur la photo) ----------
@@ -1019,7 +1036,12 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
     setCloudResultat(null);
     setCloudErreur("");
     try {
-      const res = await identifierCloud(photoBlob, ciblage ? zone : null, nom);
+      const contexte = {
+        biotope: biotope ? biotopeOf(biotope).label : "",
+        mois: new Date().toLocaleDateString("fr-FR", { month: "long" }),
+        indice: nom || "",
+      };
+      const res = await identifierCloud(photoBlob, ciblage ? zone : null, contexte);
       setCloudResultat(res);
       setCloudEtat("ok");
     } catch (e) {
@@ -1028,10 +1050,11 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
     }
   }
 
-  function appliquerCloud() {
-    if (!cloudResultat) return;
-    if (cloudResultat.nom) setNom(cloudResultat.nom);
-    if (cloudResultat.nomSci) setNomSci(cloudResultat.nomSci);
+  function appliquerCloud(source) {
+    const res = source || cloudResultat;
+    if (!res) return;
+    if (res.nom) setNom(res.nom);
+    if (res.nomSci) setNomSci(res.nomSci);
   }
 
   async function sauver() {
@@ -1177,7 +1200,22 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
               <div style={{ fontFamily: sans, fontSize: 16, fontWeight: 700, color: C.papier }}>{cloudResultat.nom || "—"}</div>
               <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambreClair, marginBottom: 6 }}>{cloudResultat.nomSci || ""}</div>
               {cloudResultat.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginBottom: 10 }}>{cloudResultat.note}</div>}
-              <Bouton variante="primaire" onClick={appliquerCloud} style={{ width: "100%" }}>Utiliser ces noms</Bouton>
+              <Bouton variante="primaire" onClick={() => appliquerCloud()} style={{ width: "100%" }}>Utiliser ces noms</Bouton>
+
+              {Array.isArray(cloudResultat.alternatives) && cloudResultat.alternatives.length > 0 && (
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.bordure}` }}>
+                  <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 8 }}>Autres hypothèses</div>
+                  {cloudResultat.alternatives.map((a, i) => (
+                    <div key={i} style={{ marginBottom: 8, padding: "8px 10px", background: "rgba(0,0,0,.18)", borderRadius: 6 }}>
+                      <div style={{ fontFamily: sans, fontSize: 14, fontWeight: 600, color: C.papier }}>{a.nom || "—"}</div>
+                      <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 13, color: C.ambre }}>{a.nomSci || ""}</div>
+                      {a.pourquoi && <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, lineHeight: 1.4, margin: "3px 0 6px" }}>{a.pourquoi}</div>}
+                      <button onClick={() => appliquerCloud(a)} style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papier, cursor: "pointer" }}>Utiliser plutôt celle-ci</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 8, fontStyle: "italic" }}>
                 ⚠️ Proposition d'IA, à vérifier — surtout entre espèces proches.
               </div>
@@ -1332,12 +1370,37 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
 }
 
 // ---------- Vue : détail ----------
-function Detail({ obs, onFermer, onSupprimer }) {
+function Detail({ obs, onFermer, onSupprimer, onMajFiche }) {
   const [confirme, setConfirme] = useState(false);
+  const [ficheEtat, setFicheEtat] = useState(""); // "" | recherche | echec
+  const [ficheErreur, setFicheErreur] = useState("");
   const ligne = { display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 14 };
   const cle = { color: C.lichen, fontWeight: 600 };
   const val = { color: C.papier, textAlign: "right" };
   const meteo = cielOf(obs.ciel);
+  const identifie = !!(obs.nom || obs.nomSci);
+  const fiche = obs.fiche || null;
+
+  async function lancerFiche() {
+    if (ficheEtat === "recherche") return;
+    setFicheEtat("recherche");
+    setFicheErreur("");
+    try {
+      const f = await genererFiche(obs.nom, obs.nomSci);
+      await onMajFiche(obs.id, f);
+      setFicheEtat("");
+    } catch (e) {
+      setFicheErreur("Génération indisponible (réseau, ou service non configuré).");
+      setFicheEtat("echec");
+    }
+  }
+
+  const champFiche = (label, valeur) => valeur ? (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 3 }}>{label}</div>
+      <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.5 }}>{valeur}</div>
+    </div>
+  ) : null;
 
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
@@ -1373,6 +1436,51 @@ function Detail({ obs, onFermer, onSupprimer }) {
           {obs.notes}
         </div>
       )}
+
+      {/* Fiche naturaliste */}
+      <div style={{ marginTop: 18 }}>
+        {!fiche && identifie && (
+          <div>
+            <Bouton variante="primaire" onClick={lancerFiche} disabled={ficheEtat === "recherche"} style={{ width: "100%" }}>
+              {ficheEtat === "recherche" ? "📖 Génération de la fiche…" : "📖 Générer la fiche naturaliste"}
+            </Bouton>
+            {ficheErreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 8 }}>{ficheErreur}</div>}
+          </div>
+        )}
+        {!fiche && !identifie && (
+          <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, fontStyle: "italic", padding: "10px 0" }}>
+            Identifie d'abord ce spécimen (nom ou nom scientifique) pour pouvoir générer sa fiche.
+          </div>
+        )}
+
+        {fiche && (
+          <div style={{ padding: "14px 16px", background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid ${C.bordure}`, borderRadius: 12, boxShadow: "0 3px 10px rgba(0,0,0,.25)" }}>
+            <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.ambreClair, marginBottom: 12 }}>📖 Fiche naturaliste</div>
+            {champFiche("Description", fiche.description)}
+            {champFiche("Alimentation", fiche.alimentation)}
+            {champFiche("Période d'apparition", fiche.periode)}
+            {champFiche("Habitat", fiche.habitat)}
+            {champFiche("Répartition", fiche.repartition)}
+            {champFiche("Statut de conservation", fiche.conservation)}
+            {champFiche("À savoir", fiche.faits)}
+
+            <div style={{ marginTop: 12, padding: "10px 12px", background: "rgba(0,0,0,.2)", borderRadius: 8 }}>
+              <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, lineHeight: 1.5 }}>
+                ⚠️ Fiche générée par IA, à titre indicatif{fiche.fiabilite ? ` (fiabilité estimée : ${fiche.fiabilite})` : ""}. Le statut de conservation notamment doit être vérifié sur une source officielle.
+              </div>
+              <a href={lienINaturalist(obs.nomSci, obs.nom)} target="_blank" rel="noopener noreferrer"
+                 style={{ display: "inline-block", marginTop: 8, fontFamily: sans, fontSize: 13, fontWeight: 600, color: C.ambre, textDecoration: "underline" }}>
+                🔗 Vérifier sur iNaturalist
+              </a>
+            </div>
+
+            <button onClick={lancerFiche} disabled={ficheEtat === "recherche"}
+              style={{ marginTop: 10, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
+              {ficheEtat === "recherche" ? "Régénération…" : "↻ Régénérer"}
+            </button>
+          </div>
+        )}
+      </div>
 
       <div style={{ marginTop: 20 }}>
         {confirme ? (
@@ -1679,6 +1787,14 @@ function BioDex() {
     setVue("collection");
   }
 
+  async function majFiche(id, fiche) {
+    const obs = observations.find((o) => o.id === id);
+    if (!obs) return;
+    const maj = { ...obs, fiche };
+    try { await dbAjouter(maj); } catch {}
+    setObservations((prev) => prev.map((o) => (o.id === id ? maj : o)));
+  }
+
   const aTrier = observations.filter((o) => o.statut === "a_trier");
   const triees = observations.filter((o) => o.statut !== "a_trier");
 
@@ -1750,6 +1866,7 @@ function BioDex() {
       {vue === "detail" && selection && (
         <Detail obs={selection}
           onFermer={() => { setSelectionId(null); setVue("collection"); }}
+          onMajFiche={majFiche}
           onSupprimer={supprimerObservation} />
       )}
 
