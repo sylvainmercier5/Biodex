@@ -48,9 +48,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.25 (PWA) ============
+// ============ BioDex v0.26 (PWA) ============
 
-const VERSION = "v0.25";
+const VERSION = "v0.26";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -2147,19 +2147,30 @@ function MurCommun({ prenom, onDefinirPrenom }) {
   const [etat, setEtat] = useState("chargement"); // chargement | ok | echec | inactif
   const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
 
-  async function rafraichir() {
+  async function rafraichir(silencieux = false) {
     if (!MUR_ACTIF) { setEtat("inactif"); return; }
-    setEtat("chargement");
+    if (!silencieux) setEtat("chargement");
     try {
       const p = await chargerMur(50);
       setPosts(p);
       setEtat("ok");
     } catch (e) {
-      setEtat("echec");
+      if (!silencieux) setEtat("echec");
     }
   }
 
-  useEffect(() => { rafraichir(); }, []);
+  useEffect(() => {
+    rafraichir();
+    // Rafraîchissement auto toutes les 20 s tant qu'on est sur le mur (silencieux)
+    const intervalle = setInterval(() => { rafraichir(true); }, 20000);
+    // Rafraîchit aussi quand l'app/l'onglet redevient visible (silencieux)
+    const surVisibilite = () => { if (!document.hidden) rafraichir(true); };
+    document.addEventListener("visibilitychange", surVisibilite);
+    return () => {
+      clearInterval(intervalle);
+      document.removeEventListener("visibilitychange", surVisibilite);
+    };
+  }, []);
 
   if (!MUR_ACTIF) {
     return (
