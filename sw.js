@@ -1,5 +1,5 @@
-// BioDex v0.19 — Service Worker
-const CACHE = "biodex-v0-19";
+// BioDex v0.24 — Service Worker
+const CACHE = "biodex-v0-24";
 const SHELL = [
   "./",
   "./index.html",
@@ -15,7 +15,14 @@ const SHELL = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // On NE fait plus skipWaiting() automatiquement : le nouveau SW attend en "waiting"
+  // jusqu'à ce que l'utilisateur accepte la mise à jour via la bannière.
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+});
+
+// L'appli demande l'activation de la nouvelle version (bouton "Mettre à jour")
+self.addEventListener("message", (e) => {
+  if (e.data === "ACTIVER_MAJ") self.skipWaiting();
 });
 
 self.addEventListener("activate", (e) => {

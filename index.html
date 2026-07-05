@@ -47,9 +47,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.20 (PWA) ============
+// ============ BioDex v0.24 (PWA) ============
 
-const VERSION = "v0.20";
+const VERSION = "v0.24";
 
 const C = {
   fond: "#12160F",
@@ -339,6 +339,18 @@ async function identifierCloud(blob, zone, contexte) {
   return j.resultat; // { nom, nomSci, confiance, niveau, note, alternatives:[...] }
 }
 
+async function tourAffinage(blob, zone, contexte, historique) {
+  const image = await blobVersCanvasBase64(blob, zone);
+  const r = await fetch("/.netlify/functions/identifier", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "affinage", image, media_type: "image/jpeg", contexte, historique }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.erreur) throw new Error(j.erreur || "Service indisponible");
+  return j.resultat; // {type:"question",...} ou {type:"final",...}
+}
+
 async function genererFiche(nom, nomSci) {
   const r = await fetch("/.netlify/functions/identifier", {
     method: "POST",
@@ -355,6 +367,38 @@ function lienINaturalist(nomSci, nom) {
   const terme = (nomSci || nom || "").trim();
   return "https://www.inaturalist.org/search?q=" + encodeURIComponent(terme);
 }
+
+// ---------- Cartes de collection (mode jeu) ----------
+async function genererCarte(nom, nomSci) {
+  const r = await fetch("/.netlify/functions/identifier", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "carte", nom, nomSci }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.erreur) throw new Error(j.erreur || "Service indisponible");
+  return j.resultat; // { attaque, defense, vitesse, rarete, element, capacite:{nom,effet}, citation }
+}
+
+// Rareté -> palier (nom, couleur, éclat)
+function palierRarete(r) {
+  const v = Number(r) || 0;
+  if (v >= 85) return { nom: "Légendaire", couleur: "#E4C878", bord: "#F3E2A8", lueur: "0 0 18px rgba(228,200,120,.55)" };
+  if (v >= 65) return { nom: "Rare", couleur: "#9FB2E0", bord: "#C4D2F2", lueur: "0 0 14px rgba(159,178,224,.4)" };
+  if (v >= 40) return { nom: "Peu commun", couleur: "#94A97B", bord: "#B6C79E", lueur: "none" };
+  return { nom: "Commun", couleur: "#A8A48F", bord: "#C4C0AD", lueur: "none" };
+}
+
+const ELEMENTS = {
+  Volant: { emoji: "🦋", c: "#9FB2E0" },
+  Rampant: { emoji: "🐛", c: "#B6A06A" },
+  Aquatique: { emoji: "💧", c: "#7FB0C0" },
+  Fouisseur: { emoji: "⛏️", c: "#B08A5A" },
+  Nocturne: { emoji: "🌙", c: "#8A84C0" },
+  "Prédateur": { emoji: "🦂", c: "#C0603D" },
+  Butineur: { emoji: "🌼", c: "#D9B441" },
+};
+function elementInfo(e) { return ELEMENTS[e] || { emoji: "🐞", c: "#94A97B" }; }
 
 // ---------- Sélecteur de zone (cadre tactile sur la photo) ----------
 function SelecteurZone({ photoUrl, zone, onChange }) {
@@ -876,6 +920,12 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
   const [cloudEtat, setCloudEtat] = useState(""); // "" | recherche | ok | echec
   const [cloudResultat, setCloudResultat] = useState(null);
   const [cloudErreur, setCloudErreur] = useState("");
+  const [affinageActif, setAffinageActif] = useState(false);
+  const [affinageEtat, setAffinageEtat] = useState(""); // "" | recherche | question | final | echec
+  const [affinageQuestion, setAffinageQuestion] = useState(null);
+  const [affinageHisto, setAffinageHisto] = useState([]);
+  const [affinageFinal, setAffinageFinal] = useState(null);
+  const [affinageLibre, setAffinageLibre] = useState("");
   const [ciblage, setCiblage] = useState(false);
   const [zone, setZone] = useState({ x: 0.2, y: 0.2, w: 0.6, h: 0.6 });
   const [suggestions, setSuggestions] = useState([]);
@@ -1057,6 +1107,71 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
     if (res.nomSci) setNomSci(res.nomSci);
   }
 
+  function contexteTerrain() {
+    return {
+      biotope: biotope ? biotopeOf(biotope).label : "",
+      mois: new Date().toLocaleDateString("fr-FR", { month: "long" }),
+      indice: nom || "",
+    };
+  }
+
+  async function demarrerAffinage() {
+    if (!photoBlob) return;
+    setAffinageActif(true);
+    setAffinageEtat("recherche");
+    setAffinageQuestion(null);
+    setAffinageFinal(null);
+    setAffinageHisto([]);
+    setAffinageLibre("");
+    try {
+      const res = await tourAffinage(photoBlob, ciblage ? zone : null, contexteTerrain(), []);
+      traiterTourAffinage(res, []);
+    } catch (e) {
+      setAffinageEtat("echec");
+    }
+  }
+
+  function traiterTourAffinage(res, histo) {
+    if (res && res.type === "final") {
+      setAffinageFinal(res);
+      setAffinageEtat("final");
+    } else if (res && res.type === "question") {
+      setAffinageQuestion(res);
+      setAffinageEtat("question");
+    } else {
+      setAffinageEtat("echec");
+    }
+  }
+
+  async function repondreAffinage(reponse) {
+    if (!affinageQuestion || affinageEtat === "recherche") return;
+    const histo = [...affinageHisto, { question: affinageQuestion.question, reponse }];
+    setAffinageHisto(histo);
+    setAffinageQuestion(null);
+    setAffinageLibre("");
+    setAffinageEtat("recherche");
+    try {
+      const res = await tourAffinage(photoBlob, ciblage ? zone : null, contexteTerrain(), histo);
+      traiterTourAffinage(res, histo);
+    } catch (e) {
+      setAffinageEtat("echec");
+    }
+  }
+
+  function appliquerAffinage() {
+    if (!affinageFinal) return;
+    if (affinageFinal.nom) setNom(affinageFinal.nom);
+    if (affinageFinal.nomSci) setNomSci(affinageFinal.nomSci);
+    setAffinageActif(false);
+  }
+
+  function fermerAffinage() {
+    setAffinageActif(false);
+    setAffinageEtat("");
+    setAffinageQuestion(null);
+    setAffinageFinal(null);
+  }
+
   async function sauver() {
     if (!photoBlob) {
       setErreur("Ajoute une photo pour enregistrer l'observation.");
@@ -1222,6 +1337,78 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
             </div>
           )}
 
+          {/* Affinage : proposé dès qu'une photo est là, mis en avant si l'ID cloud hésite */}
+          {photoBlob && !affinageActif && (
+            <Bouton
+              variante={cloudResultat && (cloudResultat.confiance === "moyenne" || cloudResultat.confiance === "faible") ? "primaire" : "normal"}
+              onClick={demarrerAffinage} style={{ width: "100%", marginBottom: 8 }}>
+              🔍 Affiner l'identification (questions)
+            </Bouton>
+          )}
+
+          {affinageActif && (
+            <div style={{ marginBottom: 12, padding: "12px 14px", background: "linear-gradient(#242E1C, #1B2216)", border: `1px solid #A8863A`, borderRadius: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.ambreClair }}>🔍 Détermination guidée</div>
+                <button onClick={fermerAffinage} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 18, cursor: "pointer", lineHeight: 1 }}>✕</button>
+              </div>
+
+              {affinageHisto.length > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  {affinageHisto.map((h, i) => (
+                    <div key={i} style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 3 }}>
+                      <span style={{ color: C.lichen }}>Q:</span> {h.question} <span style={{ color: C.ambre }}>→ {h.reponse}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {affinageEtat === "recherche" && (
+                <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, fontStyle: "italic", padding: "8px 0" }}>Analyse…</div>
+              )}
+
+              {affinageEtat === "question" && affinageQuestion && (
+                <div>
+                  <div style={{ fontFamily: sans, fontSize: 15, fontWeight: 600, color: C.papier, lineHeight: 1.4, marginBottom: 4 }}>{affinageQuestion.question}</div>
+                  {affinageQuestion.pourquoi && <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, fontStyle: "italic", marginBottom: 10 }}>{affinageQuestion.pourquoi}</div>}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {(affinageQuestion.options || []).map((opt, i) => (
+                      <button key={i} onClick={() => repondreAffinage(opt)}
+                        style={{ fontFamily: sans, fontSize: 14, textAlign: "left", padding: "10px 12px", borderRadius: 8, border: `1px solid ${C.bordure}`, background: C.panneau, color: C.papier, cursor: "pointer" }}>
+                        {opt}
+                      </button>
+                    ))}
+                    <button onClick={() => repondreAffinage("Je ne sais pas")}
+                      style={{ fontFamily: sans, fontSize: 13, padding: "8px 12px", borderRadius: 8, border: `1px dashed ${C.bordure}`, background: "transparent", color: C.papierSombre, cursor: "pointer" }}>
+                      Je ne sais pas
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    <input value={affinageLibre} onChange={(e) => setAffinageLibre(e.target.value)} placeholder="…ou décris toi-même"
+                      style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "9px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
+                    <Bouton onClick={() => affinageLibre.trim() && repondreAffinage(affinageLibre.trim())} disabled={!affinageLibre.trim()}>Envoyer</Bouton>
+                  </div>
+                </div>
+              )}
+
+              {affinageEtat === "final" && affinageFinal && (
+                <div>
+                  <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 6 }}>
+                    Conclusion{affinageFinal.confiance ? ` · confiance ${affinageFinal.confiance}` : ""}{affinageFinal.niveau ? ` · ${affinageFinal.niveau}` : ""}
+                  </div>
+                  <div style={{ fontFamily: sans, fontSize: 16, fontWeight: 700, color: C.papier }}>{affinageFinal.nom || "—"}</div>
+                  <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambreClair, marginBottom: 6 }}>{affinageFinal.nomSci || ""}</div>
+                  {affinageFinal.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginBottom: 10 }}>{affinageFinal.note}</div>}
+                  <Bouton variante="primaire" onClick={appliquerAffinage} style={{ width: "100%" }}>Utiliser ce résultat</Bouton>
+                </div>
+              )}
+
+              {affinageEtat === "echec" && (
+                <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F" }}>Affinage indisponible (réseau, ou service non configuré).</div>
+              )}
+            </div>
+          )}
+
           <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, margin: "4px 0 8px", textAlign: "center" }}>ou, sans réseau ni compte :</div>
 
           <Bouton onClick={lancerIdentification} disabled={idEtat === "recherche"} style={{ width: "100%" }}>
@@ -1370,10 +1557,68 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
 }
 
 // ---------- Vue : détail ----------
-function Detail({ obs, onFermer, onSupprimer, onMajFiche }) {
+// ---------- Composant : carte de collection ----------
+function CarteInsecte({ obs, taille = "normal", onClick }) {
+  const c = obs.carte;
+  if (!c) return null;
+  const pal = palierRarete(c.rarete);
+  const el = elementInfo(c.element);
+  const compact = taille === "compact";
+  const stat = (label, val, emoji) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: compact ? "1px 0" : "2px 0" }}>
+      <span style={{ fontFamily: sans, fontSize: compact ? 10 : 12, color: "#2A2416", fontWeight: 600 }}>{emoji} {label}</span>
+      <span style={{ fontFamily: sans, fontSize: compact ? 11 : 13, color: "#2A2416", fontWeight: 800 }}>{val}</span>
+    </div>
+  );
+  return (
+    <div onClick={onClick}
+      className={onClick ? "bd-card" : ""}
+      style={{
+        width: "100%", borderRadius: 14, overflow: "hidden", cursor: onClick ? "pointer" : "default",
+        background: `linear-gradient(160deg, ${pal.bord}, ${pal.couleur})`,
+        border: `2px solid ${pal.bord}`, boxShadow: pal.lueur === "none" ? "0 3px 10px rgba(0,0,0,.35)" : `${pal.lueur}, 0 3px 10px rgba(0,0,0,.35)`,
+        padding: compact ? 5 : 7,
+      }}>
+      {/* Bandeau titre */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: compact ? "1px 4px 4px" : "2px 6px 6px" }}>
+        <span style={{ fontFamily: serif, fontSize: compact ? 12 : 15, fontWeight: 700, color: "#2A2416", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{obs.nom || "Spécimen"}</span>
+        <span style={{ fontFamily: sans, fontSize: compact ? 13 : 16 }} title={c.element}>{el.emoji}</span>
+      </div>
+      {/* Illustration */}
+      <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "2px solid rgba(0,0,0,.25)" }}>
+        <PhotoBlob blob={obs.photo} alt={obs.nom} style={{ width: "100%", aspectRatio: compact ? "1" : "4/3", objectFit: "cover", display: "block" }} />
+        <div style={{ position: "absolute", top: 4, right: 4, background: "rgba(42,36,22,.85)", color: pal.couleur, fontFamily: sans, fontSize: compact ? 8 : 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", padding: "2px 6px", borderRadius: 10 }}>{pal.nom}</div>
+      </div>
+      {/* Nom latin */}
+      {!compact && (
+        <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 11, color: "#5A5238", textAlign: "center", padding: "4px 0 2px" }}>{obs.nomSci || "—"}</div>
+      )}
+      {/* Stats */}
+      <div style={{ padding: compact ? "3px 4px 1px" : "4px 6px 2px" }}>
+        {stat("Attaque", c.attaque, "⚔️")}
+        {stat("Défense", c.defense, "🛡️")}
+        {stat("Vitesse", c.vitesse, "💨")}
+      </div>
+      {/* Capacité */}
+      {!compact && c.capacite && (
+        <div style={{ margin: "4px 6px 2px", padding: "5px 8px", background: "rgba(42,36,22,.12)", borderRadius: 6 }}>
+          <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, color: "#2A2416" }}>✦ {c.capacite.nom}</div>
+          <div style={{ fontFamily: sans, fontSize: 10.5, color: "#3A3220", lineHeight: 1.35 }}>{c.capacite.effet}</div>
+        </div>
+      )}
+      {!compact && c.citation && (
+        <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 10.5, color: "#5A5238", textAlign: "center", padding: "2px 8px 4px" }}>« {c.citation} »</div>
+      )}
+    </div>
+  );
+}
+
+function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte }) {
   const [confirme, setConfirme] = useState(false);
   const [ficheEtat, setFicheEtat] = useState(""); // "" | recherche | echec
   const [ficheErreur, setFicheErreur] = useState("");
+  const [carteEtat, setCarteEtat] = useState(""); // "" | recherche | echec
+  const [carteErreur, setCarteErreur] = useState("");
   const ligne = { display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 14 };
   const cle = { color: C.lichen, fontWeight: 600 };
   const val = { color: C.papier, textAlign: "right" };
@@ -1392,6 +1637,20 @@ function Detail({ obs, onFermer, onSupprimer, onMajFiche }) {
     } catch (e) {
       setFicheErreur("Génération indisponible (réseau, ou service non configuré).");
       setFicheEtat("echec");
+    }
+  }
+
+  async function lancerCarte() {
+    if (carteEtat === "recherche") return;
+    setCarteEtat("recherche");
+    setCarteErreur("");
+    try {
+      const c = await genererCarte(obs.nom, obs.nomSci);
+      await onMajCarte(obs.id, c);
+      setCarteEtat("");
+    } catch (e) {
+      setCarteErreur("Forge indisponible (réseau, ou service non configuré).");
+      setCarteEtat("echec");
     }
   }
 
@@ -1478,6 +1737,33 @@ function Detail({ obs, onFermer, onSupprimer, onMajFiche }) {
               style={{ marginTop: 10, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
               {ficheEtat === "recherche" ? "Régénération…" : "↻ Régénérer"}
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* Carte de collection */}
+      <div style={{ marginTop: 18 }}>
+        {obs.carte ? (
+          <div>
+            <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 10 }}>🎴 Carte de collection</div>
+            <div style={{ maxWidth: 300, margin: "0 auto" }}>
+              <CarteInsecte obs={obs} />
+            </div>
+            <button onClick={lancerCarte} disabled={carteEtat === "recherche"}
+              style={{ display: "block", margin: "12px auto 0", fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
+              {carteEtat === "recherche" ? "Reforge…" : "↻ Reforger la carte"}
+            </button>
+          </div>
+        ) : identifie ? (
+          <div>
+            <Bouton variante="primaire" onClick={lancerCarte} disabled={carteEtat === "recherche"} style={{ width: "100%" }}>
+              {carteEtat === "recherche" ? "🎴 Forge de la carte…" : "🎴 Forger une carte de collection"}
+            </Bouton>
+            {carteErreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 8 }}>{carteErreur}</div>}
+          </div>
+        ) : (
+          <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, fontStyle: "italic" }}>
+            Identifie ce spécimen pour pouvoir forger sa carte de collection.
           </div>
         )}
       </div>
@@ -1670,7 +1956,7 @@ function Aide({ onFermer, onImportTermine }) {
       </p>
       <div style={t}>📲 Installer l'appli</div>
       <p style={p}>
-        Dans le menu de ton navigateur, choisis « Ajouter à l'écran d'accueil » (ou « Installer l'application ») : BioDex se lance alors comme une vraie appli, et fonctionne même hors connexion — pratique en pleine nature. Seule la météo auto nécessite du réseau.
+        Dans le menu de ton navigateur, choisis « Ajouter à l'écran d'accueil » (ou « Installer l'application ») : BioDex se lance alors comme une vraie appli, et fonctionne même hors connexion — pratique en pleine nature. Seule la météo auto nécessite du réseau. Quand une nouvelle version est déployée, une bannière « Nouvelle version disponible » apparaît en haut à l'ouverture : touche « Mettre à jour » et l'appli se recharge à jour, sans manipulation de cache.
       </p>
       <div style={t}>💾 Stockage & sauvegarde</div>
       <p style={p}>
@@ -1689,6 +1975,10 @@ function Aide({ onFermer, onImportTermine }) {
       <div style={t}>✍️ Noms & autocomplétion</div>
       <p style={p}>
         En saisissant le nom vernaculaire, l'appli propose des espèces correspondantes (base iNaturalist) : choisis-en une et le nom scientifique se remplit tout seul. Réseau requis ; sans lui, la saisie manuelle reste toujours possible. Les noms français ne couvrent pas 100% des espèces.
+      </p>
+      <div style={t}>🎴 Cartes de collection (mode jeu)</div>
+      <p style={p}>
+        Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse, rareté) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. Retrouve toutes tes cartes dans l'onglet 🎴, et affronte l'IA en combat de stats (il te faut au moins 2 cartes). Chaque forge coûte un appel (~0,8 centime).
       </p>
       <div style={t}>📝 Brouillon automatique</div>
       <p style={p}>
@@ -1712,12 +2002,173 @@ function Aide({ onFermer, onImportTermine }) {
 }
 
 // ---------- Application ----------
+// ---------- Mode jeu : cartes + combat solo ----------
+function ModeCartes({ cartes, onOuvrir }) {
+  const [sousVue, setSousVue] = useState("galerie"); // galerie | combat
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {[["galerie", "🎴 Mes cartes"], ["combat", "⚔️ Combat"]].map(([id, label]) => (
+          <button key={id} className="bd-press" onClick={() => setSousVue(id)}
+            style={{ flex: 1, fontFamily: sans, fontSize: 14, fontWeight: 700, padding: "9px 0", borderRadius: 9, cursor: "pointer",
+              border: `1px solid ${sousVue === id ? "#A8863A" : C.bordure}`,
+              background: sousVue === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
+              color: sousVue === id ? C.ambreClair : C.papierSombre }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {sousVue === "galerie" && (
+        cartes.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "56px 24px", border: `1px solid ${C.bordure}`, borderRadius: 14, background: "linear-gradient(#191F15, #14180F)" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🎴</div>
+            <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier, marginBottom: 6 }}>Aucune carte forgée</div>
+            <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.5 }}>Ouvre une observation identifiée et forge sa carte depuis sa fiche.</div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: 14 }}>
+            {cartes.map((o) => (
+              <CarteInsecte key={o.id} obs={o} onClick={() => onOuvrir(o.id)} />
+            ))}
+          </div>
+        )
+      )}
+
+      {sousVue === "combat" && <Combat cartes={cartes} />}
+    </div>
+  );
+}
+
+const CRITERES = [
+  { id: "attaque", label: "Attaque", emoji: "⚔️" },
+  { id: "defense", label: "Défense", emoji: "🛡️" },
+  { id: "vitesse", label: "Vitesse", emoji: "💨" },
+];
+
+function Combat({ cartes }) {
+  const jouables = cartes.filter((c) => c.carte);
+  const [etape, setEtape] = useState("choix"); // choix | resultat
+  const [maCarte, setMaCarte] = useState(null);
+  const [carteIA, setCarteIA] = useState(null);
+  const [critere, setCritere] = useState(null);
+  const [scores, setScores] = useState({ moi: 0, ia: 0 });
+  const [manche, setManche] = useState(0);
+
+  if (jouables.length < 2) {
+    return (
+      <div style={{ textAlign: "center", padding: "40px 24px", border: `1px solid ${C.bordure}`, borderRadius: 14, background: "linear-gradient(#191F15, #14180F)", fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.6 }}>
+        Il te faut au moins <b style={{ color: C.papier }}>2 cartes</b> forgées pour combattre.<br />Tu en as {jouables.length}.
+      </div>
+    );
+  }
+
+  function lancerManche(carteChoisie) {
+    // l'IA pioche une carte au hasard (différente si possible)
+    const autres = jouables.filter((c) => c.id !== carteChoisie.id);
+    const ia = autres[Math.floor(Math.random() * autres.length)] || carteChoisie;
+    // l'IA choisit le critère qui l'avantage
+    let meilleur = CRITERES[0].id, ecart = -999;
+    CRITERES.forEach((cr) => {
+      const e = (ia.carte[cr.id] || 0) - (carteChoisie.carte[cr.id] || 0);
+      if (e > ecart) { ecart = e; meilleur = cr.id; }
+    });
+    setMaCarte(carteChoisie);
+    setCarteIA(ia);
+    setCritere(meilleur);
+    const maVal = carteChoisie.carte[meilleur] || 0;
+    const iaVal = ia.carte[meilleur] || 0;
+    const gagne = maVal >= iaVal; // égalité avantage joueur
+    setScores((s) => ({ moi: s.moi + (gagne ? 1 : 0), ia: s.ia + (gagne ? 0 : 1) }));
+    setManche((m) => m + 1);
+    setEtape("resultat");
+  }
+
+  function rejouer() {
+    setEtape("choix");
+    setMaCarte(null); setCarteIA(null); setCritere(null);
+  }
+  function reset() {
+    rejouer();
+    setScores({ moi: 0, ia: 0 });
+    setManche(0);
+  }
+
+  const critereInfo = CRITERES.find((c) => c.id === critere);
+  const maVal = maCarte && critere ? (maCarte.carte[critere] || 0) : 0;
+  const iaVal = carteIA && critere ? (carteIA.carte[critere] || 0) : 0;
+  const gagne = maVal >= iaVal;
+
+  return (
+    <div>
+      {/* Score */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 24, marginBottom: 16, fontFamily: sans }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: C.ambreClair }}>{scores.moi}</div>
+          <div style={{ fontSize: 11, color: C.papierSombre, textTransform: "uppercase", letterSpacing: 0.5 }}>Toi</div>
+        </div>
+        <div style={{ fontSize: 22, color: C.papierSombre, alignSelf: "center" }}>·</div>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: C.papier }}>{scores.ia}</div>
+          <div style={{ fontSize: 11, color: C.papierSombre, textTransform: "uppercase", letterSpacing: 0.5 }}>IA</div>
+        </div>
+        {manche > 0 && (
+          <button onClick={reset} style={{ alignSelf: "center", fontFamily: sans, fontSize: 12, padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: "transparent", color: C.papierSombre, cursor: "pointer" }}>Remettre à 0</button>
+        )}
+      </div>
+
+      {etape === "choix" && (
+        <div>
+          <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, textAlign: "center", marginBottom: 14 }}>Choisis ta carte pour cette manche :</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 12 }}>
+            {jouables.map((o) => (
+              <CarteInsecte key={o.id} obs={o} taille="compact" onClick={() => lancerManche(o)} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {etape === "resultat" && maCarte && carteIA && (
+        <div>
+          <div style={{ textAlign: "center", fontFamily: serif, fontSize: 20, fontWeight: 700, color: gagne ? C.ambreClair : C.rouge, marginBottom: 4 }}>
+            {gagne ? "Manche gagnée !" : "Manche perdue"}
+          </div>
+          <div style={{ textAlign: "center", fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 16 }}>
+            Critère : {critereInfo.emoji} {critereInfo.label} — {maVal} contre {iaVal}
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "center" }}>
+            <div style={{ flex: 1, maxWidth: 180 }}>
+              <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: C.ambreClair, textAlign: "center", marginBottom: 6 }}>Ta carte</div>
+              <CarteInsecte obs={maCarte} taille="compact" />
+            </div>
+            <div style={{ alignSelf: "center", fontFamily: serif, fontSize: 20, color: C.papierSombre }}>VS</div>
+            <div style={{ flex: 1, maxWidth: 180 }}>
+              <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: C.papierSombre, textAlign: "center", marginBottom: 6 }}>Carte IA</div>
+              <CarteInsecte obs={carteIA} taille="compact" />
+            </div>
+          </div>
+          <Bouton variante="primaire" onClick={rejouer} style={{ width: "100%", marginTop: 18 }}>Manche suivante</Bouton>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BioDex() {
   const [vue, setVue] = useState("collection");
   const [observations, setObservations] = useState([]);
   const [selectionId, setSelectionId] = useState(null);
   const [chargement, setChargement] = useState(true);
   const [erreurGlobale, setErreurGlobale] = useState("");
+  const [alerteStockage, setAlerteStockage] = useState("");
+  const [majDispo, setMajDispo] = useState(false);
+
+  useEffect(() => {
+    if (window.__biodexMaj && window.__biodexMaj.dispo) setMajDispo(true);
+    const h = () => setMajDispo(true);
+    window.addEventListener("biodex-maj-dispo", h);
+    return () => window.removeEventListener("biodex-maj-dispo", h);
+  }, []);
   const [tri, setTri] = useState(() => {
     try { return localStorage.getItem("biodex:tri") || "recent"; } catch { return "recent"; }
   });
@@ -1731,11 +2182,24 @@ function BioDex() {
     try { localStorage.setItem("biodex:tri", t); } catch {}
   }
 
+  async function verifierStockage() {
+    try {
+      if (navigator.storage && navigator.storage.estimate) {
+        const { usage, quota } = await navigator.storage.estimate();
+        if (quota && usage / quota > 0.85) {
+          const restantMo = Math.max(0, Math.round((quota - usage) / (1024 * 1024)));
+          setAlerteStockage(`Stockage presque plein (~${restantMo} Mo restants). Pense à exporter ta collection et à supprimer d'anciennes observations pour continuer à ajouter des photos.`);
+        }
+      }
+    } catch {}
+  }
+
   async function chargerObservations() {
     try {
       const toutes = await dbToutes();
       toutes.sort((a, b) => (a.date < b.date ? 1 : -1));
       setObservations(toutes);
+      verifierStockage();
     } catch {
       setErreurGlobale("Impossible d'ouvrir la base de données locale. Vérifie que tu n'es pas en navigation privée.");
     }
@@ -1749,6 +2213,7 @@ function BioDex() {
       await dbAjouter(obs);
       setObservations((prev) => [obs, ...prev]);
       setVue("collection");
+      verifierStockage();
       return true;
     } catch {
       return false;
@@ -1795,8 +2260,17 @@ function BioDex() {
     setObservations((prev) => prev.map((o) => (o.id === id ? maj : o)));
   }
 
+  async function majCarte(id, carte) {
+    const obs = observations.find((o) => o.id === id);
+    if (!obs) return;
+    const maj = { ...obs, carte };
+    try { await dbAjouter(maj); } catch {}
+    setObservations((prev) => prev.map((o) => (o.id === id ? maj : o)));
+  }
+
   const aTrier = observations.filter((o) => o.statut === "a_trier");
   const triees = observations.filter((o) => o.statut !== "a_trier");
+  const cartes = triees.filter((o) => o.carte);
 
   const selection = observations.find((o) => o.id === selectionId) || null;
   const nbBiotopes = new Set(triees.map((o) => o.biotope)).size;
@@ -1824,14 +2298,27 @@ function BioDex() {
         </button>
       </header>
 
-      {(vue === "collection" || vue === "carte" || vue === "stats" || vue === "atrier") && (
-        <div style={{ padding: "14px 16px 0", maxWidth: 560, margin: "0 auto", boxSizing: "border-box", display: "flex", gap: 6 }}>
-          {[["collection", "🗃️"], ["atrier", "📥"], ["carte", "🗺️"], ["stats", "📊"]].map(([id, ico]) => {
-            const labels = { collection: "Collection", atrier: "À trier", carte: "Carte", stats: "Stats" };
+      {majDispo && (
+        <div style={{ maxWidth: 560, margin: "0 auto", padding: "10px 16px 0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: "linear-gradient(#2C3623, #232B1D)", border: `1px solid #A8863A`, boxShadow: "0 2px 8px rgba(0,0,0,.3)" }}>
+            <span style={{ fontFamily: sans, fontSize: 13.5, color: C.papier, flex: 1, lineHeight: 1.4 }}>
+              🆕 Une nouvelle version de BioDex est disponible.
+            </span>
+            <Bouton variante="primaire" onClick={() => { if (window.appliquerMajBiodex) window.appliquerMajBiodex(); }}>
+              Mettre à jour
+            </Bouton>
+          </div>
+        </div>
+      )}
+
+      {(vue === "collection" || vue === "carte" || vue === "stats" || vue === "atrier" || vue === "cartes") && (
+        <div style={{ padding: "14px 16px 0", maxWidth: 560, margin: "0 auto", boxSizing: "border-box", display: "flex", gap: 5 }}>
+          {[["collection", "🗃️"], ["atrier", "📥"], ["cartes", "🎴"], ["carte", "🗺️"], ["stats", "📊"]].map(([id, ico]) => {
+            const labels = { collection: "Collec.", atrier: "À trier", cartes: "Cartes", carte: "Carte", stats: "Stats" };
             return (
             <button key={id} className="bd-press" onClick={() => setVue(id)}
               style={{
-                flex: 1, position: "relative", fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "10px 0",
+                flex: 1, position: "relative", fontFamily: sans, fontSize: 11.5, fontWeight: 700, padding: "10px 0",
                 borderRadius: 9, cursor: "pointer", letterSpacing: 0.2,
                 border: `1px solid ${vue === id ? "#A8863A" : C.bordure}`,
                 background: vue === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
@@ -1842,12 +2329,18 @@ function BioDex() {
               {id === "atrier" && aTrier.length > 0 && (
                 <span style={{ position: "absolute", top: 3, right: 6, minWidth: 16, height: 16, lineHeight: "16px", padding: "0 4px", boxSizing: "border-box", borderRadius: 8, background: C.rouge, color: "#fff", fontSize: 10, fontWeight: 700 }}>{aTrier.length}</span>
               )}
+              {id === "cartes" && cartes.length > 0 && (
+                <span style={{ position: "absolute", top: 3, right: 4, minWidth: 16, height: 16, lineHeight: "16px", padding: "0 4px", boxSizing: "border-box", borderRadius: 8, background: C.ambre, color: C.encre, fontSize: 10, fontWeight: 700 }}>{cartes.length}</span>
+              )}
             </button>
             );
           })}
         </div>
       )}
 
+      {vue === "cartes" && (
+        <ModeCartes cartes={cartes} onOuvrir={(id) => { setSelectionId(id); setVue("detail"); }} />
+      )}
       {vue === "stats" && <Stats observations={triees} onFermer={() => setVue("collection")} />}
       {vue === "atrier" && (
         <CaptureRapide aTrier={aTrier} onAjout={ajouterATrier}
@@ -1867,6 +2360,7 @@ function BioDex() {
         <Detail obs={selection}
           onFermer={() => { setSelectionId(null); setVue("collection"); }}
           onMajFiche={majFiche}
+          onMajCarte={majCarte}
           onSupprimer={supprimerObservation} />
       )}
 
@@ -1944,6 +2438,13 @@ function BioDex() {
             </div>
           )}
 
+          {alerteStockage && (
+            <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 8, background: "#3A2E1A", border: `1px solid #A8863A`, color: C.papier, fontFamily: sans, fontSize: 13, lineHeight: 1.5, display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <span style={{ flex: 1 }}>⚠️ {alerteStockage}</span>
+              <button onClick={() => setAlerteStockage("")} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 16, cursor: "pointer", lineHeight: 1 }}>✕</button>
+            </div>
+          )}
+
           {chargement && (
             <div style={{ textAlign: "center", padding: 40, fontFamily: sans, color: C.papierSombre }}>Ouverture du tiroir…</div>
           )}
@@ -1986,12 +2487,50 @@ function BioDex() {
 
 ReactDOM.createRoot(document.getElementById("root")).render(<BioDex />);
 
-// Service worker (mode hors-ligne + installation)
+// Service worker (mode hors-ligne + installation + détection de mise à jour)
+window.__biodexMaj = { dispo: false, registration: null };
+
+function signalerMaj(reg) {
+  window.__biodexMaj = { dispo: true, registration: reg };
+  window.dispatchEvent(new CustomEvent("biodex-maj-dispo"));
+}
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    navigator.serviceWorker.register("sw.js").then((reg) => {
+      // Si une version est déjà en attente au chargement
+      if (reg.waiting && navigator.serviceWorker.controller) signalerMaj(reg);
+      // Détection d'une nouvelle version qui s'installe
+      reg.addEventListener("updatefound", () => {
+        const nouveau = reg.installing;
+        if (!nouveau) return;
+        nouveau.addEventListener("statechange", () => {
+          // installé + un SW contrôle déjà la page => c'est une MISE À JOUR (pas 1ère install)
+          if (nouveau.state === "installed" && navigator.serviceWorker.controller) {
+            signalerMaj(reg);
+          }
+        });
+      });
+      // Vérifie périodiquement s'il y a une nouvelle version déployée
+      setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+    }).catch(() => {});
+
+    // Quand le nouveau SW prend le contrôle, on recharge une seule fois
+    let recharge = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (recharge) return;
+      recharge = true;
+      window.location.reload();
+    });
   });
 }
+
+// Appelée par le bouton "Mettre à jour" de la bannière
+function appliquerMajBiodex() {
+  const reg = window.__biodexMaj.registration;
+  if (reg && reg.waiting) reg.waiting.postMessage("ACTIVER_MAJ");
+}
+window.appliquerMajBiodex = appliquerMajBiodex;
 </script>
 </body>
 </html>
