@@ -48,9 +48,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.26 (PWA) ============
+// ============ BioDex v0.27 (PWA) ============
 
-const VERSION = "v0.26";
+const VERSION = "v0.27";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -425,6 +425,36 @@ function clientSupabase() {
     }
   } catch {}
   return null;
+}
+
+// ---------- Authentification (lien magique) ----------
+// Envoie un lien de connexion à l'email indiqué
+async function envoyerLienMagique(email) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { error } = await sb.auth.signInWithOtp({
+    email: email.trim(),
+    options: { emailRedirectTo: window.location.origin },
+  });
+  if (error) throw new Error(error.message || "Envoi impossible");
+  return true;
+}
+
+// Récupère l'utilisateur connecté (ou null)
+async function utilisateurActuel() {
+  const sb = clientSupabase();
+  if (!sb) return null;
+  try {
+    const { data } = await sb.auth.getUser();
+    return data ? data.user : null;
+  } catch { return null; }
+}
+
+// Déconnexion
+async function seDeconnecter() {
+  const sb = clientSupabase();
+  if (!sb) return;
+  try { await sb.auth.signOut(); } catch {}
 }
 
 // Redimensionne + compresse une photo (blob) pour l'upload : max 1280px, JPEG qualité 0.7 (~léger)
@@ -2111,6 +2141,10 @@ function Aide({ onFermer, onImportTermine }) {
       <p style={p}>
         En saisissant le nom vernaculaire, l'appli propose des espèces correspondantes (base iNaturalist) : choisis-en une et le nom scientifique se remplit tout seul. Réseau requis ; sans lui, la saisie manuelle reste toujours possible. Les noms français ne couvrent pas 100% des espèces.
       </p>
+      <div style={t}>👤 Connexion (facultative)</div>
+      <p style={p}>
+        Le bouton 👤 en haut permet de te connecter avec ton email : tu reçois un lien magique à cliquer, sans mot de passe. La connexion est facultative aujourd'hui ; elle prépare les fonctions sociales à venir (profil, collections des autres, classement). Sans compte, l'appli fonctionne normalement.
+      </p>
       <div style={t}>🌐 Mur commun (bêta)</div>
       <p style={p}>
         Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Indique ton prénom une fois, il est mémorisé. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone.
@@ -2141,6 +2175,66 @@ function Aide({ onFermer, onImportTermine }) {
 }
 
 // ---------- Application ----------
+// ---------- Écran de connexion (lien magique) ----------
+function Connexion({ onFermer, utilisateur, onDeconnexion }) {
+  const [email, setEmail] = useState("");
+  const [etat, setEtat] = useState(""); // "" | envoi | envoye | echec
+  const [erreur, setErreur] = useState("");
+
+  async function envoyer() {
+    const e = email.trim();
+    if (!e || !e.includes("@")) { setErreur("Entre une adresse email valide."); return; }
+    setEtat("envoi");
+    setErreur("");
+    try {
+      await envoyerLienMagique(e);
+      setEtat("envoye");
+    } catch (err) {
+      setErreur(String(err.message || "Envoi impossible") + ".");
+      setEtat("echec");
+    }
+  }
+
+  return (
+    <div style={{ padding: 16, maxWidth: 480, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 18 }}>← Retour</Bouton>
+
+      {utilisateur ? (
+        <div style={{ padding: "20px 18px", background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid ${C.bordure}`, borderRadius: 12, textAlign: "center" }}>
+          <div style={{ fontSize: 34, marginBottom: 10 }}>✅</div>
+          <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier, marginBottom: 6 }}>Tu es connecté</div>
+          <div style={{ fontFamily: sans, fontSize: 14, color: C.ambreClair, marginBottom: 18, wordBreak: "break-all" }}>{utilisateur.email}</div>
+          <Bouton variante="danger" onClick={onDeconnexion} style={{ width: "100%" }}>Se déconnecter</Bouton>
+        </div>
+      ) : etat === "envoye" ? (
+        <div style={{ padding: "20px 18px", background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid #A8863A`, borderRadius: 12, textAlign: "center" }}>
+          <div style={{ fontSize: 34, marginBottom: 10 }}>📬</div>
+          <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier, marginBottom: 8 }}>Vérifie tes emails !</div>
+          <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.5 }}>
+            Un lien de connexion a été envoyé à <b style={{ color: C.ambreClair }}>{email}</b>. Ouvre-le sur cet appareil pour te connecter.
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 14, fontStyle: "italic" }}>
+            Pas reçu ? Regarde dans les spams, ou réessaie dans quelques minutes.
+          </div>
+        </div>
+      ) : (
+        <div>
+          <h2 style={{ fontFamily: serif, fontSize: 24, fontWeight: 600, color: C.papier, marginBottom: 6 }}>Se connecter</h2>
+          <p style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.5, marginBottom: 18 }}>
+            Entre ton email : tu recevras un lien de connexion à cliquer, sans mot de passe. La connexion débloquera les fonctions sociales de BioDex (à venir). Elle est facultative — tu peux continuer à utiliser l'appli sans compte.
+          </p>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="ton@email.fr" autoComplete="email"
+            style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "12px 14px", fontFamily: sans, fontSize: 15, outline: "none", marginBottom: 12 }} />
+          <Bouton variante="primaire" onClick={envoyer} disabled={etat === "envoi"} style={{ width: "100%" }}>
+            {etat === "envoi" ? "Envoi du lien…" : "📩 Recevoir mon lien de connexion"}
+          </Bouton>
+          {erreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 10 }}>{erreur}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- Mur commun (vue) ----------
 function MurCommun({ prenom, onDefinirPrenom }) {
   const [posts, setPosts] = useState([]);
@@ -2385,6 +2479,26 @@ function BioDex() {
   const [erreurGlobale, setErreurGlobale] = useState("");
   const [alerteStockage, setAlerteStockage] = useState("");
   const [majDispo, setMajDispo] = useState(false);
+  const [utilisateur, setUtilisateur] = useState(null);
+
+  useEffect(() => {
+    if (!MUR_ACTIF) return;
+    // Récupère la session au démarrage
+    utilisateurActuel().then((u) => setUtilisateur(u)).catch(() => {});
+    // Écoute les changements de connexion (retour du lien magique, déconnexion)
+    const sb = clientSupabase();
+    if (sb && sb.auth && sb.auth.onAuthStateChange) {
+      const { data } = sb.auth.onAuthStateChange((_evt, session) => {
+        setUtilisateur(session ? session.user : null);
+      });
+      return () => { try { data.subscription.unsubscribe(); } catch {} };
+    }
+  }, []);
+
+  async function deconnexion() {
+    await seDeconnecter();
+    setUtilisateur(null);
+  }
   const [prenom, setPrenom] = useState(() => { try { return localStorage.getItem("biodex_prenom") || ""; } catch { return ""; } });
 
   function definirPrenom(p) {
@@ -2521,11 +2635,20 @@ function BioDex() {
             <span style={{ fontFamily: sans, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: C.papierSombre }}>{VERSION}</span>
           </div>
         </div>
-        <button className="bd-press" onClick={() => setVue("aide")}
-          style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, color: C.lichen, fontFamily: serif, fontSize: 17, cursor: "pointer" }}
-          aria-label="Aide">
-          ?
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {MUR_ACTIF && (
+            <button className="bd-press" onClick={() => setVue("connexion")}
+              style={{ height: 32, padding: utilisateur ? "0 12px" : 0, width: utilisateur ? "auto" : 32, borderRadius: utilisateur ? 16 : "50%", border: `1px solid ${utilisateur ? "#A8863A" : C.bordure}`, background: utilisateur ? "linear-gradient(#2C3623, #232B1D)" : C.panneau, color: utilisateur ? C.ambreClair : C.lichen, fontFamily: sans, fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
+              aria-label="Connexion" title={utilisateur ? "Connecté" : "Se connecter"}>
+              {utilisateur ? "🐛" : "👤"}{utilisateur && <span style={{ fontSize: 12 }}>Moi</span>}
+            </button>
+          )}
+          <button className="bd-press" onClick={() => setVue("aide")}
+            style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, color: C.lichen, fontFamily: serif, fontSize: 17, cursor: "pointer" }}
+            aria-label="Aide">
+            ?
+          </button>
+        </div>
       </header>
 
       {majDispo && (
@@ -2583,6 +2706,7 @@ function BioDex() {
       )}
 
       {vue === "aide" && <Aide onFermer={() => setVue("collection")} onImportTermine={chargerObservations} />}
+      {vue === "connexion" && <Connexion onFermer={() => setVue("collection")} utilisateur={utilisateur} onDeconnexion={deconnexion} />}
       {vue === "nouvelle" && <NouvelleObservation onSauver={sauverObservation} onAnnuler={() => setVue("collection")} />}
       {vue === "carte" && (
         <Carte observations={triees} onOuvrirFiche={(id) => { setSelectionId(id); setVue("detail"); }} />
