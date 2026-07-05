@@ -48,9 +48,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.31 (PWA) ============
+// ============ BioDex v0.32 (PWA) ============
 
-const VERSION = "v0.31";
+const VERSION = "v0.32";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -745,6 +745,47 @@ function PhotoBlob({ blob, alt, style }) {
     );
   }
   return <img src={url} alt={alt} style={style} />;
+}
+
+// Photo recadrée sur une zone {x,y,w,h} normalisée (0..1). Sans zone : photo entière.
+function PhotoBlobRecadree({ blob, zone, alt, style }) {
+  const [urlRecadree, setUrlRecadree] = useState(null);
+  useEffect(() => {
+    let revoque = null;
+    let annule = false;
+    if (!blob || !zone || !(zone.w > 0.05 && zone.h > 0.05)) { setUrlRecadree(null); return; }
+    const src = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const sx = Math.round(zone.x * img.naturalWidth);
+        const sy = Math.round(zone.y * img.naturalHeight);
+        const sw = Math.max(1, Math.round(zone.w * img.naturalWidth));
+        const sh = Math.max(1, Math.round(zone.h * img.naturalHeight));
+        const cv = document.createElement("canvas");
+        // limite la taille pour rester léger
+        const maxDim = 800;
+        let cw = sw, ch = sh;
+        if (cw > ch && cw > maxDim) { ch = Math.round(ch * maxDim / cw); cw = maxDim; }
+        else if (ch > maxDim) { cw = Math.round(cw * maxDim / ch); ch = maxDim; }
+        cv.width = cw; cv.height = ch;
+        cv.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch);
+        cv.toBlob((b) => {
+          URL.revokeObjectURL(src);
+          if (!b || annule) return;
+          const u = URL.createObjectURL(b);
+          revoque = u;
+          setUrlRecadree(u);
+        }, "image/jpeg", 0.85);
+      } catch { URL.revokeObjectURL(src); }
+    };
+    img.onerror = () => URL.revokeObjectURL(src);
+    img.src = src;
+    return () => { annule = true; if (revoque) URL.revokeObjectURL(revoque); };
+  }, [blob, zone && zone.x, zone && zone.y, zone && zone.w, zone && zone.h]);
+
+  if (urlRecadree) return <img src={urlRecadree} alt={alt} style={style} />;
+  return <PhotoBlob blob={blob} alt={alt} style={style} />;
 }
 
 function Etiquette({ obs }) {
@@ -1763,56 +1804,71 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
   const pal = palierRarete(c.rarete);
   const el = elementInfo(c.element);
   const compact = taille === "compact";
-  const stat = (label, val, emoji) => (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: compact ? "1px 0" : "2px 0" }}>
-      <span style={{ fontFamily: sans, fontSize: compact ? 10 : 12, color: "#2A2416", fontWeight: 600 }}>{emoji} {label}</span>
-      <span style={{ fontFamily: sans, fontSize: compact ? 11 : 13, color: "#2A2416", fontWeight: 800 }}>{val}</span>
+  const holo = Number(c.rarete) >= 65; // reflet pour Rare et Légendaire
+  const stat = (label, val, emoji, couleur) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: compact ? "1.5px 0" : "2.5px 0" }}>
+      <span style={{ fontFamily: sans, fontSize: compact ? 9.5 : 11, color: "#2A2416", fontWeight: 700, width: compact ? 58 : 72, flexShrink: 0 }}>{emoji} {label}</span>
+      <div style={{ flex: 1, height: compact ? 5 : 7, background: "rgba(42,36,22,.18)", borderRadius: 4, overflow: "hidden" }}>
+        <div style={{ width: `${Math.min(100, Math.max(3, Number(val) || 0))}%`, height: "100%", background: couleur, borderRadius: 4 }} />
+      </div>
+      <span style={{ fontFamily: sans, fontSize: compact ? 10.5 : 12.5, color: "#2A2416", fontWeight: 800, width: compact ? 18 : 24, textAlign: "right", flexShrink: 0 }}>{val}</span>
     </div>
   );
   return (
     <div onClick={onClick}
       className={onClick ? "bd-card" : ""}
       style={{
-        width: "100%", borderRadius: 14, overflow: "hidden", cursor: onClick ? "pointer" : "default",
-        background: `linear-gradient(160deg, ${pal.bord}, ${pal.couleur})`,
-        border: `2px solid ${pal.bord}`, boxShadow: pal.lueur === "none" ? "0 3px 10px rgba(0,0,0,.35)" : `${pal.lueur}, 0 3px 10px rgba(0,0,0,.35)`,
-        padding: compact ? 5 : 7,
+        width: "100%", borderRadius: 15, cursor: onClick ? "pointer" : "default",
+        background: `linear-gradient(150deg, ${pal.bord} 0%, ${pal.couleur} 45%, ${pal.bord} 100%)`,
+        border: `1px solid rgba(42,36,22,.4)`,
+        boxShadow: pal.lueur === "none" ? "0 4px 12px rgba(0,0,0,.4)" : `${pal.lueur}, 0 4px 12px rgba(0,0,0,.4)`,
+        padding: compact ? 4 : 5, position: "relative", overflow: "hidden",
       }}>
-      {/* Bandeau titre */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: compact ? "1px 4px 4px" : "2px 6px 6px" }}>
-        <span style={{ fontFamily: serif, fontSize: compact ? 12 : 15, fontWeight: 700, color: "#2A2416", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{obs.nom || "Spécimen"}</span>
-        <span style={{ fontFamily: sans, fontSize: compact ? 13 : 16 }} title={c.element}>{el.emoji}</span>
-      </div>
-      {/* Illustration */}
-      <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "2px solid rgba(0,0,0,.25)" }}>
-        <PhotoBlob blob={obs.photo} alt={obs.nom} style={{ width: "100%", aspectRatio: compact ? "1" : "4/3", objectFit: "cover", display: "block" }} />
-        <div style={{ position: "absolute", top: 4, right: 4, background: "rgba(42,36,22,.85)", color: pal.couleur, fontFamily: sans, fontSize: compact ? 8 : 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", padding: "2px 6px", borderRadius: 10 }}>{pal.nom}</div>
-      </div>
-      {/* Nom latin */}
-      {!compact && (
-        <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 11, color: "#5A5238", textAlign: "center", padding: "4px 0 2px" }}>{obs.nomSci || "—"}</div>
+      {/* Reflet holographique (raretés élevées) */}
+      {holo && (
+        <div style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "linear-gradient(115deg, transparent 30%, rgba(255,255,255,.28) 45%, rgba(255,255,255,.05) 52%, transparent 65%)", mixBlendMode: "soft-light" }} />
       )}
-      {/* Stats */}
-      <div style={{ padding: compact ? "3px 4px 1px" : "4px 6px 2px" }}>
-        {stat("Attaque", c.attaque, "⚔️")}
-        {stat("Défense", c.defense, "🛡️")}
-        {stat("Vitesse", c.vitesse, "💨")}
-      </div>
-      {/* Capacité */}
-      {!compact && c.capacite && (
-        <div style={{ margin: "4px 6px 2px", padding: "5px 8px", background: "rgba(42,36,22,.12)", borderRadius: 6 }}>
-          <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, color: "#2A2416" }}>✦ {c.capacite.nom}</div>
-          <div style={{ fontFamily: sans, fontSize: 10.5, color: "#3A3220", lineHeight: 1.35 }}>{c.capacite.effet}</div>
+      {/* Cadre intérieur */}
+      <div style={{ borderRadius: 11, border: "1px solid rgba(42,36,22,.35)", background: "linear-gradient(rgba(255,255,255,.16), rgba(255,255,255,.02))", padding: compact ? 4 : 6, position: "relative" }}>
+        {/* Bandeau titre */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, padding: compact ? "0 2px 4px" : "1px 3px 6px" }}>
+          <span style={{ fontFamily: serif, fontSize: compact ? 12 : 15, fontWeight: 700, color: "#2A2416", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textShadow: "0 1px 0 rgba(255,255,255,.25)" }}>{obs.nom || "Spécimen"}</span>
+          <span style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, background: "rgba(42,36,22,.85)", border: `1px solid ${el.c}`, color: el.c, fontFamily: sans, fontSize: compact ? 8.5 : 9.5, fontWeight: 800, letterSpacing: 0.4, padding: compact ? "1px 5px" : "2px 7px", borderRadius: 10 }}>
+            {el.emoji}{!compact && <span>{c.element}</span>}
+          </span>
         </div>
-      )}
-      {!compact && c.citation && (
-        <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 10.5, color: "#5A5238", textAlign: "center", padding: "2px 8px 4px" }}>« {c.citation} »</div>
-      )}
+        {/* Illustration (recadrée si un cadre a été défini) */}
+        <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "2px solid rgba(42,36,22,.45)", boxShadow: "inset 0 0 12px rgba(0,0,0,.35)" }}>
+          <PhotoBlobRecadree blob={obs.photo} zone={obs.cadreCarte} alt={obs.nom} style={{ width: "100%", aspectRatio: compact ? "1" : "4/3", objectFit: "cover", display: "block" }} />
+          <div style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at center, transparent 62%, rgba(0,0,0,.28) 100%)" }} />
+          <div style={{ position: "absolute", top: 5, right: 5, background: "rgba(42,36,22,.88)", color: pal.couleur, border: `1px solid ${pal.bord}`, fontFamily: sans, fontSize: compact ? 8 : 9.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", padding: "2px 7px", borderRadius: 10 }}>{pal.nom}</div>
+        </div>
+        {/* Nom latin */}
+        {!compact && (
+          <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 11, color: "#4A4228", textAlign: "center", padding: "5px 0 3px", borderBottom: "1px solid rgba(42,36,22,.18)", marginBottom: 3 }}>{obs.nomSci || "—"}</div>
+        )}
+        {/* Stats en barres */}
+        <div style={{ padding: compact ? "3px 2px 1px" : "4px 3px 2px" }}>
+          {stat("Attaque", c.attaque, "⚔️", "#B0563C")}
+          {stat("Défense", c.defense, "🛡️", "#5A7A4A")}
+          {stat("Vitesse", c.vitesse, "💨", "#5A7AA8")}
+        </div>
+        {/* Capacité */}
+        {!compact && c.capacite && (
+          <div style={{ margin: "5px 2px 2px", padding: "6px 9px", background: "rgba(42,36,22,.14)", border: "1px solid rgba(42,36,22,.2)", borderRadius: 7 }}>
+            <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, color: "#2A2416" }}>✦ {c.capacite.nom}</div>
+            <div style={{ fontFamily: sans, fontSize: 10.5, color: "#3A3220", lineHeight: 1.35 }}>{c.capacite.effet}</div>
+          </div>
+        )}
+        {!compact && c.citation && (
+          <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 10.5, color: "#4A4228", textAlign: "center", padding: "3px 8px 3px" }}>« {c.citation} »</div>
+        )}
+      </div>
     </div>
   );
 }
 
-function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte, prenom, onDefinirPrenom, utilisateur, onAllerConnexion }) {
+function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte, onMajCadre, prenom, onDefinirPrenom, utilisateur, onAllerConnexion }) {
   const [confirme, setConfirme] = useState(false);
   const [ficheEtat, setFicheEtat] = useState(""); // "" | recherche | echec
   const [ficheErreur, setFicheErreur] = useState("");
@@ -1823,6 +1879,9 @@ function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte, prenom, on
   const [prenomSaisi, setPrenomSaisi] = useState(prenom || "");
   const [profilEtat, setProfilEtat] = useState(""); // "" | envoi | ok | echec
   const [profilErreur, setProfilErreur] = useState("");
+  const [cadrage, setCadrage] = useState(false);
+  const [cadreZone, setCadreZone] = useState({ x: 0.2, y: 0.2, w: 0.6, h: 0.6 });
+  const photoDetailUrl = useBlobUrl(obs.photo);
   const ligne = { display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 14 };
   const cle = { color: C.lichen, fontWeight: 600 };
   const val = { color: C.papier, textAlign: "right" };
@@ -1980,13 +2039,40 @@ function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte, prenom, on
         {obs.carte ? (
           <div>
             <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 10 }}>🎴 Carte de collection</div>
-            <div style={{ maxWidth: 300, margin: "0 auto" }}>
-              <CarteInsecte obs={obs} />
-            </div>
-            <button onClick={lancerCarte} disabled={carteEtat === "recherche"}
-              style={{ display: "block", margin: "12px auto 0", fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
-              {carteEtat === "recherche" ? "Reforge…" : "↻ Reforger la carte"}
-            </button>
+            {cadrage ? (
+              <div>
+                <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, marginBottom: 8, lineHeight: 1.45 }}>
+                  Déplace et redimensionne le cadre pour centrer l'insecte (le coin en bas à droite redimensionne) :
+                </div>
+                <SelecteurZone photoUrl={photoDetailUrl} zone={cadreZone} onChange={setCadreZone} />
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <Bouton onClick={() => setCadrage(false)} style={{ flex: 1 }}>Annuler</Bouton>
+                  <Bouton variante="primaire" onClick={() => { onMajCadre(obs.id, cadreZone); setCadrage(false); }} style={{ flex: 1 }}>✓ Valider le cadre</Bouton>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ maxWidth: 300, margin: "0 auto" }}>
+                  <CarteInsecte obs={obs} />
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 12, flexWrap: "wrap" }}>
+                  <button onClick={() => { setCadreZone(obs.cadreCarte || { x: 0.2, y: 0.2, w: 0.6, h: 0.6 }); setCadrage(true); }}
+                    style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
+                    🖼️ Cadrer l'insecte
+                  </button>
+                  {obs.cadreCarte && (
+                    <button onClick={() => onMajCadre(obs.id, null)}
+                      style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: "transparent", color: C.papierSombre, cursor: "pointer" }}>
+                      ✕ Retirer le cadre
+                    </button>
+                  )}
+                  <button onClick={lancerCarte} disabled={carteEtat === "recherche"}
+                    style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
+                    {carteEtat === "recherche" ? "Reforge…" : "↻ Reforger"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ) : identifie ? (
           <div>
@@ -2284,7 +2370,7 @@ function Aide({ onFermer, onImportTermine }) {
       </p>
       <div style={t}>🎴 Cartes de collection (mode jeu)</div>
       <p style={p}>
-        Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse, rareté) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. Retrouve toutes tes cartes dans l'onglet 🎴, et affronte l'IA en combat de stats (il te faut au moins 2 cartes). Chaque forge coûte un appel (~0,8 centime).
+        Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse, rareté) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Retrouve toutes tes cartes dans l'onglet 🎴, et affronte l'IA en combat de stats (il te faut au moins 2 cartes). Chaque forge coûte un appel (~0,8 centime).
       </p>
       <div style={t}>📝 Brouillon automatique</div>
       <p style={p}>
@@ -2812,6 +2898,14 @@ function BioDex() {
     setObservations((prev) => prev.map((o) => (o.id === id ? maj : o)));
   }
 
+  async function majCadre(id, cadreCarte) {
+    const obs = observations.find((o) => o.id === id);
+    if (!obs) return;
+    const maj = { ...obs, cadreCarte };
+    try { await dbAjouter(maj); } catch {}
+    setObservations((prev) => prev.map((o) => (o.id === id ? maj : o)));
+  }
+
   const aTrier = observations.filter((o) => o.statut === "a_trier");
   const triees = observations.filter((o) => o.statut !== "a_trier");
   const cartes = triees.filter((o) => o.carte);
@@ -2916,6 +3010,7 @@ function BioDex() {
           onFermer={() => { setSelectionId(null); setVue("collection"); }}
           onMajFiche={majFiche}
           onMajCarte={majCarte}
+          onMajCadre={majCadre}
           prenom={prenom}
           onDefinirPrenom={definirPrenom}
           utilisateur={utilisateur}
