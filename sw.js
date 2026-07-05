@@ -1,5 +1,5 @@
-// BioDex v0.30 — Service Worker
-const CACHE = "biodex-v0-30";
+// BioDex v0.31 — Service Worker
+const CACHE = "biodex-v0-31";
 const SHELL = [
   "./",
   "./index.html",
@@ -36,9 +36,15 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  // Météo : toujours le réseau (données du moment), pas de cache
-  if (url.hostname.includes("open-meteo.com")) return;
   if (e.request.method !== "GET") return;
+  // DONNÉES VIVANTES : toujours le réseau, jamais de cache.
+  // (mur commun, connexion, config, météo, recherche d'espèces)
+  if (
+    url.hostname.endsWith("supabase.co") ||            // base de données + auth + photos du mur
+    url.pathname.startsWith("/.netlify/functions/") || // config, identification IA
+    url.hostname.includes("open-meteo.com") ||          // météo du moment
+    url.hostname.includes("inaturalist.org")            // autocomplétion espèces
+  ) return;
   // App shell + CDN : cache d'abord, réseau en secours (puis mise en cache)
   e.respondWith(
     caches.match(e.request).then(
