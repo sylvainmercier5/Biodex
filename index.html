@@ -38,6 +38,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <!-- IA locale (facultative) : reconnaissance dans le navigateur, sans serveur ni clé -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
@@ -47,9 +48,21 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.24 (PWA) ============
+// ============ BioDex v0.25 (PWA) ============
 
-const VERSION = "v0.24";
+const VERSION = "v0.25";
+
+// ============================================================
+//   CONFIGURATION DU MUR COMMUN (Supabase)
+//   👉 Colle ta "publishable key" entre les guillemets ci-dessous.
+//      (celle qui commence par sb_publishable_...)
+//   Laisse SUPABASE_URL tel quel, c'est déjà ton projet.
+//   Si la clé reste vide, le mur commun s'affiche simplement désactivé.
+// ============================================================
+const SUPABASE_URL = "https://vnoagcaaeqzwnfylmqvn.supabase.co";
+const SUPABASE_KEY = "sb_publishable_AarVbc0R3hoSXFfHR3NfZw_JU5Ra3cH"; // ⬅️ COLLE TA CLÉ ICI (entre les guillemets)
+const MUR_ACTIF = SUPABASE_URL.length > 0 && SUPABASE_KEY.length > 0;
+
 
 const C = {
   fond: "#12160F",
@@ -399,6 +412,82 @@ const ELEMENTS = {
   Butineur: { emoji: "🌼", c: "#D9B441" },
 };
 function elementInfo(e) { return ELEMENTS[e] || { emoji: "🐞", c: "#94A97B" }; }
+
+// ---------- Mur commun (Supabase) ----------
+let _sb = null;
+function clientSupabase() {
+  if (!MUR_ACTIF) return null;
+  if (_sb) return _sb;
+  try {
+    if (window.supabase && window.supabase.createClient) {
+      _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      return _sb;
+    }
+  } catch {}
+  return null;
+}
+
+// Redimensionne + compresse une photo (blob) pour l'upload : max 1280px, JPEG qualité 0.7 (~léger)
+function compresserPourMur(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const maxDim = 1280;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
+        else if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
+        const cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        cv.getContext("2d").drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        cv.toBlob((b) => b ? resolve(b) : reject(new Error("compression")), "image/jpeg", 0.7);
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image")); };
+    img.src = url;
+  });
+}
+
+// Publie une observation sur le mur commun (upload photo + insertion du post)
+async function publierAuMur(obs, auteur) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Mur non configuré");
+  // 1) upload de la photo compressée
+  let photoUrl = "";
+  if (obs.photo) {
+    const compresse = await compresserPourMur(obs.photo);
+    const nomFichier = `post-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+    const { error: errUp } = await sb.storage.from("photos").upload(nomFichier, compresse, { contentType: "image/jpeg", upsert: false });
+    if (errUp) throw new Error("Envoi de la photo impossible");
+    const { data: pub } = sb.storage.from("photos").getPublicUrl(nomFichier);
+    photoUrl = pub ? pub.publicUrl : "";
+  }
+  // 2) insertion du post
+  const post = {
+    auteur: (auteur || "Anonyme").slice(0, 40),
+    espece: obs.nom || "",
+    espece_sci: obs.nomSci || "",
+    lieu: obs.biotope ? biotopeOf(obs.biotope).label : "",
+    lat: null, // on ne partage pas la position exacte sur le mur (vie privée)
+    lon: null,
+    photo_url: photoUrl,
+    note: (obs.notes || "").slice(0, 500),
+  };
+  const { error: errIns } = await sb.from("posts").insert(post);
+  if (errIns) throw new Error("Publication impossible");
+  return true;
+}
+
+// Charge les derniers posts du mur commun
+async function chargerMur(limite = 50) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Mur non configuré");
+  const { data, error } = await sb.from("posts").select("*").order("created_at", { ascending: false }).limit(limite);
+  if (error) throw new Error("Lecture du mur impossible");
+  return data || [];
+}
 
 // ---------- Sélecteur de zone (cadre tactile sur la photo) ----------
 function SelecteurZone({ photoUrl, zone, onChange }) {
@@ -1613,12 +1702,15 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
   );
 }
 
-function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte }) {
+function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte, prenom, onDefinirPrenom }) {
   const [confirme, setConfirme] = useState(false);
   const [ficheEtat, setFicheEtat] = useState(""); // "" | recherche | echec
   const [ficheErreur, setFicheErreur] = useState("");
   const [carteEtat, setCarteEtat] = useState(""); // "" | recherche | echec
   const [carteErreur, setCarteErreur] = useState("");
+  const [murEtat, setMurEtat] = useState(""); // "" | envoi | ok | echec
+  const [murErreur, setMurErreur] = useState("");
+  const [prenomSaisi, setPrenomSaisi] = useState(prenom || "");
   const ligne = { display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 14 };
   const cle = { color: C.lichen, fontWeight: 600 };
   const val = { color: C.papier, textAlign: "right" };
@@ -1651,6 +1743,22 @@ function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte }) {
     } catch (e) {
       setCarteErreur("Forge indisponible (réseau, ou service non configuré).");
       setCarteEtat("echec");
+    }
+  }
+
+  async function partagerAuMur() {
+    if (murEtat === "envoi") return;
+    const auteur = (prenomSaisi || "").trim();
+    if (!auteur) { setMurErreur("Indique ton prénom avant de partager."); return; }
+    onDefinirPrenom(auteur);
+    setMurEtat("envoi");
+    setMurErreur("");
+    try {
+      await publierAuMur(obs, auteur);
+      setMurEtat("ok");
+    } catch (e) {
+      setMurErreur(String(e.message || "Partage impossible") + ".");
+      setMurEtat("echec");
     }
   }
 
@@ -1767,6 +1875,33 @@ function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte }) {
           </div>
         )}
       </div>
+
+      {/* Partage au mur commun */}
+      {MUR_ACTIF && (
+        <div style={{ marginTop: 18 }}>
+          {murEtat === "ok" ? (
+            <div style={{ padding: "12px 14px", background: "linear-gradient(#2C3623, #232B1D)", border: `1px solid #A8863A`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: C.papier, textAlign: "center" }}>
+              ✅ Partagé sur le mur de la bande !
+            </div>
+          ) : (
+            <div style={{ padding: "12px 14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
+              <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 8 }}>🌐 Mur commun</div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+                <span style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, whiteSpace: "nowrap" }}>Ton prénom :</span>
+                <input value={prenomSaisi} onChange={(e) => setPrenomSaisi(e.target.value)} placeholder="ex : Sylvain" maxLength={40}
+                  style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
+              </div>
+              <Bouton variante="primaire" onClick={partagerAuMur} disabled={murEtat === "envoi"} style={{ width: "100%" }}>
+                {murEtat === "envoi" ? "📤 Partage en cours…" : "📤 Partager au mur"}
+              </Bouton>
+              {murErreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 8 }}>{murErreur}</div>}
+              <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 8, fontStyle: "italic" }}>
+                Ta photo, l'espèce et le biotope seront visibles par toute la bande. La position précise n'est pas affichée sur le mur.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ marginTop: 20 }}>
         {confirme ? (
@@ -1976,6 +2111,10 @@ function Aide({ onFermer, onImportTermine }) {
       <p style={p}>
         En saisissant le nom vernaculaire, l'appli propose des espèces correspondantes (base iNaturalist) : choisis-en une et le nom scientifique se remplit tout seul. Réseau requis ; sans lui, la saisie manuelle reste toujours possible. Les noms français ne couvrent pas 100% des espèces.
       </p>
+      <div style={t}>🌐 Mur commun (bêta)</div>
+      <p style={p}>
+        Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Indique ton prénom une fois, il est mémorisé. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone.
+      </p>
       <div style={t}>🎴 Cartes de collection (mode jeu)</div>
       <p style={p}>
         Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse, rareté) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. Retrouve toutes tes cartes dans l'onglet 🎴, et affronte l'IA en combat de stats (il te faut au moins 2 cartes). Chaque forge coûte un appel (~0,8 centime).
@@ -2002,6 +2141,79 @@ function Aide({ onFermer, onImportTermine }) {
 }
 
 // ---------- Application ----------
+// ---------- Mur commun (vue) ----------
+function MurCommun({ prenom, onDefinirPrenom }) {
+  const [posts, setPosts] = useState([]);
+  const [etat, setEtat] = useState("chargement"); // chargement | ok | echec | inactif
+  const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
+
+  async function rafraichir() {
+    if (!MUR_ACTIF) { setEtat("inactif"); return; }
+    setEtat("chargement");
+    try {
+      const p = await chargerMur(50);
+      setPosts(p);
+      setEtat("ok");
+    } catch (e) {
+      setEtat("echec");
+    }
+  }
+
+  useEffect(() => { rafraichir(); }, []);
+
+  if (!MUR_ACTIF) {
+    return (
+      <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", padding: "48px 24px", border: `1px solid ${C.bordure}`, borderRadius: 14, background: "linear-gradient(#191F15, #14180F)" }}>
+          <div style={{ fontSize: 38, marginBottom: 12 }}>🌐</div>
+          <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier, marginBottom: 6 }}>Mur commun non configuré</div>
+          <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.5 }}>La clé de connexion n'est pas encore renseignée dans l'application.</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      {/* Prénom de l'auteur */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, padding: "10px 12px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
+        <span style={{ fontFamily: sans, fontSize: 13, color: C.lichen, fontWeight: 600, whiteSpace: "nowrap" }}>Je poste en tant que</span>
+        <input value={saisiePrenom} onChange={(e) => setSaisiePrenom(e.target.value)} onBlur={() => onDefinirPrenom(saisiePrenom.trim())}
+          placeholder="ton prénom" maxLength={40}
+          style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.papier }}>🌐 Le mur de la bande</div>
+        <button onClick={rafraichir} style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>↻ Rafraîchir</button>
+      </div>
+
+      {etat === "chargement" && <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, fontStyle: "italic", padding: "20px 0", textAlign: "center" }}>Chargement du mur…</div>}
+      {etat === "echec" && <div style={{ fontFamily: sans, fontSize: 14, color: "#E8A88F", padding: "16px 0", textAlign: "center" }}>Impossible de charger le mur (réseau ?). Réessaie.</div>}
+      {etat === "ok" && posts.length === 0 && (
+        <div style={{ textAlign: "center", padding: "40px 24px", border: `1px solid ${C.bordure}`, borderRadius: 14, background: "linear-gradient(#191F15, #14180F)", fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.6 }}>
+          Le mur est encore vide.<br />Partage ta première observation depuis sa fiche (bouton « Partager au mur ») !
+        </div>
+      )}
+
+      {etat === "ok" && posts.map((p) => (
+        <div key={p.id} style={{ marginBottom: 14, border: `1px solid ${C.bordure}`, borderRadius: 12, overflow: "hidden", background: C.panneau, boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
+          {p.photo_url && <img src={p.photo_url} alt={p.espece} loading="lazy" style={{ width: "100%", maxHeight: 360, objectFit: "cover", display: "block" }} />}
+          <div style={{ padding: "10px 14px" }}>
+            <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier }}>{p.espece || "Spécimen non identifié"}</div>
+            {p.espece_sci && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambre }}>{p.espece_sci}</div>}
+            {p.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginTop: 6 }}>{p.note}</div>}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
+              <span>🐛 {p.auteur || "Anonyme"}{p.lieu ? ` · ${p.lieu}` : ""}</span>
+              <span>{p.created_at ? new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ---------- Mode jeu : cartes + combat solo ----------
 function ModeCartes({ cartes, onOuvrir }) {
   const [sousVue, setSousVue] = useState("galerie"); // galerie | combat
@@ -2162,6 +2374,13 @@ function BioDex() {
   const [erreurGlobale, setErreurGlobale] = useState("");
   const [alerteStockage, setAlerteStockage] = useState("");
   const [majDispo, setMajDispo] = useState(false);
+  const [prenom, setPrenom] = useState(() => { try { return localStorage.getItem("biodex_prenom") || ""; } catch { return ""; } });
+
+  function definirPrenom(p) {
+    const v = (p || "").trim();
+    setPrenom(v);
+    try { localStorage.setItem("biodex_prenom", v); } catch {}
+  }
 
   useEffect(() => {
     if (window.__biodexMaj && window.__biodexMaj.dispo) setMajDispo(true);
@@ -2311,14 +2530,14 @@ function BioDex() {
         </div>
       )}
 
-      {(vue === "collection" || vue === "carte" || vue === "stats" || vue === "atrier" || vue === "cartes") && (
-        <div style={{ padding: "14px 16px 0", maxWidth: 560, margin: "0 auto", boxSizing: "border-box", display: "flex", gap: 5 }}>
-          {[["collection", "🗃️"], ["atrier", "📥"], ["cartes", "🎴"], ["carte", "🗺️"], ["stats", "📊"]].map(([id, ico]) => {
-            const labels = { collection: "Collec.", atrier: "À trier", cartes: "Cartes", carte: "Carte", stats: "Stats" };
+      {(vue === "collection" || vue === "carte" || vue === "stats" || vue === "atrier" || vue === "cartes" || vue === "mur") && (
+        <div style={{ padding: "14px 16px 0", maxWidth: 560, margin: "0 auto", boxSizing: "border-box", display: "flex", gap: 4 }}>
+          {[["collection", "🗃️"], ["atrier", "📥"], ["cartes", "🎴"], ...(MUR_ACTIF ? [["mur", "🌐"]] : []), ["carte", "🗺️"], ["stats", "📊"]].map(([id, ico]) => {
+            const labels = { collection: "Collec.", atrier: "Trier", cartes: "Cartes", mur: "Mur", carte: "Carte", stats: "Stats" };
             return (
             <button key={id} className="bd-press" onClick={() => setVue(id)}
               style={{
-                flex: 1, position: "relative", fontFamily: sans, fontSize: 11.5, fontWeight: 700, padding: "10px 0",
+                flex: 1, position: "relative", fontFamily: sans, fontSize: 11, fontWeight: 700, padding: "10px 0",
                 borderRadius: 9, cursor: "pointer", letterSpacing: 0.2,
                 border: `1px solid ${vue === id ? "#A8863A" : C.bordure}`,
                 background: vue === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
@@ -2338,6 +2557,7 @@ function BioDex() {
         </div>
       )}
 
+      {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} />}
       {vue === "cartes" && (
         <ModeCartes cartes={cartes} onOuvrir={(id) => { setSelectionId(id); setVue("detail"); }} />
       )}
@@ -2361,6 +2581,8 @@ function BioDex() {
           onFermer={() => { setSelectionId(null); setVue("collection"); }}
           onMajFiche={majFiche}
           onMajCarte={majCarte}
+          prenom={prenom}
+          onDefinirPrenom={definirPrenom}
           onSupprimer={supprimerObservation} />
       )}
 

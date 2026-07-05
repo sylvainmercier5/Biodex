@@ -1,5 +1,5 @@
-// BioDex v0.24 — Service Worker
-const CACHE = "biodex-v0-24";
+// BioDex v0.25 — Service Worker
+const CACHE = "biodex-v0-25";
 const SHELL = [
   "./",
   "./index.html",
@@ -11,7 +11,8 @@ const SHELL = [
   "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css",
-  "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"
+  "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js",
+  "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"
 ];
 
 self.addEventListener("install", (e) => {
