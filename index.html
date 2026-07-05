@@ -35,6 +35,35 @@
   .bd-carte-legendaire { animation: bdLueurLeg 2.8s ease-in-out infinite; }
   @keyframes bdEtoile { 0%, 100% { opacity: 0; transform: scale(.4) rotate(0deg); } 50% { opacity: .95; transform: scale(1) rotate(24deg); } }
   .bd-etoile { position: absolute; pointer-events: none; color: #FFF6D8; text-shadow: 0 0 6px rgba(255,240,190,.9); animation: bdEtoile 2.6s ease-in-out infinite; }
+  /* Navigation basse */
+  .bd-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 900;
+    background: linear-gradient(rgba(18,22,15,.86), rgba(12,14,11,.97));
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(201,162,75,.28);
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+    display: flex; justify-content: center; }
+  .bd-nav-inner { display: flex; width: 100%; max-width: 560px; gap: 2px; }
+  .bd-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 6px 0 5px; border: none; background: transparent; cursor: pointer; position: relative;
+    border-radius: 12px; transition: background .18s ease, transform .18s ease; }
+  .bd-nav-item:active { transform: scale(.93); }
+  .bd-nav-ico { font-size: 21px; line-height: 1; transition: transform .18s ease; filter: grayscale(.55) brightness(.9); }
+  .bd-nav-item.actif { background: linear-gradient(#2C3623, #232B1D); box-shadow: inset 0 0 0 1px rgba(168,134,58,.55), 0 2px 8px rgba(0,0,0,.3); }
+  .bd-nav-item.actif .bd-nav-ico { transform: translateY(-1px) scale(1.12); filter: none; }
+  .bd-nav-lbl { font-size: 9.5px; font-weight: 700; letter-spacing: .3px; color: #6E6A57; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  .bd-nav-item.actif .bd-nav-lbl { color: #E4C878; }
+  .bd-nav-badge { position: absolute; top: 2px; right: calc(50% - 22px); min-width: 16px; height: 16px; line-height: 16px;
+    padding: 0 4px; box-sizing: border-box; border-radius: 8px; font-size: 9.5px; font-weight: 800; text-align: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+  /* Bouton flottant */
+  @keyframes bdFabPop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .bd-fab { position: fixed; right: 18px; bottom: calc(78px + env(safe-area-inset-bottom)); z-index: 890;
+    width: 58px; height: 58px; border-radius: 50%; border: 1px solid #F3E2A8; cursor: pointer;
+    background: radial-gradient(circle at 32% 28%, #E4C878 0%, #C9A24B 55%, #8A6E2E 100%);
+    color: #1E1A0E; font-size: 30px; font-weight: 700; line-height: 1;
+    box-shadow: 0 4px 16px rgba(0,0,0,.5), 0 0 22px rgba(201,162,75,.35);
+    animation: bdFabPop .25s ease both; transition: transform .15s ease; }
+  .bd-fab:active { transform: scale(.9); }
   /* épingle entomologique */
   .bd-pin-shaft { position: absolute; top: 3px; left: 50%; width: 2px; height: 26px; transform: translateX(-50%); background: linear-gradient(#E4C878, #8A6E2E); z-index: 2; border-radius: 2px; }
   .bd-pin-head { position: absolute; top: 0; left: 50%; width: 13px; height: 13px; transform: translateX(-50%); border-radius: 50%; z-index: 3; background: radial-gradient(circle at 35% 30%, #F3E2A8 0%, #C9A24B 45%, #7A5F27 100%); box-shadow: 0 2px 4px rgba(0,0,0,.55); }
@@ -55,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.33 (PWA) ============
+// ============ BioDex v0.34 (PWA) ============
 
-const VERSION = "v0.33";
+const VERSION = "v0.34";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -3035,10 +3064,10 @@ function BioDex() {
   function reinitFiltres() { setFBiotope(""); setFMois(""); setFTexte(""); }
 
   return (
-    <div style={{ minHeight: "100vh", background: C.fond, paddingBottom: 40 }}>
-      <header style={{ padding: "18px 16px 14px", borderBottom: "1px solid transparent", borderImage: `linear-gradient(90deg, ${C.bordure}, rgba(201,162,75,.35), ${C.bordure}) 1`, display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 560, margin: "0 auto" }}>
+    <div style={{ minHeight: "100vh", background: C.fond, paddingBottom: "calc(96px + env(safe-area-inset-bottom))" }}>
+      <header style={{ padding: "14px 16px 11px", borderBottom: "1px solid transparent", borderImage: `linear-gradient(90deg, ${C.bordure}, rgba(201,162,75,.35), ${C.bordure}) 1`, display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 560, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src="emblem.png" width="30" height="30" alt="" aria-hidden="true" style={{ flexShrink: 0, display: "block" }} />
+          <img src="emblem.png" width="32" height="32" alt="" aria-hidden="true" style={{ flexShrink: 0, display: "block", filter: "drop-shadow(0 0 6px rgba(201,162,75,.45))" }} />
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontFamily: serif, fontSize: 27, fontWeight: 600, color: C.papier, letterSpacing: 0.3 }}>Bio<span style={{ color: C.ambre }}>Dex</span></span>
             <span style={{ fontFamily: sans, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: C.papierSombre }}>{VERSION}</span>
@@ -3073,32 +3102,34 @@ function BioDex() {
         </div>
       )}
 
-      {(vue === "collection" || vue === "carte" || vue === "stats" || vue === "atrier" || vue === "cartes" || vue === "mur") && (
-        <div style={{ padding: "14px 16px 0", maxWidth: 560, margin: "0 auto", boxSizing: "border-box", display: "flex", gap: 4 }}>
-          {[["collection", "🗃️"], ["atrier", "📥"], ["cartes", "🎴"], ...(MUR_ACTIF ? [["mur", "🌐"]] : []), ["carte", "🗺️"], ["stats", "📊"]].map(([id, ico]) => {
-            const labels = { collection: "Collec.", atrier: "Trier", cartes: "Cartes", mur: "Mur", carte: "Carte", stats: "Stats" };
-            return (
-            <button key={id} className="bd-press" onClick={() => setVue(id)}
-              style={{
-                flex: 1, position: "relative", fontFamily: sans, fontSize: 11, fontWeight: 700, padding: "10px 0",
-                borderRadius: 9, cursor: "pointer", letterSpacing: 0.2,
-                border: `1px solid ${vue === id ? "#A8863A" : C.bordure}`,
-                background: vue === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
-                color: vue === id ? C.ambreClair : C.papierSombre,
-                boxShadow: vue === id ? "0 2px 6px rgba(0,0,0,.25)" : "none",
-              }}>
-              {ico} {labels[id]}
-              {id === "atrier" && aTrier.length > 0 && (
-                <span style={{ position: "absolute", top: 3, right: 6, minWidth: 16, height: 16, lineHeight: "16px", padding: "0 4px", boxSizing: "border-box", borderRadius: 8, background: C.rouge, color: "#fff", fontSize: 10, fontWeight: 700 }}>{aTrier.length}</span>
-              )}
-              {id === "cartes" && cartes.length > 0 && (
-                <span style={{ position: "absolute", top: 3, right: 4, minWidth: 16, height: 16, lineHeight: "16px", padding: "0 4px", boxSizing: "border-box", borderRadius: 8, background: C.ambre, color: C.encre, fontSize: 10, fontWeight: 700 }}>{cartes.length}</span>
-              )}
-            </button>
-            );
-          })}
-        </div>
-      )}
+      {(() => {
+        const navVisible = (vue === "collection" || vue === "carte" || vue === "stats" || vue === "atrier" || vue === "cartes" || vue === "mur");
+        if (!navVisible) return null;
+        const items = [["collection", "🗃️", "Boîte"], ["atrier", "📥", "Trier"], ["cartes", "🎴", "Cartes"], ...(MUR_ACTIF ? [["mur", "🌐", "Mur"]] : []), ["carte", "🗺️", "Carte"], ["stats", "📊", "Stats"]];
+        return (
+          <React.Fragment>
+            <nav className="bd-nav" aria-label="Navigation principale">
+              <div className="bd-nav-inner">
+                {items.map(([id, ico, label]) => (
+                  <button key={id} className={`bd-nav-item${vue === id ? " actif" : ""}`} onClick={() => setVue(id)} aria-label={label}>
+                    <span className="bd-nav-ico">{ico}</span>
+                    <span className="bd-nav-lbl">{label}</span>
+                    {id === "atrier" && aTrier.length > 0 && (
+                      <span className="bd-nav-badge" style={{ background: C.rouge, color: "#fff" }}>{aTrier.length}</span>
+                    )}
+                    {id === "cartes" && cartes.length > 0 && (
+                      <span className="bd-nav-badge" style={{ background: C.ambre, color: C.encre }}>{cartes.length}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </nav>
+            {vue === "collection" && (
+              <button className="bd-fab" onClick={() => setVue("nouvelle")} aria-label="Nouvelle observation" title="Nouvelle observation">＋</button>
+            )}
+          </React.Fragment>
+        );
+      })()}
 
       {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} />}
       {vue === "cartes" && (
@@ -3135,12 +3166,12 @@ function BioDex() {
 
       {vue === "collection" && (
         <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-            <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre }}>
-              <span style={{ color: C.ambre, fontWeight: 800, fontSize: 18 }}>{triees.length}</span> spécimen{triees.length > 1 ? "s" : ""}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
+            <span style={{ fontFamily: serif, color: C.ambre, fontWeight: 700, fontSize: 26 }}>{triees.length}</span>
+            <span style={{ fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>
+              spécimen{triees.length > 1 ? "s" : ""} épinglé{triees.length > 1 ? "s" : ""}
               {nbBiotopes > 0 && <span> · {nbBiotopes} biotope{nbBiotopes > 1 ? "s" : ""}</span>}
-            </div>
-            <Bouton variante="primaire" onClick={() => setVue("nouvelle")}>+ Nouvelle observation</Bouton>
+            </span>
           </div>
 
           {triees.length > 1 && (
@@ -3222,7 +3253,7 @@ function BioDex() {
             <div style={{ textAlign: "center", padding: "56px 24px", border: `1px solid ${C.bordure}`, borderRadius: 14, background: "linear-gradient(#191F15, #14180F)", boxShadow: "0 2px 10px rgba(0,0,0,.25) inset" }}>
               <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.9 }}>🦋</div>
               <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier, marginBottom: 6 }}>Le tiroir est vide</div>
-              <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.5 }}>Épingle ta première observation pour commencer la collection.</div>
+              <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.5 }}>Appuie sur le bouton doré <b style={{ color: C.ambre }}>＋</b> en bas à droite pour épingler ta première observation.</div>
             </div>
           )}
 
