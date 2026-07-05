@@ -48,9 +48,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.29 (PWA) ============
+// ============ BioDex v0.30 (PWA) ============
 
-const VERSION = "v0.29";
+const VERSION = "v0.30";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -575,6 +575,28 @@ async function chargerMur(limite = 50) {
   const { data, error } = await sb.from("posts").select("*").order("created_at", { ascending: false }).limit(limite);
   if (error) throw new Error("Lecture du mur impossible");
   return data || [];
+}
+
+// Supprime un post du mur (et sa photo associée dans le stockage, pour ne pas encombrer)
+async function supprimerPost(post) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Mur non configuré");
+  // 1) supprimer la photo du bucket si présente
+  if (post.photo_url) {
+    try {
+      // extrait le nom de fichier après ".../photos/"
+      const marqueur = "/photos/";
+      const idx = post.photo_url.indexOf(marqueur);
+      if (idx !== -1) {
+        const nomFichier = decodeURIComponent(post.photo_url.slice(idx + marqueur.length).split("?")[0]);
+        await sb.storage.from("photos").remove([nomFichier]);
+      }
+    } catch { /* on continue même si la photo ne peut pas être retirée */ }
+  }
+  // 2) supprimer la ligne du post
+  const { error } = await sb.from("posts").delete().eq("id", post.id);
+  if (error) throw new Error("Suppression impossible");
+  return true;
 }
 
 // ---------- Sélecteur de zone (cadre tactile sur la photo) ----------
@@ -2387,6 +2409,21 @@ function MurCommun({ prenom, onDefinirPrenom }) {
   const [posts, setPosts] = useState([]);
   const [etat, setEtat] = useState("chargement"); // chargement | ok | echec | inactif
   const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
+  const [confirmSuppr, setConfirmSuppr] = useState(null); // id du post en attente de confirmation
+  const [supprEnCours, setSupprEnCours] = useState(null); // id du post en cours de suppression
+
+  async function lancerSuppression(post) {
+    setSupprEnCours(post.id);
+    try {
+      await supprimerPost(post);
+      setPosts((prev) => prev.filter((x) => x.id !== post.id));
+    } catch (e) {
+      // en cas d'échec, on rafraîchit pour refléter l'état réel
+      rafraichir(true);
+    }
+    setSupprEnCours(null);
+    setConfirmSuppr(null);
+  }
 
   async function rafraichir(silencieux = false) {
     if (!MUR_ACTIF) { setEtat("inactif"); return; }
@@ -2459,6 +2496,22 @@ function MurCommun({ prenom, onDefinirPrenom }) {
               <span>🐛 {p.auteur || "Anonyme"}{p.lieu ? ` · ${p.lieu}` : ""}</span>
               <span>{p.created_at ? new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
             </div>
+            {confirmSuppr === p.id ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.bordure}` }}>
+                <span style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, flex: 1 }}>Supprimer cette publication ?</span>
+                <button onClick={() => setConfirmSuppr(null)} disabled={supprEnCours === p.id}
+                  style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>Non</button>
+                <button onClick={() => lancerSuppression(p)} disabled={supprEnCours === p.id}
+                  style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, cursor: "pointer" }}>
+                  {supprEnCours === p.id ? "Suppression…" : "Oui, supprimer"}</button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                <button onClick={() => setConfirmSuppr(p.id)}
+                  style={{ fontFamily: sans, fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "none", background: "transparent", color: C.papierSombre, cursor: "pointer" }}
+                  title="Supprimer cette publication" aria-label="Supprimer">🗑️</button>
+              </div>
+            )}
           </div>
         </div>
       ))}
