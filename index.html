@@ -84,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.34 (PWA) ============
+// ============ BioDex v0.35 (PWA) ============
 
-const VERSION = "v0.34";
+const VERSION = "v0.35";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -2480,7 +2480,7 @@ function Aide({ onFermer, onImportTermine }) {
       </p>
       <div style={t}>📲 Installer l'appli</div>
       <p style={p}>
-        Dans le menu de ton navigateur, choisis « Ajouter à l'écran d'accueil » (ou « Installer l'application ») : BioDex se lance alors comme une vraie appli, et fonctionne même hors connexion — pratique en pleine nature. Seule la météo auto nécessite du réseau. Quand une nouvelle version est déployée, une bannière « Nouvelle version disponible » apparaît en haut à l'ouverture : touche « Mettre à jour » et l'appli se recharge à jour, sans manipulation de cache.
+        Quand une bannière « Installe BioDex » apparaît en haut, touche « Installer » : c'est le plus simple. Sinon, dans le menu de ton navigateur, choisis « Ajouter à l'écran d'accueil » (ou « Installer l'application »). BioDex se lance alors comme une vraie appli, et fonctionne même hors connexion — pratique en pleine nature. Seule la météo auto nécessite du réseau. Quand une nouvelle version est déployée, une bannière « Nouvelle version disponible » apparaît en haut à l'ouverture : touche « Mettre à jour » et l'appli se recharge à jour, sans manipulation de cache.
       </p>
       <div style={t}>💾 Stockage & sauvegarde</div>
       <p style={p}>
@@ -2909,6 +2909,38 @@ function BioDex() {
   const [erreurGlobale, setErreurGlobale] = useState("");
   const [alerteStockage, setAlerteStockage] = useState("");
   const [majDispo, setMajDispo] = useState(false);
+  const [installable, setInstallable] = useState(false);
+  const [installRefusee, setInstallRefusee] = useState(() => { try { return localStorage.getItem("biodex_install_refusee") === "1"; } catch { return false; } });
+
+  useEffect(() => {
+    // Déjà installée (mode standalone) : rien à proposer
+    const standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+    if (standalone) return;
+    if (window.__biodexInstall) setInstallable(true);
+    const surInstallable = () => setInstallable(true);
+    const surInstalle = () => setInstallable(false);
+    window.addEventListener("bd-installable", surInstallable);
+    window.addEventListener("bd-installe", surInstalle);
+    return () => {
+      window.removeEventListener("bd-installable", surInstallable);
+      window.removeEventListener("bd-installe", surInstalle);
+    };
+  }, []);
+
+  async function lancerInstallation() {
+    const ev = window.__biodexInstall;
+    if (!ev) return;
+    try {
+      ev.prompt();
+      const choix = await ev.userChoice;
+      if (choix && choix.outcome === "accepted") setInstallable(false);
+    } catch {}
+  }
+
+  function refuserInstallation() {
+    setInstallRefusee(true);
+    try { localStorage.setItem("biodex_install_refusee", "1"); } catch {}
+  }
   const [utilisateur, setUtilisateur] = useState(null);
 
   useEffect(() => {
@@ -3102,6 +3134,22 @@ function BioDex() {
         </div>
       )}
 
+      {installable && !installRefusee && !majDispo && (
+        <div style={{ maxWidth: 560, margin: "0 auto", padding: "10px 16px 0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid ${C.bordure}`, boxShadow: "0 2px 8px rgba(0,0,0,.3)" }}>
+            <span style={{ fontSize: 20, flexShrink: 0 }}>📲</span>
+            <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, flex: 1, lineHeight: 1.4 }}>
+              Installe BioDex sur ton écran d'accueil, comme une vraie appli !
+            </span>
+            <button onClick={refuserInstallation} aria-label="Plus tard"
+              style={{ background: "none", border: "none", color: C.papierSombre, fontFamily: sans, fontSize: 12, cursor: "pointer", padding: "4px 6px", flexShrink: 0 }}>
+              Plus tard
+            </button>
+            <Bouton variante="primaire" onClick={lancerInstallation}>Installer</Bouton>
+          </div>
+        </div>
+      )}
+
       {(() => {
         const navVisible = (vue === "collection" || vue === "carte" || vue === "stats" || vue === "atrier" || vue === "cartes" || vue === "mur");
         if (!navVisible) return null;
@@ -3284,6 +3332,20 @@ function BioDex() {
     </div>
   );
 }
+
+// ---------- Installation PWA (bouton "Installer l'appli") ----------
+// Chrome Android propose l'installation via un événement qu'on capture ici,
+// pour pouvoir la déclencher nous-mêmes avec un bouton dans l'appli.
+window.__biodexInstall = null;
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  window.__biodexInstall = e;
+  window.dispatchEvent(new Event("bd-installable"));
+});
+window.addEventListener("appinstalled", () => {
+  window.__biodexInstall = null;
+  window.dispatchEvent(new Event("bd-installe"));
+});
 
 // On récupère d'abord la config (Supabase), puis on monte l'appli.
 // Ainsi MUR_ACTIF est correct dès le premier rendu.
