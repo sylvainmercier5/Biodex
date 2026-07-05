@@ -1,5 +1,5 @@
-// BioDex v0.28 — Service Worker
-const CACHE = "biodex-v0-28";
+// BioDex v0.29 — Service Worker
+const CACHE = "biodex-v0-29";
 const SHELL = [
   "./",
   "./index.html",

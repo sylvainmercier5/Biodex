@@ -48,20 +48,36 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.28 (PWA) ============
+// ============ BioDex v0.29 (PWA) ============
 
-const VERSION = "v0.28";
+const VERSION = "v0.29";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
-//   👉 Colle ta "publishable key" entre les guillemets ci-dessous.
-//      (celle qui commence par sb_publishable_...)
-//   Laisse SUPABASE_URL tel quel, c'est déjà ton projet.
-//   Si la clé reste vide, le mur commun s'affiche simplement désactivé.
+//   La config (URL + clé publishable) est récupérée au démarrage depuis
+//   la fonction serveur /.netlify/functions/config, qui les lit dans les
+//   variables d'environnement Netlify. Plus besoin de coller la clé ici.
+//   (Repli possible : on peut renseigner les valeurs en dur ci-dessous
+//    pour un test local, mais en production ce sont les variables Netlify.)
 // ============================================================
-const SUPABASE_URL = "https://vnoagcaaeqzwnfylmqvn.supabase.co";
-const SUPABASE_KEY = "sb_publishable_AarVbc0R3hoSXFfHR3NfZw_JU5Ra3cH"; // ⬅️ COLLE TA CLÉ ICI (entre les guillemets)
-const MUR_ACTIF = SUPABASE_URL.length > 0 && SUPABASE_KEY.length > 0;
+let SUPABASE_URL = "";
+let SUPABASE_KEY = "";
+let MUR_ACTIF = false;
+
+// Récupère la config depuis la fonction serveur. Renseigne les variables ci-dessus.
+async function chargerConfig() {
+  try {
+    const r = await fetch("/.netlify/functions/config", { cache: "no-store" });
+    if (r.ok) {
+      const j = await r.json();
+      SUPABASE_URL = j.supabaseUrl || "";
+      SUPABASE_KEY = j.supabaseKey || "";
+      MUR_ACTIF = SUPABASE_URL.length > 0 && SUPABASE_KEY.length > 0;
+    }
+  } catch {
+    // Pas de config disponible : le mur reste simplement désactivé.
+  }
+}
 
 
 const C = {
@@ -2975,7 +2991,12 @@ function BioDex() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<BioDex />);
+// On récupère d'abord la config (Supabase), puis on monte l'appli.
+// Ainsi MUR_ACTIF est correct dès le premier rendu.
+(async function demarrer() {
+  await chargerConfig();
+  ReactDOM.createRoot(document.getElementById("root")).render(<BioDex />);
+})();
 
 // Service worker (mode hors-ligne + installation + détection de mise à jour)
 window.__biodexMaj = { dispo: false, registration: null };
