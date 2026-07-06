@@ -84,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.43 (PWA) ============
+// ============ BioDex v0.44 (PWA) ============
 
-const VERSION = "v0.43";
+const VERSION = "v0.44";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -2606,6 +2606,21 @@ function Carte({ observations, onOuvrirFiche }) {
 }
 
 // ---------- Vue : aide ----------
+// ---------- Section pliable (accordéon du guide) ----------
+function SectionPliable({ titre, ouvertParDefaut, children }) {
+  const [ouvert, setOuvert] = useState(!!ouvertParDefaut);
+  return (
+    <div style={{ marginBottom: 10, border: `1px solid ${C.bordure}`, borderRadius: 10, overflow: "hidden", background: C.panneau }}>
+      <button onClick={() => setOuvert((v) => !v)}
+        style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "13px 15px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+        <span style={{ fontFamily: sans, fontSize: 15.5, fontWeight: 700, color: C.papier }}>{titre}</span>
+        <span style={{ fontFamily: sans, fontSize: 13, color: C.ambre, transform: ouvert ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▶</span>
+      </button>
+      {ouvert && <div style={{ padding: "0 15px 12px" }}>{children}</div>}
+    </div>
+  );
+}
+
 function Aide({ onFermer, onImportTermine }) {
   const p = { fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.6, marginBottom: 12 };
   const t = { fontFamily: sans, fontSize: 15, fontWeight: 800, color: C.ambre, margin: "18px 0 6px" };
@@ -2674,107 +2689,119 @@ function Aide({ onFermer, onImportTermine }) {
       <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Retour</Bouton>
       <h2 style={{ fontFamily: serif, color: C.papier, fontSize: 24, margin: "4px 0 10px" }}>BioDex — le guide</h2>
       <p style={p}>
-        BioDex est ton carnet de terrain entomologique : chaque insecte croisé devient un spécimen épinglé dans ta boîte de collection virtuelle, avec sa photo, son biotope, sa position GPS et la météo du moment.
+        BioDex est ton carnet de terrain entomologique : chaque insecte croisé devient un spécimen épinglé dans ta boîte de collection virtuelle, avec sa photo, son biotope, sa position GPS et la météo du moment. Touche une catégorie ci-dessous pour la déplier.
       </p>
-      <div style={t}>📍 Position (même sans GPS)</div>
-      <p style={p}>
-        Si tu importes une photo depuis ta galerie (sans coordonnées) ou si le GPS n'a rien capté, tu peux placer le lieu à la main : dans le bloc position, touche « Placer sur la carte » et pointe l'endroit de l'observation. Pratique pour situer une trouvaille faite sans réseau ou importée après coup.
-      </p>
-      <div style={t}>📷 La caméra (zoom & netteté)</div>
-      <p style={p}>
-        Dans la caméra intégrée : touche l'écran à l'endroit de l'insecte pour faire la mise au point, utilise le curseur 🔍 pour zoomer, et le bouton 🔦 pour la torche (pratique en macro ou sous les feuilles). Ces contrôles dépendent de ton téléphone : s'ils n'apparaissent pas, c'est que ton appareil ne les permet pas dans le navigateur — dans ce cas, photographie avec ton appli photo native puis passe par la galerie.
-      </p>
-      <div style={t}>📥 À trier (capture rapide)</div>
-      <p style={p}>
-        Sur le terrain, l'onglet « À trier » te laisse photographier à la chaîne sans rien remplir : la position GPS et la météo sont figées au moment de la prise. Plus tard, au calme, touche une photo en attente pour compléter l'identification et la classer dans ta collection. Si tu shootes hors réseau, la position est quand même figée et la météo est rattrapée (au bon endroit) au moment du tri.
-      </p>
-      <div style={t}>➕ Ajouter une observation</div>
-      <p style={p}>
-        Appuie sur « Nouvelle observation », utilise « Appareil photo » pour capturer le spécimen sans quitter l'appli, ou « Galerie » pour reprendre un cliché existant. Astuce : pour les macros de haute qualité (zoom, mise au point fine), photographie d'abord avec ton appli photo native puis récupère le cliché via « Galerie ». La position GPS est capturée automatiquement si tu l'autorises, et la météo (ciel + température) est récupérée toute seule à partir de ta position — tu peux la corriger à la main si besoin. Seule la photo est obligatoire.
-      </p>
-      <div style={t}>🗃️ Ta collection</div>
-      <p style={p}>
-        La grille présente tes spécimens comme dans une boîte entomologique, avec un menu de tri (récentes, anciennes, nom, biotope) dont le choix est mémorisé. Touche une carte pour la fiche complète — le lien 🗺️ de la position ouvre le point exact sur OpenStreetMap, et le bouton de suppression se trouve en bas de la fiche.
-      </p>
-      <div style={t}>🔍 Filtres & recherche</div>
-      <p style={p}>
-        Dans la collection, la barre de recherche retrouve un spécimen par son nom (français ou latin). Le bouton « Filtres » affine par biotope et par période. Le tri (récentes, anciennes, nom, biotope) reste dispo au-dessus.
-      </p>
-      <div style={t}>📊 Statistiques</div>
-      <p style={p}>
-        L'onglet Stats résume ta collection : nombre de spécimens, combien sont identifiés et localisés, la répartition par biotope et ton activité des derniers mois.
-      </p>
-      <div style={t}>🗺️ La carte</div>
-      <p style={p}>
-        L'onglet Carte affiche toutes tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. La carte nécessite du réseau pour charger le fond de plan.
-      </p>
-      <div style={t}>📖 Mur : posts détaillés</div>
-      <p style={p}>
-        Sur le mur commun, touche n'importe quelle publication pour l'ouvrir en grand : tu y retrouves l'espèce, son nom latin, le biotope, la note d'observation, l'auteur et la date, plus un lien pour te renseigner sur l'espèce via iNaturalist. Une façon d'apprendre en parcourant les trouvailles de la bande.
-      </p>
-      <div style={t}>🔥 Réactions</div>
-      <p style={p}>
-        Sous chaque publication du mur, quatre réactions permettent d'encourager les trouvailles de la bande : 🔥 belle trouvaille, 😍 magnifique, 🤯 incroyable ou rare, 🔍 bien observé. Touche une réaction pour l'ajouter — les compteurs sont partagés par tous.
-      </p>
-      <div style={t}>💡 Boîte à idées</div>
-      <p style={p}>
-        Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Les meilleures finiront peut-être dans une prochaine version !
-      </p>
-      <div style={t}>📲 Installer l'appli</div>
-      <p style={p}>
-        Quand une bannière « Installe BioDex » apparaît en haut, touche « Installer » : c'est le plus simple. Sinon, dans le menu de ton navigateur, choisis « Ajouter à l'écran d'accueil » (ou « Installer l'application »). BioDex se lance alors comme une vraie appli, et fonctionne même hors connexion — pratique en pleine nature. Seule la météo auto nécessite du réseau. Quand une nouvelle version est déployée, une bannière « Nouvelle version disponible » apparaît en haut à l'ouverture : touche « Mettre à jour » et l'appli se recharge à jour, sans manipulation de cache.
-      </p>
-      <div style={t}>💾 Stockage & sauvegarde</div>
-      <p style={p}>
-        Tes observations sont sauvegardées sur ton téléphone (photos jusqu'à 2560 px). Elles ne sont pas synchronisées entre appareils : pense à exporter régulièrement une sauvegarde et à la mettre à l'abri (Drive, PC…). L'import restaure une sauvegarde — les observations déjà présentes sont conservées, les doublons écrasés proprement.
-      </p>
-      <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
-        <Bouton variante="primaire" onClick={exporter} style={{ flex: 1 }}>📤 Exporter</Bouton>
-        <div style={{ position: "relative", flex: 1 }}>
-          <Bouton onClick={() => {}} style={{ width: "100%" }}>📥 Importer</Bouton>
-          <input type="file" accept=".json,application/json" onChange={importer}
-            style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }} />
+
+      <SectionPliable titre="🔎 Observer & identifier" ouvertParDefaut>
+        <div style={t}>➕ Ajouter une observation</div>
+        <p style={p}>
+          Appuie sur « Nouvelle observation », utilise « Appareil photo » pour capturer le spécimen sans quitter l'appli, ou « Galerie » pour reprendre un cliché existant. Astuce : pour les macros de haute qualité (zoom, mise au point fine), photographie d'abord avec ton appli photo native puis récupère le cliché via « Galerie ». La position GPS est capturée automatiquement si tu l'autorises, et la météo (ciel + température) est récupérée toute seule à partir de ta position — tu peux la corriger à la main si besoin. Seule la photo est obligatoire.
+        </p>
+        <div style={t}>📷 La caméra (zoom & netteté)</div>
+        <p style={p}>
+          Dans la caméra intégrée : touche l'écran à l'endroit de l'insecte pour faire la mise au point, utilise le curseur 🔍 pour zoomer, et le bouton 🔦 pour la torche (pratique en macro ou sous les feuilles). Ces contrôles dépendent de ton téléphone : s'ils n'apparaissent pas, c'est que ton appareil ne les permet pas dans le navigateur — dans ce cas, photographie avec ton appli photo native puis passe par la galerie.
+        </p>
+        <div style={t}>📍 Position (même sans GPS)</div>
+        <p style={p}>
+          Si tu importes une photo depuis ta galerie (sans coordonnées) ou si le GPS n'a rien capté, tu peux placer le lieu à la main : dans le bloc position, touche « Placer sur la carte » et pointe l'endroit de l'observation. Pratique pour situer une trouvaille faite sans réseau ou importée après coup.
+        </p>
+        <div style={t}>📥 À trier (capture rapide)</div>
+        <p style={p}>
+          Sur le terrain, l'onglet « À trier » te laisse photographier à la chaîne sans rien remplir : la position GPS et la météo sont figées au moment de la prise. Plus tard, au calme, touche une photo en attente pour compléter l'identification et la classer dans ta collection. Si tu shootes hors réseau, la position est quand même figée et la météo est rattrapée (au bon endroit) au moment du tri.
+        </p>
+        <div style={t}>✨ Identification précise (Claude)</div>
+        <p style={p}>
+          Le bouton « Identifier (précis) » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un niveau de confiance. Pour affiner, l'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de jauge claire (Fiable / Probable / À vérifier), pour savoir d'un coup d'œil à quel point se fier à la proposition. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Combinable avec le ciblage de zone. Nécessite le réseau. Chaque identification coûte une fraction de centime.
+        </p>
+        <div style={t}>🔬 Identification (test local)</div>
+        <p style={p}>
+          Après avoir ajouté une photo, appuie sur « Identifier (test local) » : une IA tourne directement dans ton navigateur (aucune donnée envoyée, aucun coût). C'est un modèle généraliste qui ne reconnaît qu'une trentaine de grands groupes (coccinelle, abeille, libellule, mante, araignée…) et reste au niveau du groupe, jamais de l'espèce précise. Astuce : avec « 🎯 Cibler la zone », dessine un cadre sur l'insecte pour que l'IA ignore le décor — ça améliore nettement le résultat quand la bête est petite dans l'image. Vois-le comme un jeu : parfois bluffant, souvent approximatif. Premier lancement : téléchargement du modèle (~15 Mo), réseau requis.
+        </p>
+        <div style={t}>✍️ Noms & autocomplétion</div>
+        <p style={p}>
+          En saisissant le nom vernaculaire, l'appli propose des espèces correspondantes (base iNaturalist) : choisis-en une et le nom scientifique se remplit tout seul. Réseau requis ; sans lui, la saisie manuelle reste toujours possible. Les noms français ne couvrent pas 100% des espèces.
+        </p>
+      </SectionPliable>
+
+      <SectionPliable titre="🗃️ Ma collection">
+        <div style={t}>🗃️ Ta collection</div>
+        <p style={p}>
+          La grille présente tes spécimens comme dans une boîte entomologique, avec un menu de tri (récentes, anciennes, nom, biotope) dont le choix est mémorisé. Touche une carte pour la fiche complète — le lien 🗺️ de la position ouvre le point exact sur OpenStreetMap, et le bouton de suppression se trouve en bas de la fiche.
+        </p>
+        <div style={t}>🔍 Filtres & recherche</div>
+        <p style={p}>
+          Dans la collection, la barre de recherche retrouve un spécimen par son nom (français ou latin). Le bouton « Filtres » affine par biotope et par période. Le tri (récentes, anciennes, nom, biotope) reste dispo au-dessus.
+        </p>
+        <div style={t}>📊 Statistiques</div>
+        <p style={p}>
+          L'onglet Stats résume ta collection : nombre de spécimens, combien sont identifiés et localisés, la répartition par biotope et ton activité des derniers mois.
+        </p>
+        <div style={t}>🗺️ La carte</div>
+        <p style={p}>
+          L'onglet Carte affiche toutes tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. La carte nécessite du réseau pour charger le fond de plan.
+        </p>
+        <div style={t}>📝 Brouillon automatique</div>
+        <p style={p}>
+          Tes saisies en cours (nom, biotope, notes…) sont mémorisées : si l'appli se ferme avant que tu épingles, elle te propose de reprendre le brouillon à la réouverture. La photo, elle, n'est pas conservée dans le brouillon — à reprendre si besoin.
+        </p>
+      </SectionPliable>
+
+      <SectionPliable titre="🌐 La communauté">
+        <div style={t}>👤 Connexion (facultative)</div>
+        <p style={p}>
+          Le bouton 👤 en haut permet de te connecter avec ton email : tu reçois un lien magique à cliquer, sans mot de passe. La connexion est facultative aujourd'hui ; elle prépare les fonctions sociales à venir (profil, collections des autres, classement). Sans compte, l'appli fonctionne normalement.
+        </p>
+        <div style={t}>🌐 Mur commun</div>
+        <p style={p}>
+          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Indique ton prénom une fois, il est mémorisé. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
+        </p>
+        <div style={t}>📖 Posts détaillés</div>
+        <p style={p}>
+          Sur le mur commun, touche n'importe quelle publication pour l'ouvrir en grand : tu y retrouves l'espèce, son nom latin, le biotope, la note d'observation, l'auteur et la date, plus un lien pour te renseigner sur l'espèce via iNaturalist. Une façon d'apprendre en parcourant les trouvailles de la bande.
+        </p>
+        <div style={t}>🔥 Réactions</div>
+        <p style={p}>
+          Sous chaque publication du mur, quatre réactions permettent d'encourager les trouvailles de la bande : 🔥 belle trouvaille, 😍 magnifique, 🤯 incroyable ou rare, 🔍 bien observé. Touche une réaction pour l'ajouter — les compteurs sont partagés par tous.
+        </p>
+        <div style={t}>🏆 Profil de collectionneur</div>
+        <p style={p}>
+          Une fois connecté, depuis une observation identifiée, « Ajouter cette espèce à mon profil » l'ajoute à ton profil public (espèce, date, biotope — jamais la photo ni la position). Retrouve et gère la liste dans l'écran 👤. C'est la base pour te comparer à la bande (classement à venir).
+        </p>
+        <div style={t}>💡 Boîte à idées</div>
+        <p style={p}>
+          Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Les meilleures finiront peut-être dans une prochaine version !
+        </p>
+      </SectionPliable>
+
+      <SectionPliable titre="🎴 Jeu & cartes">
+        <div style={t}>🎴 Cartes de collection</div>
+        <p style={p}>
+          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse, rareté) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Retrouve toutes tes cartes dans l'onglet 🎴, et affronte l'IA en combat de stats (il te faut au moins 2 cartes). Chaque forge coûte un appel (~0,8 centime).
+        </p>
+      </SectionPliable>
+
+      <SectionPliable titre="⚙️ Réglages & appli">
+        <div style={t}>📲 Installer l'appli</div>
+        <p style={p}>
+          Quand une bannière « Installe BioDex » apparaît en haut, touche « Installer » : c'est le plus simple. Sinon, dans le menu de ton navigateur, choisis « Ajouter à l'écran d'accueil » (ou « Installer l'application »). BioDex se lance alors comme une vraie appli, et fonctionne même hors connexion — pratique en pleine nature. Seule la météo auto nécessite du réseau. Quand une nouvelle version est déployée, une bannière « Nouvelle version disponible » apparaît en haut à l'ouverture : touche « Mettre à jour » et l'appli se recharge à jour, sans manipulation de cache.
+        </p>
+        <div style={t}>💾 Stockage & sauvegarde</div>
+        <p style={p}>
+          Tes observations sont sauvegardées sur ton téléphone (photos jusqu'à 2560 px). Elles ne sont pas synchronisées entre appareils : pense à exporter régulièrement une sauvegarde et à la mettre à l'abri (Drive, PC…). L'import restaure une sauvegarde — les observations déjà présentes sont conservées, les doublons écrasés proprement.
+        </p>
+        <div style={{ display: "flex", gap: 10, marginBottom: 8, marginTop: 10 }}>
+          <Bouton variante="primaire" onClick={exporter} style={{ flex: 1 }}>📤 Exporter</Bouton>
+          <div style={{ position: "relative", flex: 1 }}>
+            <Bouton onClick={() => {}} style={{ width: "100%" }}>📥 Importer</Bouton>
+            <input type="file" accept=".json,application/json" onChange={importer}
+              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }} />
+          </div>
         </div>
-      </div>
-      {exportEtat && <p style={{ ...p, color: C.lichen, marginBottom: 4 }}>{exportEtat}</p>}
-      {importEtat && <p style={{ ...p, color: C.lichen, marginBottom: 4 }}>{importEtat}</p>}
-      <div style={t}>✍️ Noms & autocomplétion</div>
-      <p style={p}>
-        En saisissant le nom vernaculaire, l'appli propose des espèces correspondantes (base iNaturalist) : choisis-en une et le nom scientifique se remplit tout seul. Réseau requis ; sans lui, la saisie manuelle reste toujours possible. Les noms français ne couvrent pas 100% des espèces.
-      </p>
-      <div style={t}>🏆 Profil de collectionneur</div>
-      <p style={p}>
-        Une fois connecté, depuis une observation identifiée, « Ajouter cette espèce à mon profil » l'ajoute à ton profil public (espèce, date, biotope — jamais la photo ni la position). Retrouve et gère la liste dans l'écran 👤. C'est la base pour te comparer à la bande (classement à venir).
-      </p>
-      <div style={t}>👤 Connexion (facultative)</div>
-      <p style={p}>
-        Le bouton 👤 en haut permet de te connecter avec ton email : tu reçois un lien magique à cliquer, sans mot de passe. La connexion est facultative aujourd'hui ; elle prépare les fonctions sociales à venir (profil, collections des autres, classement). Sans compte, l'appli fonctionne normalement.
-      </p>
-      <div style={t}>🌐 Mur commun (bêta)</div>
-      <p style={p}>
-        Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Indique ton prénom une fois, il est mémorisé. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone.
-      </p>
-      <div style={t}>🎴 Cartes de collection (mode jeu)</div>
-      <p style={p}>
-        Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse, rareté) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Retrouve toutes tes cartes dans l'onglet 🎴, et affronte l'IA en combat de stats (il te faut au moins 2 cartes). Chaque forge coûte un appel (~0,8 centime).
-      </p>
-      <div style={t}>📝 Brouillon automatique</div>
-      <p style={p}>
-        Tes saisies en cours (nom, biotope, notes…) sont mémorisées : si l'appli se ferme avant que tu épingles, elle te propose de reprendre le brouillon à la réouverture. La photo, elle, n'est pas conservée dans le brouillon — à reprendre si besoin.
-      </p>
-      <div style={t}>✨ Identification précise (Claude)</div>
-      <p style={p}>
-        Le bouton « Identifier (précis) » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un niveau de confiance. Pour affiner, l'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de jauge claire (Fiable / Probable / À vérifier), pour savoir d'un coup d'œil à quel point se fier à la proposition. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Combinable avec le ciblage de zone. Nécessite le réseau. Chaque identification coûte une fraction de centime.
-      </p>
-      <div style={t}>🔬 Identification (test local)</div>
-      <p style={p}>
-        Après avoir ajouté une photo, appuie sur « Identifier (test local) » : une IA tourne directement dans ton navigateur (aucune donnée envoyée, aucun coût). C'est un modèle généraliste qui ne reconnaît qu'une trentaine de grands groupes (coccinelle, abeille, libellule, mante, araignée…) et reste au niveau du groupe, jamais de l'espèce précise. Astuce : avec « 🎯 Cibler la zone », dessine un cadre sur l'insecte pour que l'IA ignore le décor — ça améliore nettement le résultat quand la bête est petite dans l'image. Vois-le comme un jeu : parfois bluffant, souvent approximatif. Le vrai moteur d'identification précis viendra plus tard. Premier lancement : téléchargement du modèle (~15 Mo), réseau requis.
-      </p>
-      <div style={t}>🔭 Feuille de route</div>
-      <p style={p}>
-        Prochaines étapes : identification précise par API (Claude/iNaturalist), filtres par biotope et famille, statistiques de collection, export des données.
-      </p>
-      <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 20 }}>BioDex {VERSION}</div>
+        {exportEtat && <p style={{ ...p, color: C.lichen, marginBottom: 4 }}>{exportEtat}</p>}
+        {importEtat && <p style={{ ...p, color: C.lichen, marginBottom: 4 }}>{importEtat}</p>}
+      </SectionPliable>
+
+      <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 20, textAlign: "center" }}>BioDex {VERSION} · fait avec 🐛 pour la bande</div>
     </div>
   );
 }
