@@ -84,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.41 (PWA) ============
+// ============ BioDex v0.42 (PWA) ============
 
-const VERSION = "v0.41";
+const VERSION = "v0.42";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -464,6 +464,41 @@ const ELEMENTS = {
   Butineur: { emoji: "🌼", c: "#D9B441" },
 };
 function elementInfo(e) { return ELEMENTS[e] || { emoji: "🐞", c: "#94A97B" }; }
+
+// Traduit une confiance ("élevée/moyenne/faible" ou un nombre 0..1) en visuel clair
+function infoConfiance(confiance, niveau) {
+  let cle = "";
+  if (typeof confiance === "number") {
+    cle = confiance >= 0.75 ? "elevee" : confiance >= 0.45 ? "moyenne" : "faible";
+  } else {
+    const c = String(confiance || "").toLowerCase();
+    if (c.includes("élev") || c.includes("elev") || c.includes("haut")) cle = "elevee";
+    else if (c.includes("moy")) cle = "moyenne";
+    else if (c.includes("faib") || c.includes("bas")) cle = "faible";
+  }
+  const table = {
+    elevee: { label: "Identification solide", court: "Fiable", couleur: "#7BAE5A", barres: 3, emoji: "✓" },
+    moyenne: { label: "Probable, à confirmer", court: "Probable", couleur: "#D9A441", barres: 2, emoji: "≈" },
+    faible: { label: "Incertain — à vérifier", court: "À vérifier", couleur: "#C97A54", barres: 1, emoji: "?" },
+  };
+  const base = table[cle] || { label: "Certitude inconnue", court: "—", couleur: "#8A8065", barres: 0, emoji: "·" };
+  const suffixeNiveau = niveau ? ` · au niveau ${niveau}` : "";
+  return { ...base, label: base.label + suffixeNiveau };
+}
+
+function JaugeConfiance({ confiance, niveau, compact }) {
+  const info = infoConfiance(confiance, niveau);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", gap: 2, alignItems: "flex-end" }}>
+        {[0, 1, 2].map((i) => (
+          <div key={i} style={{ width: compact ? 4 : 5, height: compact ? (7 + i * 3) : (8 + i * 4), borderRadius: 1.5, background: i < info.barres ? info.couleur : "rgba(255,255,255,.14)" }} />
+        ))}
+      </div>
+      <span style={{ fontFamily: sans, fontSize: compact ? 11 : 12.5, fontWeight: 700, color: info.couleur }}>{compact ? info.court : info.label}</span>
+    </div>
+  );
+}
 
 // ---------- Mur commun (Supabase) ----------
 let _sb = null;
@@ -1775,8 +1810,9 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
 
           {cloudResultat && (
             <div style={{ marginBottom: 12, padding: "10px 12px", background: "linear-gradient(#2C3623, #232B1D)", border: `1px solid #A8863A`, borderRadius: 8 }}>
-              <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", color: C.ambreClair, marginBottom: 6 }}>
-                ✨ Proposition précise{cloudResultat.confiance ? ` · confiance ${cloudResultat.confiance}` : ""}{cloudResultat.niveau ? ` · ${cloudResultat.niveau}` : ""}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", color: C.ambreClair }}>✨ Proposition</span>
+                <JaugeConfiance confiance={cloudResultat.confiance} niveau={cloudResultat.niveau} compact />
               </div>
               <div style={{ fontFamily: sans, fontSize: 16, fontWeight: 700, color: C.papier }}>{cloudResultat.nom || "—"}</div>
               <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambreClair, marginBottom: 6 }}>{cloudResultat.nomSci || ""}</div>
@@ -1868,8 +1904,9 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
 
               {affinageEtat === "final" && affinageFinal && (
                 <div>
-                  <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 6 }}>
-                    Conclusion{affinageFinal.confiance ? ` · confiance ${affinageFinal.confiance}` : ""}{affinageFinal.niveau ? ` · ${affinageFinal.niveau}` : ""}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen }}>Conclusion</span>
+                    <JaugeConfiance confiance={affinageFinal.confiance} niveau={affinageFinal.niveau} compact />
                   </div>
                   <div style={{ fontFamily: sans, fontSize: 16, fontWeight: 700, color: C.papier }}>{affinageFinal.nom || "—"}</div>
                   <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambreClair, marginBottom: 6 }}>{affinageFinal.nomSci || ""}</div>
@@ -2638,6 +2675,10 @@ function Aide({ onFermer, onImportTermine }) {
       <p style={p}>
         L'onglet Carte affiche toutes tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. La carte nécessite du réseau pour charger le fond de plan.
       </p>
+      <div style={t}>📖 Mur : posts détaillés</div>
+      <p style={p}>
+        Sur le mur commun, touche n'importe quelle publication pour l'ouvrir en grand : tu y retrouves l'espèce, son nom latin, le biotope, la note d'observation, l'auteur et la date, plus un lien pour te renseigner sur l'espèce via iNaturalist. Une façon d'apprendre en parcourant les trouvailles de la bande.
+      </p>
       <div style={t}>💡 Boîte à idées</div>
       <p style={p}>
         Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Les meilleures finiront peut-être dans une prochaine version !
@@ -2686,7 +2727,7 @@ function Aide({ onFermer, onImportTermine }) {
       </p>
       <div style={t}>✨ Identification précise (Claude)</div>
       <p style={p}>
-        Le bouton « Identifier (précis) » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un niveau de confiance. Pour affiner, l'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Combinable avec le ciblage de zone. Nécessite le réseau. Chaque identification coûte une fraction de centime.
+        Le bouton « Identifier (précis) » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un niveau de confiance. Pour affiner, l'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de jauge claire (Fiable / Probable / À vérifier), pour savoir d'un coup d'œil à quel point se fier à la proposition. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Combinable avec le ciblage de zone. Nécessite le réseau. Chaque identification coûte une fraction de centime.
       </p>
       <div style={t}>🔬 Identification (test local)</div>
       <p style={p}>
@@ -2905,6 +2946,48 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
   );
 }
 
+// ---------- Détail d'un post du mur (modale enrichie) ----------
+function DetailPost({ post, onFermer }) {
+  const p = post || {};
+  return (
+    <div onClick={onFermer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "92vh", overflowY: "auto", background: C.fond, borderRadius: "16px 16px 0 0", border: `1px solid ${C.bordure}`, borderBottom: "none" }}>
+        {p.photo_url && <img src={p.photo_url} alt={p.espece} style={{ width: "100%", maxHeight: 380, objectFit: "cover", display: "block", borderRadius: "16px 16px 0 0" }} />}
+        <div style={{ padding: 18 }}>
+          <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier, lineHeight: 1.2 }}>{p.espece || "Spécimen non identifié"}</div>
+          {p.espece_sci && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 16, color: C.ambre, marginTop: 2 }}>{p.espece_sci}</div>}
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
+            {p.lieu && (
+              <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, padding: "5px 11px", borderRadius: 20, background: C.panneau, border: `1px solid ${C.bordure}` }}>🌿 {p.lieu}</span>
+            )}
+            <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, padding: "5px 11px", borderRadius: 20, background: C.panneau, border: `1px solid ${C.bordure}` }}>🐛 {p.auteur || "Anonyme"}</span>
+            {p.created_at && (
+              <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, padding: "5px 11px", borderRadius: 20, background: C.panneau, border: `1px solid ${C.bordure}` }}>📅 {new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</span>
+            )}
+          </div>
+
+          {p.note && (
+            <div style={{ marginTop: 16, padding: "12px 14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
+              <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 5 }}>Note d'observation</div>
+              <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{p.note}</div>
+            </div>
+          )}
+
+          {p.espece_sci && (
+            <a href={lienINaturalist(p.espece_sci, p.espece)} target="_blank" rel="noopener noreferrer"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 16, padding: "11px", borderRadius: 10, background: "linear-gradient(#2C3623, #232B1D)", border: `1px solid #A8863A`, color: C.ambreClair, fontFamily: sans, fontSize: 14, fontWeight: 600, textDecoration: "none" }}>
+              🔍 En savoir plus sur cette espèce
+            </a>
+          )}
+
+          <Bouton onClick={onFermer} style={{ width: "100%", marginTop: 10 }}>Fermer</Bouton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Mur commun (vue) ----------
 function MurCommun({ prenom, onDefinirPrenom }) {
   const [posts, setPosts] = useState([]);
@@ -2912,6 +2995,7 @@ function MurCommun({ prenom, onDefinirPrenom }) {
   const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
   const [confirmSuppr, setConfirmSuppr] = useState(null); // id du post en attente de confirmation
   const [supprEnCours, setSupprEnCours] = useState(null); // id du post en cours de suppression
+  const [postDetail, setPostDetail] = useState(null); // post ouvert en détail
 
   async function lancerSuppression(post) {
     setSupprEnCours(post.id);
@@ -2988,17 +3072,22 @@ function MurCommun({ prenom, onDefinirPrenom }) {
 
       {etat === "ok" && posts.map((p) => (
         <div key={p.id} style={{ marginBottom: 14, border: `1px solid ${C.bordure}`, borderRadius: 12, overflow: "hidden", background: C.panneau, boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
-          {p.photo_url && <img src={p.photo_url} alt={p.espece} loading="lazy" style={{ width: "100%", maxHeight: 360, objectFit: "cover", display: "block" }} />}
-          <div style={{ padding: "10px 14px" }}>
-            <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier }}>{p.espece || "Spécimen non identifié"}</div>
-            {p.espece_sci && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambre }}>{p.espece_sci}</div>}
-            {p.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginTop: 6 }}>{p.note}</div>}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
-              <span>🐛 {p.auteur || "Anonyme"}{p.lieu ? ` · ${p.lieu}` : ""}</span>
-              <span>{p.created_at ? new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
+          <div onClick={() => setPostDetail(p)} style={{ cursor: "pointer" }}>
+            {p.photo_url && <img src={p.photo_url} alt={p.espece} loading="lazy" style={{ width: "100%", maxHeight: 360, objectFit: "cover", display: "block" }} />}
+            <div style={{ padding: "10px 14px 4px" }}>
+              <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier }}>{p.espece || "Spécimen non identifié"}</div>
+              {p.espece_sci && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambre }}>{p.espece_sci}</div>}
+              {p.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginTop: 6 }}>{p.note}</div>}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
+                <span>🐛 {p.auteur || "Anonyme"}{p.lieu ? ` · ${p.lieu}` : ""}</span>
+                <span>{p.created_at ? new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
+              </div>
+              <div style={{ fontFamily: sans, fontSize: 11.5, color: C.ambre, marginTop: 6, opacity: 0.85 }}>Toucher pour en savoir plus →</div>
             </div>
+          </div>
+          <div style={{ padding: "0 14px 10px" }}>
             {confirmSuppr === p.id ? (
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.bordure}` }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, paddingTop: 10, borderTop: `1px solid ${C.bordure}` }}>
                 <span style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, flex: 1 }}>Supprimer cette publication ?</span>
                 <button onClick={() => setConfirmSuppr(null)} disabled={supprEnCours === p.id}
                   style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>Non</button>
@@ -3007,7 +3096,7 @@ function MurCommun({ prenom, onDefinirPrenom }) {
                   {supprEnCours === p.id ? "Suppression…" : "Oui, supprimer"}</button>
               </div>
             ) : (
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button onClick={() => setConfirmSuppr(p.id)}
                   style={{ fontFamily: sans, fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "none", background: "transparent", color: C.papierSombre, cursor: "pointer" }}
                   title="Supprimer cette publication" aria-label="Supprimer">🗑️</button>
@@ -3016,6 +3105,7 @@ function MurCommun({ prenom, onDefinirPrenom }) {
           </div>
         </div>
       ))}
+      {postDetail && <DetailPost post={postDetail} onFermer={() => setPostDetail(null)} />}
     </div>
   );
 }
