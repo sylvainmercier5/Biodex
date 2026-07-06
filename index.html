@@ -84,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.42 (PWA) ============
+// ============ BioDex v0.43 (PWA) ============
 
-const VERSION = "v0.42";
+const VERSION = "v0.43";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -646,6 +646,39 @@ async function chargerMur(limite = 50) {
   const { data, error } = await sb.from("posts").select("*").order("created_at", { ascending: false }).limit(limite);
   if (error) throw new Error("Lecture du mur impossible");
   return data || [];
+}
+
+// Les 4 réactions thématiques disponibles
+const REACTIONS = [
+  { type: "feu", emoji: "🔥", titre: "Belle trouvaille" },
+  { type: "amour", emoji: "😍", titre: "Magnifique" },
+  { type: "waouh", emoji: "🤯", titre: "Incroyable / rare" },
+  { type: "oeil", emoji: "🔍", titre: "Bien observé" },
+];
+
+// Charge tous les compteurs de réactions et les regroupe par post : { [post_id]: { feu: 3, ... } }
+async function chargerReactions() {
+  const sb = clientSupabase();
+  if (!sb) return {};
+  try {
+    const { data, error } = await sb.from("reactions").select("post_id, type, compteur");
+    if (error || !data) return {};
+    const parPost = {};
+    for (const r of data) {
+      if (!parPost[r.post_id]) parPost[r.post_id] = {};
+      parPost[r.post_id][r.type] = r.compteur;
+    }
+    return parPost;
+  } catch { return {}; }
+}
+
+// Incrémente une réaction (via la fonction atomique côté serveur)
+async function reagir(postId, type) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { error } = await sb.rpc("incrementer_reaction", { p_post_id: postId, p_type: type });
+  if (error) throw new Error("Réaction impossible");
+  return true;
 }
 
 // Récupère la date de création du post le plus récent (léger, pour la pastille "nouveau")
@@ -2679,6 +2712,10 @@ function Aide({ onFermer, onImportTermine }) {
       <p style={p}>
         Sur le mur commun, touche n'importe quelle publication pour l'ouvrir en grand : tu y retrouves l'espèce, son nom latin, le biotope, la note d'observation, l'auteur et la date, plus un lien pour te renseigner sur l'espèce via iNaturalist. Une façon d'apprendre en parcourant les trouvailles de la bande.
       </p>
+      <div style={t}>🔥 Réactions</div>
+      <p style={p}>
+        Sous chaque publication du mur, quatre réactions permettent d'encourager les trouvailles de la bande : 🔥 belle trouvaille, 😍 magnifique, 🤯 incroyable ou rare, 🔍 bien observé. Touche une réaction pour l'ajouter — les compteurs sont partagés par tous.
+      </p>
       <div style={t}>💡 Boîte à idées</div>
       <p style={p}>
         Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Les meilleures finiront peut-être dans une prochaine version !
@@ -2947,8 +2984,9 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
 }
 
 // ---------- Détail d'un post du mur (modale enrichie) ----------
-function DetailPost({ post, onFermer }) {
+function DetailPost({ post, reactions, onReagir, onFermer }) {
   const p = post || {};
+  const reacts = reactions || {};
   return (
     <div onClick={onFermer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "92vh", overflowY: "auto", background: C.fond, borderRadius: "16px 16px 0 0", border: `1px solid ${C.bordure}`, borderBottom: "none" }}>
@@ -2974,6 +3012,20 @@ function DetailPost({ post, onFermer }) {
             </div>
           )}
 
+          <div style={{ display: "flex", gap: 7, marginTop: 16, flexWrap: "wrap" }}>
+            {REACTIONS.map((r) => {
+              const n = reacts[r.type] || 0;
+              return (
+                <button key={r.type} onClick={() => onReagir && onReagir(r.type)} title={r.titre}
+                  style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 12px", borderRadius: 22, border: `1px solid ${n > 0 ? "#A8863A" : C.bordure}`, background: n > 0 ? "linear-gradient(#2C3623, #232B1D)" : C.panneau, cursor: "pointer", fontFamily: sans, fontSize: 14 }}>
+                  <span style={{ fontSize: 17 }}>{r.emoji}</span>
+                  <span style={{ fontSize: 12, color: C.papierSombre }}>{r.titre}</span>
+                  {n > 0 && <span style={{ fontWeight: 700, color: C.ambreClair, fontSize: 13 }}>{n}</span>}
+                </button>
+              );
+            })}
+          </div>
+
           {p.espece_sci && (
             <a href={lienINaturalist(p.espece_sci, p.espece)} target="_blank" rel="noopener noreferrer"
               style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 16, padding: "11px", borderRadius: 10, background: "linear-gradient(#2C3623, #232B1D)", border: `1px solid #A8863A`, color: C.ambreClair, fontFamily: sans, fontSize: 14, fontWeight: 600, textDecoration: "none" }}>
@@ -2996,6 +3048,7 @@ function MurCommun({ prenom, onDefinirPrenom }) {
   const [confirmSuppr, setConfirmSuppr] = useState(null); // id du post en attente de confirmation
   const [supprEnCours, setSupprEnCours] = useState(null); // id du post en cours de suppression
   const [postDetail, setPostDetail] = useState(null); // post ouvert en détail
+  const [reactions, setReactions] = useState({}); // { post_id: { type: compteur } }
 
   async function lancerSuppression(post) {
     setSupprEnCours(post.id);
@@ -3016,10 +3069,23 @@ function MurCommun({ prenom, onDefinirPrenom }) {
     try {
       const p = await chargerMur(50);
       setPosts(p);
+      chargerReactions().then(setReactions);
       setEtat("ok");
     } catch (e) {
       if (!silencieux) setEtat("echec");
     }
+  }
+
+  // Réagir à un post : incrémente en local tout de suite (réactif), puis envoie au serveur
+  async function surReaction(postId, type) {
+    setReactions((prev) => {
+      const copie = { ...prev };
+      copie[postId] = { ...(copie[postId] || {}) };
+      copie[postId][type] = (copie[postId][type] || 0) + 1;
+      return copie;
+    });
+    try { await reagir(postId, type); }
+    catch { chargerReactions().then(setReactions); } // si échec, on resynchronise
   }
 
   useEffect(() => {
@@ -3085,6 +3151,18 @@ function MurCommun({ prenom, onDefinirPrenom }) {
               <div style={{ fontFamily: sans, fontSize: 11.5, color: C.ambre, marginTop: 6, opacity: 0.85 }}>Toucher pour en savoir plus →</div>
             </div>
           </div>
+          <div style={{ display: "flex", gap: 6, padding: "8px 14px 2px", flexWrap: "wrap" }}>
+            {REACTIONS.map((r) => {
+              const n = (reactions[p.id] && reactions[p.id][r.type]) || 0;
+              return (
+                <button key={r.type} onClick={() => surReaction(p.id, r.type)} title={r.titre}
+                  style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 9px", borderRadius: 20, border: `1px solid ${n > 0 ? "#A8863A" : C.bordure}`, background: n > 0 ? "linear-gradient(#2C3623, #232B1D)" : C.panneauClair, cursor: "pointer", fontFamily: sans, fontSize: 13 }}>
+                  <span style={{ fontSize: 15 }}>{r.emoji}</span>
+                  {n > 0 && <span style={{ fontWeight: 700, color: C.ambreClair, fontSize: 12 }}>{n}</span>}
+                </button>
+              );
+            })}
+          </div>
           <div style={{ padding: "0 14px 10px" }}>
             {confirmSuppr === p.id ? (
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, paddingTop: 10, borderTop: `1px solid ${C.bordure}` }}>
@@ -3105,7 +3183,7 @@ function MurCommun({ prenom, onDefinirPrenom }) {
           </div>
         </div>
       ))}
-      {postDetail && <DetailPost post={postDetail} onFermer={() => setPostDetail(null)} />}
+      {postDetail && <DetailPost post={postDetail} reactions={reactions[postDetail.id] || {}} onReagir={(type) => surReaction(postDetail.id, type)} onFermer={() => setPostDetail(null)} />}
     </div>
   );
 }
