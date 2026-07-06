@@ -84,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.39 (PWA) ============
+// ============ BioDex v0.40 (PWA) ============
 
-const VERSION = "v0.39";
+const VERSION = "v0.40";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -611,6 +611,17 @@ async function chargerMur(limite = 50) {
   const { data, error } = await sb.from("posts").select("*").order("created_at", { ascending: false }).limit(limite);
   if (error) throw new Error("Lecture du mur impossible");
   return data || [];
+}
+
+// Récupère la date de création du post le plus récent (léger, pour la pastille "nouveau")
+async function dernierPostMur() {
+  const sb = clientSupabase();
+  if (!sb) return null;
+  try {
+    const { data, error } = await sb.from("posts").select("created_at").order("created_at", { ascending: false }).limit(1);
+    if (error || !data || !data.length) return null;
+    return data[0].created_at;
+  } catch { return null; }
 }
 
 // Supprime un post du mur (et sa photo associée dans le stockage, pour ne pas encombrer)
@@ -1338,6 +1349,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
   const [affinageLibre, setAffinageLibre] = useState("");
   const [ciblage, setCiblage] = useState(false);
   const [zone, setZone] = useState({ x: 0.2, y: 0.2, w: 0.6, h: 0.6 });
+  const [choixPoint, setChoixPoint] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [sugEtat, setSugEtat] = useState(""); // "" | recherche | ok | echec
   const [sugVisible, setSugVisible] = useState(false);
@@ -1685,9 +1697,28 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
       <div style={{ marginBottom: 16, padding: "10px 12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 13, color: C.papierSombre }}>
         {gpsEtat === "attente" && "📡 Recherche de la position GPS…"}
         {gpsEtat === "ok" && gps && (
-          <span style={{ color: C.lichen }}>📍 Position : {gps.lat}, {gps.lon} <span style={{ color: C.papierSombre }}>(±{gps.precision} m)</span></span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span style={{ color: C.lichen }}>📍 {gps.manuel ? "Position (placée à la main)" : `Position : ${gps.lat}, ${gps.lon}`} {!gps.manuel && <span style={{ color: C.papierSombre }}>(±{gps.precision} m)</span>}</span>
+            <button onClick={() => setChoixPoint((v) => !v)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
+              {choixPoint ? "Fermer" : "Modifier"}
+            </button>
+          </div>
         )}
-        {gpsEtat === "refuse" && "📡 GPS indisponible — l'observation sera enregistrée sans position."}
+        {gpsEtat === "refuse" && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span>📡 Pas de position GPS</span>
+            <button onClick={() => setChoixPoint((v) => !v)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: `1px solid #A8863A`, background: "linear-gradient(#2C3623, #232B1D)", color: C.ambreClair, cursor: "pointer" }}>
+              {choixPoint ? "Fermer" : "📍 Placer sur la carte"}
+            </button>
+          </div>
+        )}
+        {choixPoint && (
+          <SelecteurPoint
+            point={gps}
+            onChange={(p) => { setGps(p); setGpsEtat("ok"); }}
+            onFermer={() => setChoixPoint(false)}
+          />
+        )}
       </div>
 
       {/* Identification IA locale */}
@@ -2363,6 +2394,46 @@ function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte, onMajCadre
   );
 }
 
+// ---------- Sélecteur de point sur carte (pour photo importée sans GPS) ----------
+function SelecteurPoint({ point, onChange, onFermer }) {
+  const divRef = useRef(null);
+  const carteRef = useRef(null);
+  const marqueurRef = useRef(null);
+
+  useEffect(() => {
+    if (!divRef.current || typeof L === "undefined") return;
+    // Centre initial : point existant, sinon France
+    const centre = point ? [point.lat, point.lon] : [46.6, 2.5];
+    const zoom = point ? 13 : 5;
+    const carte = L.map(divRef.current, { zoomControl: true }).setView(centre, zoom);
+    carteRef.current = carte;
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(carte);
+
+    function poser(lat, lon) {
+      if (marqueurRef.current) marqueurRef.current.setLatLng([lat, lon]);
+      else marqueurRef.current = L.circleMarker([lat, lon], { radius: 9, color: "#2A2519", weight: 2, fillColor: "#C9A24B", fillOpacity: 0.95 }).addTo(carte);
+      onChange({ lat: Math.round(lat * 100000) / 100000, lon: Math.round(lon * 100000) / 100000, precision: 0, manuel: true });
+    }
+    if (point) poser(point.lat, point.lon);
+    carte.on("click", (e) => poser(e.latlng.lat, e.latlng.lng));
+
+    setTimeout(() => carte.invalidateSize(), 100);
+    return () => carte.remove();
+  }, []);
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, marginBottom: 8, lineHeight: 1.4 }}>
+        Touche la carte à l'endroit où tu as fait l'observation :
+      </div>
+      <div ref={divRef} style={{ width: "100%", height: 240, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.bordure}` }} />
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <Bouton onClick={onFermer} style={{ flex: 1 }}>Terminé</Bouton>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Vue : carte ----------
 function Carte({ observations, onOuvrirFiche }) {
   const divRef = useRef(null);
@@ -2509,6 +2580,10 @@ function Aide({ onFermer, onImportTermine }) {
       <h2 style={{ fontFamily: serif, color: C.papier, fontSize: 24, margin: "4px 0 10px" }}>BioDex — le guide</h2>
       <p style={p}>
         BioDex est ton carnet de terrain entomologique : chaque insecte croisé devient un spécimen épinglé dans ta boîte de collection virtuelle, avec sa photo, son biotope, sa position GPS et la météo du moment.
+      </p>
+      <div style={t}>📍 Position (même sans GPS)</div>
+      <p style={p}>
+        Si tu importes une photo depuis ta galerie (sans coordonnées) ou si le GPS n'a rien capté, tu peux placer le lieu à la main : dans le bloc position, touche « Placer sur la carte » et pointe l'endroit de l'observation. Pratique pour situer une trouvaille faite sans réseau ou importée après coup.
       </p>
       <div style={t}>📷 La caméra (zoom & netteté)</div>
       <p style={p}>
@@ -3021,6 +3096,36 @@ function BioDex() {
     await seDeconnecter();
     setUtilisateur(null);
   }
+
+  const [murNouveau, setMurNouveau] = useState(false);
+
+  // Vérifie périodiquement s'il y a du nouveau sur le mur (pour la pastille de la nav)
+  useEffect(() => {
+    if (!MUR_ACTIF) return;
+    let actif = true;
+    async function verifier() {
+      const dernier = await dernierPostMur();
+      if (!actif || !dernier) return;
+      let vu = null;
+      try { vu = localStorage.getItem("biodex_mur_vu"); } catch {}
+      setMurNouveau(!vu || new Date(dernier) > new Date(vu));
+    }
+    verifier();
+    const intervalle = setInterval(verifier, 60000); // toutes les minutes
+    const surVisible = () => { if (!document.hidden) verifier(); };
+    document.addEventListener("visibilitychange", surVisible);
+    return () => { actif = false; clearInterval(intervalle); document.removeEventListener("visibilitychange", surVisible); };
+  }, []);
+
+  // Quand on ouvre le mur, on marque tout comme vu
+  useEffect(() => {
+    if (vue === "mur" && MUR_ACTIF) {
+      dernierPostMur().then((d) => {
+        if (d) { try { localStorage.setItem("biodex_mur_vu", d); } catch {} }
+        setMurNouveau(false);
+      });
+    }
+  }, [vue]);
   const [prenom, setPrenom] = useState(() => { try { return localStorage.getItem("biodex_prenom") || ""; } catch { return ""; } });
 
   function definirPrenom(p) {
@@ -3227,6 +3332,9 @@ function BioDex() {
                     )}
                     {id === "cartes" && cartes.length > 0 && (
                       <span className="bd-nav-badge" style={{ background: C.ambre, color: C.encre }}>{cartes.length}</span>
+                    )}
+                    {id === "mur" && murNouveau && (
+                      <span className="bd-nav-badge" style={{ background: C.rouge, minWidth: 10, width: 10, height: 10, padding: 0, right: "calc(50% - 18px)", top: 4 }} />
                     )}
                   </button>
                 ))}
