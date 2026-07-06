@@ -1174,7 +1174,7 @@ function regionApprox(gps) {
   if (!r.ok) throw new Error("http");
   const d = await r.json();
   return (d.results || [])
-    .filter((t) => t.rank_level == null || t.rank_level <= 60) // jusqu'au niveau famille et plus fin
+    .filter((t) => t.rank_level == null || t.rank_level <= 60)
     .map((t) => ({
       id: t.id,
       // nom commun (FR si dispo) et nom scientifique
