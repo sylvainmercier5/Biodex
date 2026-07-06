@@ -84,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.38 (PWA) ============
+// ============ BioDex v0.39 (PWA) ============
 
-const VERSION = "v0.38";
+const VERSION = "v0.39";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1169,10 +1169,14 @@ function regionApprox(gps) {
 }
 
 
+// ---------- Autocomplétion des noms via iNaturalist (recherche de taxons, gratuite) ----------
+// N.B. : c'est l'API de RECHERCHE de noms (ouverte), pas la reconnaissance photo.
+async function chercherTaxons(terme, signal) {
   const url = "https://api.inaturalist.org/v1/taxa/autocomplete?locale=fr&per_page=8&q=" + encodeURIComponent(terme);
   const r = await fetch(url, { signal });
   if (!r.ok) throw new Error("http");
   const d = await r.json();
+  // On garde jusqu'au niveau famille et plus fin (rank_level <= 60)
   return (d.results || [])
     .filter((t) => t.rank_level == null || t.rank_level <= 60)
     .map((t) => ({
