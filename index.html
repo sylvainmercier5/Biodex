@@ -84,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.35 (PWA) ============
+// ============ BioDex v0.38 (PWA) ============
 
-const VERSION = "v0.35";
+const VERSION = "v0.38";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1130,9 +1130,45 @@ function Stats({ observations, onFermer }) {
   );
 }
 
-// ---------- Autocomplétion des noms via iNaturalist (recherche de taxons, gratuite) ----------
-// N.B. : c'est l'API de RECHERCHE de noms (ouverte), pas la reconnaissance photo.
-async function chercherTaxons(terme, signal) {
+// Déduit une indication biogéographique mondiale approximative depuis le GPS
+// (sans révéler la position exacte, sans API). Aide l'IA à privilégier la faune locale.
+function regionApprox(gps) {
+  if (!gps || typeof gps.lat !== "number" || typeof gps.lon !== "number") return "";
+  const { lat, lon } = gps;
+
+  // Cas fin : France métropolitaine (indice précis, utile pour l'usage principal)
+  if (lat >= 41 && lat <= 51.5 && lon >= -5.5 && lon <= 10) {
+    let ns;
+    if (lat >= 48.5) ns = "nord de la France";
+    else if (lat >= 46) ns = "centre de la France";
+    else if (lat >= 43.5) ns = "sud de la France";
+    else ns = "extrême sud de la France (zone méditerranéenne)";
+    const alt = lon > 6 && lat < 46.5 ? " (secteur alpin/montagnard possible)" : "";
+    return ns + alt;
+  }
+
+  // Zone climatique par latitude
+  const absLat = Math.abs(lat);
+  let climat;
+  if (absLat < 23.5) climat = "zone tropicale";
+  else if (absLat < 35) climat = "zone subtropicale";
+  else if (absLat < 55) climat = "zone tempérée";
+  else climat = "zone froide (boréale/polaire)";
+  const hemisphere = lat < 0 ? "hémisphère sud" : "hémisphère nord";
+
+  // Grand ensemble continental (bornes larges, approximatives)
+  let continent = "";
+  if (lat >= 34 && lat <= 72 && lon >= -12 && lon <= 45) continent = "Europe";
+  else if (lat >= -35 && lat <= 38 && lon >= -18 && lon <= 52) continent = "Afrique";
+  else if (lat >= 5 && lat <= 82 && lon >= 25 && lon <= 180) continent = "Asie";
+  else if (lat >= -48 && lat <= 12 && lon >= 95 && lon <= 180) continent = "Océanie / Asie du Sud-Est";
+  else if (lat >= 12 && lat <= 84 && lon >= -170 && lon <= -52) continent = "Amérique du Nord";
+  else if (lat >= -56 && lat < 14 && lon >= -92 && lon <= -34) continent = "Amérique du Sud / centrale";
+
+  return continent ? `${continent}, ${climat} (${hemisphere})` : `${climat}, ${hemisphere}`;
+}
+
+
   const url = "https://api.inaturalist.org/v1/taxa/autocomplete?locale=fr&per_page=8&q=" + encodeURIComponent(terme);
   const r = await fetch(url, { signal });
   if (!r.ok) throw new Error("http");
@@ -1272,6 +1308,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
   const [photoBlob, setPhotoBlob] = useState(base ? base.photo : null);
   const [nom, setNom] = useState(base ? base.nom || "" : "");
   const [nomSci, setNomSci] = useState(base ? base.nomSci || "" : "");
+  const [notable, setNotable] = useState(base ? base.notable || "" : "");
   const [biotope, setBiotope] = useState(base ? base.biotope || "" : "");
   const [ciel, setCiel] = useState(base ? base.ciel || "" : "");
   const [temp, setTemp] = useState(base ? base.temp || "" : "");
@@ -1455,11 +1492,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
     setCloudResultat(null);
     setCloudErreur("");
     try {
-      const contexte = {
-        biotope: biotope ? biotopeOf(biotope).label : "",
-        mois: new Date().toLocaleDateString("fr-FR", { month: "long" }),
-        indice: nom || "",
-      };
+      const contexte = contexteTerrain();
       const res = await identifierCloud(photoBlob, ciblage ? zone : null, contexte);
       setCloudResultat(res);
       setCloudEtat("ok");
@@ -1474,12 +1507,14 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
     if (!res) return;
     if (res.nom) setNom(res.nom);
     if (res.nomSci) setNomSci(res.nomSci);
+    if (res.inhabituel && String(res.inhabituel).trim().length > 3) setNotable(String(res.inhabituel).trim());
   }
 
   function contexteTerrain() {
     return {
       biotope: biotope ? biotopeOf(biotope).label : "",
       mois: new Date().toLocaleDateString("fr-FR", { month: "long" }),
+      region: regionApprox(gps),
       indice: nom || "",
     };
   }
@@ -1558,6 +1593,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
           meteoAuto,
           meteoARattraper: false,
           notes: notes.trim(),
+          notable: notable || "",
           photo: photoBlob,
           // id, date, gps d'origine conservés via ...base
         }
@@ -1570,6 +1606,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
           temp: temp.trim(),
           meteoAuto,
           notes: notes.trim(),
+          notable: notable || "",
           gps: gpsEtat === "ok" ? gps : null,
           date: new Date().toISOString(),
           photo: photoBlob,
@@ -1684,6 +1721,15 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
               <div style={{ fontFamily: sans, fontSize: 16, fontWeight: 700, color: C.papier }}>{cloudResultat.nom || "—"}</div>
               <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambreClair, marginBottom: 6 }}>{cloudResultat.nomSci || ""}</div>
               {cloudResultat.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginBottom: 10 }}>{cloudResultat.note}</div>}
+              {cloudResultat.inhabituel && String(cloudResultat.inhabituel).trim().length > 3 && (
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "10px 12px", marginBottom: 10, borderRadius: 9, background: "linear-gradient(#2E2410, #241C0C)", border: "1px solid #B8862E" }}>
+                  <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.2 }}>🌟</span>
+                  <div>
+                    <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#E4C878", marginBottom: 2 }}>Observation notable</div>
+                    <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.45 }}>{cloudResultat.inhabituel}</div>
+                  </div>
+                </div>
+              )}
               <Bouton variante="primaire" onClick={() => appliquerCloud()} style={{ width: "100%" }}>Utiliser ces noms</Bouton>
 
               {Array.isArray(cloudResultat.alternatives) && cloudResultat.alternatives.length > 0 && (
@@ -2105,6 +2151,16 @@ function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte, onMajCadre
         {obs.nomSci || "Identification à préciser"}
       </div>
 
+      {obs.notable && String(obs.notable).trim().length > 3 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "11px 13px", marginBottom: 16, borderRadius: 10, background: "linear-gradient(#2E2410, #241C0C)", border: "1px solid #B8862E", boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
+          <span style={{ fontSize: 19, flexShrink: 0, lineHeight: 1.2 }}>🌟</span>
+          <div>
+            <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#E4C878", marginBottom: 2 }}>Observation notable</div>
+            <div style={{ fontFamily: sans, fontSize: 13.5, color: C.papier, lineHeight: 1.45 }}>{obs.notable}</div>
+          </div>
+        </div>
+      )}
+
       <div style={ligne}><span style={cle}>Date</span><span style={val}>{formatDate(obs.date)}</span></div>
       <div style={ligne}><span style={cle}>Biotope</span><span style={val}>{biotopeOf(obs.biotope).emoji} {biotopeOf(obs.biotope).label}</span></div>
       <div style={ligne}>
@@ -2456,7 +2512,7 @@ function Aide({ onFermer, onImportTermine }) {
       </p>
       <div style={t}>📥 À trier (capture rapide)</div>
       <p style={p}>
-        Sur le terrain, l'onglet « À trier » te laisse photographier à la cha00eene sans rien remplir : la position GPS et la m00e9t00e9o sont fig00e9es au moment de la prise. Plus tard, au calme, touche une photo en attente pour compl00e9ter l'identification et la classer dans ta collection. Si tu shootes hors r00e9seau, la position est quand m00eame fig00e9e et la m00e9t00e9o est rattrap00e9e (au bon endroit) au moment du tri.
+        Sur le terrain, l'onglet « À trier » te laisse photographier à la chaîne sans rien remplir : la position GPS et la météo sont figées au moment de la prise. Plus tard, au calme, touche une photo en attente pour compléter l'identification et la classer dans ta collection. Si tu shootes hors réseau, la position est quand même figée et la météo est rattrapée (au bon endroit) au moment du tri.
       </p>
       <div style={t}>➕ Ajouter une observation</div>
       <p style={p}>
@@ -2468,11 +2524,11 @@ function Aide({ onFermer, onImportTermine }) {
       </p>
       <div style={t}>🔍 Filtres & recherche</div>
       <p style={p}>
-        Dans la collection, la barre de recherche retrouve un spécimen par son nom (fran00e7ais ou latin). Le bouton « Filtres » affine par biotope et par p00e9riode. Le tri (r00e9centes, anciennes, nom, biotope) reste dispo au-dessus.
+        Dans la collection, la barre de recherche retrouve un spécimen par son nom (français ou latin). Le bouton « Filtres » affine par biotope et par période. Le tri (récentes, anciennes, nom, biotope) reste dispo au-dessus.
       </p>
       <div style={t}>📊 Statistiques</div>
       <p style={p}>
-        L'onglet Stats r00e9sume ta collection : nombre de sp00e9cimens, combien sont identifi00e9s et localis00e9s, la r00e9partition par biotope et ton activit00e9 des derniers mois.
+        L'onglet Stats résume ta collection : nombre de spécimens, combien sont identifiés et localisés, la répartition par biotope et ton activité des derniers mois.
       </p>
       <div style={t}>🗺️ La carte</div>
       <p style={p}>
@@ -2522,7 +2578,7 @@ function Aide({ onFermer, onImportTermine }) {
       </p>
       <div style={t}>✨ Identification précise (Claude)</div>
       <p style={p}>
-        Le bouton « Identifier (précis) » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom fran00e7ais et latin avec un niveau de confiance. Combinable avec le ciblage de zone. Nécessite le réseau et la configuration de la clé API (voir le déploiement). Chaque identification coûte une fraction de centime.
+        Le bouton « Identifier (précis) » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un niveau de confiance. Pour affiner, l'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Combinable avec le ciblage de zone. Nécessite le réseau. Chaque identification coûte une fraction de centime.
       </p>
       <div style={t}>🔬 Identification (test local)</div>
       <p style={p}>
