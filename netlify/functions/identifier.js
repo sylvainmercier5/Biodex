@@ -136,18 +136,26 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers: enTetes, body: JSON.stringify({ erreur: "Image manquante." }) };
     }
     systeme =
-      "Tu es un entomologiste expert en identification visuelle. Analyse la photo avec méthode : " +
+      "Tu es un entomologiste expert en identification visuelle, compétent sur la faune du monde entier. Analyse la photo avec méthode : " +
       "observe le nombre de pattes, la présence et le type d'ailes, les antennes, les pièces buccales, la forme du corps, " +
       "les proportions et la taille estimée, les couleurs et motifs. Déduis d'abord l'ordre, puis affine autant que l'image le permet. " +
+      "Utilise le contexte de terrain comme un FILTRE BIOGÉOGRAPHIQUE : la région/zone climatique indiquée oriente vers la faune locale " +
+      "(privilégie les espèces réellement présentes dans cette partie du monde ; une espèce européenne est improbable sous les tropiques, et inversement) ; " +
+      "la saison (mois) restreint les espèces au stade adulte visible à cette période — attention, les saisons sont inversées dans l'hémisphère sud ; " +
+      "le biotope écarte les espèces au habitat incompatible. " +
+      "Si aucune région n'est fournie, ne suppose aucune localisation particulière et raisonne uniquement sur les critères visuels. " +
+      "Écarte activement les hypothèses incohérentes avec ce contexte, MAIS l'image prime toujours : si un critère visuel contredit le contexte, fie-toi à l'image et signale-le. " +
+      "Cas particulier IMPORTANT : si tu es visuellement confiant sur une espèce mais que sa présence détonne avec la région/saison indiquée " +
+      "(espèce potentiellement invasive, échappée d'élevage, en expansion, ou individu transporté), garde ton identification visuelle ET renseigne le champ \"inhabituel\". " +
       "Propose jusqu'à 3 hypothèses classées de la plus probable à la moins probable. " +
       "Ne force jamais une espèce précise si l'image ne le permet pas : reste au genre, à la famille ou à l'ordre selon ta certitude réelle. " +
-      "Exploite le contexte de terrain s'il est fourni, mais l'image prime. " +
       "Réponds UNIQUEMENT par un objet JSON valide, sans texte ni Markdown autour, de la forme exacte : " +
       '{"nom":"nom vernaculaire français de l\'hypothèse principale",' +
       '"nomSci":"binôme ou taxon latin de l\'hypothèse principale",' +
       '"confiance":"élevée|moyenne|faible",' +
       '"niveau":"espèce|genre|famille|ordre",' +
       '"note":"justification courte : critères visuels décisifs, ou pourquoi l\'ID reste incertaine",' +
+      '"inhabituel":"vide si de présence normale pour la zone ; SINON une phrase expliquant pourquoi cette observation est notable (ex : espèce invasive en expansion, hors de son aire habituelle, échappée...)",' +
       '"alternatives":[{"nom":"","nomSci":"","pourquoi":"ce qui distinguerait cette hypothèse"}]}. ' +
       "Le tableau alternatives contient 0 à 2 hypothèses secondaires (vide si tu es très sûr).";
     messages = [{
