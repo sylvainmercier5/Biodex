@@ -84,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.45 (PWA) ============
+// ============ BioDex v0.46 (PWA) ============
 
-const VERSION = "v0.45";
+const VERSION = "v0.46";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1422,8 +1422,9 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
 }
 
 // ---------- Vue : formulaire ----------
-function NouvelleObservation({ onSauver, onAnnuler, base }) {
-  const modeTri = !!base;
+function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
+  const modeTri = !!base && mode !== "edition";
+  const modeEdition = mode === "edition";
   const [photoBlob, setPhotoBlob] = useState(base ? base.photo : null);
   const [nom, setNom] = useState(base ? base.nom || "" : "");
   const [nomSci, setNomSci] = useState(base ? base.nomSci || "" : "");
@@ -1467,6 +1468,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
       if (base && base.meteoARattraper && base.gps) chercherMeteo(base.gps);
       return;
     }
+    if (modeEdition) return; // en édition, on garde la position existante (modifiable à la main)
     if (!navigator.geolocation) { setGpsEtat("refuse"); return; }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -1486,7 +1488,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
 
   // --- Brouillon : restauration au montage (hors photo, non sérialisable simplement) ---
   useEffect(() => {
-    if (modeTri) return;
+    if (modeTri || modeEdition) return;
     try {
       const brut = localStorage.getItem("biodex:brouillon");
       if (brut) {
@@ -1514,7 +1516,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
 
   // --- Brouillon : sauvegarde à chaque changement de champ texte ---
   useEffect(() => {
-    if (modeTri) return;
+    if (modeTri || modeEdition) return;
     const b = { nom, nomSci, biotope, ciel, temp, notes };
     const vide = !nom && !nomSci && !biotope && !ciel && !temp && !notes;
     try {
@@ -1702,7 +1704,22 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
       return;
     }
     setEnregistrement(true);
-    const obs = modeTri
+    const obs = modeEdition
+      ? {
+          ...base,
+          nom: nom.trim(),
+          nomSci: nomSci.trim(),
+          biotope: biotope || "autre",
+          ciel: ciel || "",
+          temp: temp.trim(),
+          meteoAuto,
+          notes: notes.trim(),
+          notable: notable || "",
+          gps: gpsEtat === "ok" ? gps : null,
+          photo: photoBlob,
+          // id et date d'origine conservés via ...base
+        }
+      : modeTri
       ? {
           ...base,
           nom: nom.trim(),
@@ -1733,7 +1750,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
         };
     const ok = await onSauver(obs);
     setEnregistrement(false);
-    if (ok) { try { if (!modeTri) localStorage.removeItem("biodex:brouillon"); } catch {} }
+    if (ok) { try { if (!modeTri && !modeEdition) localStorage.removeItem("biodex:brouillon"); } catch {} }
     else setErreur("Échec de l'enregistrement. Réessaie — si ça persiste, dis-le au développeur 😉");
   }
 
@@ -1747,7 +1764,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
 
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-      <h2 style={{ fontFamily: serif, color: C.papier, fontSize: 22, margin: "4px 0 16px" }}>{modeTri ? "Compléter l’observation" : "Nouvelle observation"}</h2>
+      <h2 style={{ fontFamily: serif, color: C.papier, fontSize: 22, margin: "4px 0 16px" }}>{modeEdition ? "Modifier l’observation" : (modeTri ? "Compléter l’observation" : "Nouvelle observation")}</h2>
 
       {brouillonPropose && (
         <div style={{ marginBottom: 16, padding: "12px 14px", background: "linear-gradient(#2C3623, #232B1D)", border: `1px solid #A8863A`, borderRadius: 10 }}>
@@ -2105,7 +2122,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base }) {
       <div style={{ display: "flex", gap: 10 }}>
         <Bouton onClick={onAnnuler} style={{ flex: 1 }}>Annuler</Bouton>
         <Bouton variante="primaire" onClick={sauver} disabled={enregistrement} style={{ flex: 2 }}>
-          {enregistrement ? "Enregistrement…" : (modeTri ? "Classer dans la collection" : "Épingler dans la collection")}
+          {enregistrement ? "Enregistrement…" : (modeEdition ? "Enregistrer les modifications" : (modeTri ? "Classer dans la collection" : "Épingler dans la collection"))}
         </Bouton>
       </div>
     </div>
@@ -2195,7 +2212,7 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
   );
 }
 
-function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte, onMajCadre, prenom, onDefinirPrenom, utilisateur, onAllerConnexion }) {
+function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte, onMajCadre, prenom, onDefinirPrenom, utilisateur, onAllerConnexion }) {
   const [confirme, setConfirme] = useState(false);
   const [ficheEtat, setFicheEtat] = useState(""); // "" | recherche | echec
   const [ficheErreur, setFicheErreur] = useState("");
@@ -2486,6 +2503,9 @@ function Detail({ obs, onFermer, onSupprimer, onMajFiche, onMajCarte, onMajCadre
       )}
 
       <div style={{ marginTop: 20 }}>
+        {!confirme && (
+          <Bouton variante="primaire" onClick={() => onModifier && onModifier(obs.id)} style={{ width: "100%", marginBottom: 10 }}>✏️ Modifier cette observation</Bouton>
+        )}
         {confirme ? (
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <span style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, flex: 1 }}>Supprimer définitivement ?</span>
@@ -2782,7 +2802,11 @@ function Aide({ onFermer, onImportTermine }) {
       <SectionPliable titre="🗃️ Ma collection">
         <div style={t}>🗃️ Ta collection</div>
         <p style={p}>
-          La grille présente tes spécimens comme dans une boîte entomologique, avec un menu de tri (récentes, anciennes, nom, biotope) dont le choix est mémorisé. Touche une carte pour la fiche complète — le lien 🗺️ de la position ouvre le point exact sur OpenStreetMap, et le bouton de suppression se trouve en bas de la fiche.
+          La grille présente tes spécimens comme dans une boîte entomologique, avec un menu de tri (récentes, anciennes, nom, biotope) dont le choix est mémorisé. Touche une carte pour la fiche complète — le lien 🗺️ de la position ouvre le point exact sur OpenStreetMap.
+        </p>
+        <div style={t}>✏️ Modifier une observation</div>
+        <p style={p}>
+          Depuis la fiche d'un spécimen, le bouton « ✏️ Modifier cette observation » permet de tout corriger après coup : le nom, le nom latin, le biotope, la météo, les notes, la position (via la carte) et même la photo (reprendre ou réimporter). Le bouton de suppression reste en bas de la fiche.
         </p>
         <div style={t}>🔍 Filtres & recherche</div>
         <p style={p}>
@@ -3603,6 +3627,20 @@ function BioDex() {
     }
   }
 
+  async function enregistrerEdition(obs) {
+    // On préserve le statut d'origine (a_trier ou non) et les champs annexes non touchés par le formulaire
+    const ancienne = observations.find((o) => o.id === obs.id);
+    const maj = { ...ancienne, ...obs };
+    try {
+      await dbAjouter(maj);
+      setObservations((prev) => prev.map((o) => (o.id === maj.id ? maj : o)));
+      setVue("detail"); // retour à la fiche mise à jour
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function supprimerObservation(id) {
     try { await dbSupprimer(id); } catch {}
     setObservations((prev) => prev.filter((o) => o.id !== id));
@@ -3759,6 +3797,14 @@ function BioDex() {
       {vue === "aide" && <Aide onFermer={() => setVue("collection")} onImportTermine={chargerObservations} />}
       {vue === "connexion" && <Connexion onFermer={() => setVue("collection")} utilisateur={utilisateur} onDeconnexion={deconnexion} />}
       {vue === "nouvelle" && <NouvelleObservation onSauver={sauverObservation} onAnnuler={() => setVue("collection")} />}
+      {vue === "edition" && selection && (
+        <NouvelleObservation
+          key={"edit-" + selection.id}
+          base={selection}
+          mode="edition"
+          onSauver={enregistrerEdition}
+          onAnnuler={() => setVue("detail")} />
+      )}
       {vue === "carte" && (
         <Carte observations={triees} onOuvrirFiche={(id) => { setSelectionId(id); setVue("detail"); }} />
       )}
@@ -3772,6 +3818,7 @@ function BioDex() {
           onDefinirPrenom={definirPrenom}
           utilisateur={utilisateur}
           onAllerConnexion={() => setVue("connexion")}
+          onModifier={(id) => { setSelectionId(id); setVue("edition"); }}
           onSupprimer={supprimerObservation} />
       )}
 
