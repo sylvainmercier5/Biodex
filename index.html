@@ -84,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.44 (PWA) ============
+// ============ BioDex v0.45 (PWA) ============
 
-const VERSION = "v0.44";
+const VERSION = "v0.45";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -610,6 +610,16 @@ function compresserPourMur(blob) {
 }
 
 // Publie une observation sur le mur commun (upload photo + insertion du post)
+// Floute une position à environ 1 km (2 décimales) pour la carte commune :
+// on partage une zone approximative, jamais le point exact (vie privée).
+function flouterPosition(gps) {
+  if (!gps || typeof gps.lat !== "number" || typeof gps.lon !== "number") return { lat: null, lon: null };
+  return {
+    lat: Math.round(gps.lat * 100) / 100,
+    lon: Math.round(gps.lon * 100) / 100,
+  };
+}
+
 async function publierAuMur(obs, auteur) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Mur non configuré");
@@ -623,14 +633,15 @@ async function publierAuMur(obs, auteur) {
     const { data: pub } = sb.storage.from("photos").getPublicUrl(nomFichier);
     photoUrl = pub ? pub.publicUrl : "";
   }
-  // 2) insertion du post
+  // 2) insertion du post — position FLOUTÉE à ~1 km (jamais la position exacte)
+  const pos = flouterPosition(obs.gps);
   const post = {
     auteur: (auteur || "Anonyme").slice(0, 40),
     espece: obs.nom || "",
     espece_sci: obs.nomSci || "",
     lieu: obs.biotope ? biotopeOf(obs.biotope).label : "",
-    lat: null, // on ne partage pas la position exacte sur le mur (vie privée)
-    lon: null,
+    lat: pos.lat, // position approximative (~1 km) pour la carte de la bande
+    lon: pos.lon,
     photo_url: photoUrl,
     note: (obs.notes || "").slice(0, 500),
   };
@@ -2532,75 +2543,120 @@ function SelecteurPoint({ point, onChange, onFermer }) {
 // ---------- Vue : carte ----------
 function Carte({ observations, onOuvrirFiche }) {
   const divRef = useRef(null);
+  const [mode, setMode] = useState("moi"); // "moi" | "bande"
+  const [postsBande, setPostsBande] = useState([]);
+  const [etatBande, setEtatBande] = useState("idle"); // idle | chargement | ok | echec
+
   const avecGps = observations.filter((o) => o.gps);
   const sansGps = observations.length - avecGps.length;
+  const postsAvecPos = postsBande.filter((p) => typeof p.lat === "number" && typeof p.lon === "number");
+
+  // Charge les posts de la bande la première fois qu'on passe en mode "bande"
+  useEffect(() => {
+    if (mode === "bande" && etatBande === "idle" && MUR_ACTIF) {
+      setEtatBande("chargement");
+      chargerMur(200)
+        .then((p) => { setPostsBande(p); setEtatBande("ok"); })
+        .catch(() => setEtatBande("echec"));
+    }
+  }, [mode]);
 
   useEffect(() => {
     if (!divRef.current || typeof L === "undefined") return;
     const carte = L.map(divRef.current, { zoomControl: true });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "© OpenStreetMap",
-    }).addTo(carte);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(carte);
 
     const urls = [];
     const points = [];
-    avecGps.forEach((o) => {
-      const pt = [o.gps.lat, o.gps.lon];
-      points.push(pt);
-      const m = L.circleMarker(pt, {
-        radius: 9,
-        color: "#2A2519",
-        weight: 2,
-        fillColor: "#C9A24B",
-        fillOpacity: 0.95,
-      }).addTo(carte);
 
-      const conteneur = document.createElement("div");
-      conteneur.style.width = "150px";
-      let urlPhoto = null;
-      if (o.photo) {
-        urlPhoto = URL.createObjectURL(o.photo);
-        urls.push(urlPhoto);
-      }
-      conteneur.innerHTML =
-        (urlPhoto ? '<img src="' + urlPhoto + '" style="width:100%;border-radius:6px;display:block;margin-bottom:6px;" />' : "") +
-        '<div style="font-weight:700;font-size:13px;color:#2A2519;">' + (o.nom ? o.nom.replace(/</g, "&lt;") : "Spécimen non identifié") + "</div>" +
-        '<div style="font-size:11px;color:#8A8065;margin-bottom:6px;">' +
-        biotopeOf(o.biotope).emoji + " " + biotopeOf(o.biotope).label + " · " + new Date(o.date).toLocaleDateString("fr-FR") +
-        "</div>";
-      const btn = document.createElement("button");
-      btn.textContent = "Voir la fiche";
-      btn.style.cssText = "width:100%;padding:6px;border-radius:6px;border:none;background:#C9A24B;color:#2A2416;font-weight:700;font-size:13px;cursor:pointer;";
-      btn.addEventListener("click", () => onOuvrirFiche(o.id));
-      conteneur.appendChild(btn);
-      m.bindPopup(conteneur);
-    });
+    if (mode === "moi") {
+      // Mes observations (position précise, photo locale)
+      avecGps.forEach((o) => {
+        const pt = [o.gps.lat, o.gps.lon];
+        points.push(pt);
+        const m = L.circleMarker(pt, { radius: 9, color: "#2A2519", weight: 2, fillColor: "#C9A24B", fillOpacity: 0.95 }).addTo(carte);
+        const conteneur = document.createElement("div");
+        conteneur.style.width = "150px";
+        let urlPhoto = null;
+        if (o.photo) { urlPhoto = URL.createObjectURL(o.photo); urls.push(urlPhoto); }
+        conteneur.innerHTML =
+          (urlPhoto ? '<img src="' + urlPhoto + '" style="width:100%;border-radius:6px;display:block;margin-bottom:6px;" />' : "") +
+          '<div style="font-weight:700;font-size:13px;color:#2A2519;">' + (o.nom ? o.nom.replace(/</g, "&lt;") : "Spécimen non identifié") + "</div>" +
+          '<div style="font-size:11px;color:#8A8065;margin-bottom:6px;">' +
+          biotopeOf(o.biotope).emoji + " " + biotopeOf(o.biotope).label + " · " + new Date(o.date).toLocaleDateString("fr-FR") + "</div>";
+        const btn = document.createElement("button");
+        btn.textContent = "Voir la fiche";
+        btn.style.cssText = "width:100%;padding:6px;border-radius:6px;border:none;background:#C9A24B;color:#2A2416;font-weight:700;font-size:13px;cursor:pointer;";
+        btn.addEventListener("click", () => onOuvrirFiche(o.id));
+        conteneur.appendChild(btn);
+        m.bindPopup(conteneur);
+      });
+    } else {
+      // Carte de la bande (positions approximatives ~1 km, photo distante)
+      postsAvecPos.forEach((p) => {
+        const pt = [p.lat, p.lon];
+        points.push(pt);
+        // Cercle de zone (pour montrer que la position est approximative)
+        L.circle(pt, { radius: 900, color: "#8AAE6B", weight: 1, fillColor: "#8AAE6B", fillOpacity: 0.08 }).addTo(carte);
+        const m = L.circleMarker(pt, { radius: 8, color: "#2A2519", weight: 2, fillColor: "#8AAE6B", fillOpacity: 0.95 }).addTo(carte);
+        const conteneur = document.createElement("div");
+        conteneur.style.width = "150px";
+        conteneur.innerHTML =
+          (p.photo_url ? '<img src="' + p.photo_url + '" style="width:100%;border-radius:6px;display:block;margin-bottom:6px;" />' : "") +
+          '<div style="font-weight:700;font-size:13px;color:#2A2519;">' + (p.espece ? String(p.espece).replace(/</g, "&lt;") : "Spécimen non identifié") + "</div>" +
+          '<div style="font-size:11px;color:#8A8065;">' +
+          "🐛 " + (p.auteur ? String(p.auteur).replace(/</g, "&lt;") : "Anonyme") + (p.lieu ? " · " + String(p.lieu).replace(/</g, "&lt;") : "") + "</div>" +
+          '<div style="font-size:10px;color:#A89A78;margin-top:4px;">Zone approximative</div>';
+        m.bindPopup(conteneur);
+      });
+    }
 
     if (points.length > 0) {
-      carte.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 15 });
+      carte.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: mode === "bande" ? 12 : 15 });
     } else {
-      carte.setView([46.6, 2.4], 5); // France par défaut
+      carte.setView([46.6, 2.4], 5);
     }
 
     return () => {
       carte.remove();
       urls.forEach((u) => URL.revokeObjectURL(u));
     };
-  }, [observations]);
+  }, [observations, mode, postsBande]);
 
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 10 }}>
-        <span style={{ color: C.ambre, fontWeight: 800 }}>{avecGps.length}</span> observation{avecGps.length > 1 ? "s" : ""} positionnée{avecGps.length > 1 ? "s" : ""}
-        {sansGps > 0 && <span> · {sansGps} sans position</span>}
-      </div>
-      {avecGps.length === 0 && (
+      {/* Bascule Ma carte / Carte de la bande */}
+      {MUR_ACTIF && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 12, background: C.panneau, padding: 4, borderRadius: 10, border: `1px solid ${C.bordure}` }}>
+          <button onClick={() => setMode("moi")} style={{ flex: 1, padding: "8px 10px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: sans, fontSize: 13.5, fontWeight: 700, background: mode === "moi" ? "linear-gradient(#C9A24B, #B8912F)" : "transparent", color: mode === "moi" ? C.encre : C.papierSombre }}>🗃️ Ma carte</button>
+          <button onClick={() => setMode("bande")} style={{ flex: 1, padding: "8px 10px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: sans, fontSize: 13.5, fontWeight: 700, background: mode === "bande" ? "linear-gradient(#8AAE6B, #6F9450)" : "transparent", color: mode === "bande" ? C.encre : C.papierSombre }}>🌐 La bande</button>
+        </div>
+      )}
+
+      {mode === "moi" ? (
+        <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 10 }}>
+          <span style={{ color: C.ambre, fontWeight: 800 }}>{avecGps.length}</span> observation{avecGps.length > 1 ? "s" : ""} positionnée{avecGps.length > 1 ? "s" : ""}
+          {sansGps > 0 && <span> · {sansGps} sans position</span>}
+        </div>
+      ) : (
+        <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 10 }}>
+          {etatBande === "chargement" && "Chargement des trouvailles de la bande…"}
+          {etatBande === "echec" && <span style={{ color: "#E8A88F" }}>Impossible de charger la carte de la bande.</span>}
+          {etatBande === "ok" && <span><span style={{ color: "#8AAE6B", fontWeight: 800 }}>{postsAvecPos.length}</span> trouvaille{postsAvecPos.length > 1 ? "s" : ""} de la bande · positions approximatives (~1 km)</span>}
+        </div>
+      )}
+
+      {mode === "moi" && avecGps.length === 0 && (
         <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, marginBottom: 10, padding: "10px 12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}` }}>
           Aucune observation avec position GPS pour l'instant — la carte se remplira au fil de tes sorties.
         </div>
       )}
-      <div ref={divRef} style={{ width: "100%", height: "68vh", borderRadius: 10, border: `1px solid ${C.bordure}`, overflow: "hidden" }} />
+      {mode === "bande" && etatBande === "ok" && postsAvecPos.length === 0 && (
+        <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, marginBottom: 10, padding: "10px 12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}` }}>
+          Aucune trouvaille localisée sur le mur pour l'instant. Les positions n'apparaissent que pour les partages faits à partir de la v0.45.
+        </div>
+      )}
+      <div ref={divRef} style={{ width: "100%", height: "62vh", borderRadius: 10, border: `1px solid ${C.bordure}`, overflow: "hidden" }} />
     </div>
   );
 }
@@ -2738,7 +2794,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🗺️ La carte</div>
         <p style={p}>
-          L'onglet Carte affiche toutes tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. La carte nécessite du réseau pour charger le fond de plan.
+          L'onglet Carte affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, les positions sont volontairement approximatives (~1 km, matérialisées par une zone verte) pour protéger la vie privée de chacun : on voit le secteur d'une trouvaille, jamais l'endroit exact. La carte nécessite du réseau.
         </p>
         <div style={t}>📝 Brouillon automatique</div>
         <p style={p}>
