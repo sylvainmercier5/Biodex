@@ -84,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.40 (PWA) ============
+// ============ BioDex v0.41 (PWA) ============
 
-const VERSION = "v0.40";
+const VERSION = "v0.41";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -622,6 +622,31 @@ async function dernierPostMur() {
     if (error || !data || !data.length) return null;
     return data[0].created_at;
   } catch { return null; }
+}
+
+// ---------- Boîte à idées ----------
+async function chargerIdees() {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { data, error } = await sb.from("idees").select("*").order("created_at", { ascending: false }).limit(100);
+  if (error) throw new Error("Lecture des idées impossible");
+  return data || [];
+}
+
+async function proposerIdee(auteur, idee) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { error } = await sb.from("idees").insert({ auteur: (auteur || "Anonyme").slice(0, 40), idee: idee.slice(0, 500) });
+  if (error) throw new Error("Envoi impossible");
+  return true;
+}
+
+async function supprimerIdee(id) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { error } = await sb.from("idees").delete().eq("id", id);
+  if (error) throw new Error("Suppression impossible");
+  return true;
 }
 
 // Supprime un post du mur (et sa photo associée dans le stockage, pour ne pas encombrer)
@@ -2613,6 +2638,10 @@ function Aide({ onFermer, onImportTermine }) {
       <p style={p}>
         L'onglet Carte affiche toutes tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. La carte nécessite du réseau pour charger le fond de plan.
       </p>
+      <div style={t}>💡 Boîte à idées</div>
+      <p style={p}>
+        Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Les meilleures finiront peut-être dans une prochaine version !
+      </p>
       <div style={t}>📲 Installer l'appli</div>
       <p style={p}>
         Quand une bannière « Installe BioDex » apparaît en haut, touche « Installer » : c'est le plus simple. Sinon, dans le menu de ton navigateur, choisis « Ajouter à l'écran d'accueil » (ou « Installer l'application »). BioDex se lance alors comme une vraie appli, et fonctionne même hors connexion — pratique en pleine nature. Seule la météo auto nécessite du réseau. Quand une nouvelle version est déployée, une bannière « Nouvelle version disponible » apparaît en haut à l'ouverture : touche « Mettre à jour » et l'appli se recharge à jour, sans manipulation de cache.
@@ -2765,6 +2794,113 @@ function Connexion({ onFermer, utilisateur, onDeconnexion }) {
           {erreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 10 }}>{erreur}</div>}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------- Boîte à idées (vue) ----------
+function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
+  const [idees, setIdees] = useState([]);
+  const [etat, setEtat] = useState("chargement"); // chargement | ok | echec | inactif
+  const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
+  const [texte, setTexte] = useState("");
+  const [envoiEtat, setEnvoiEtat] = useState(""); // "" | envoi | echec
+  const [erreur, setErreur] = useState("");
+  const [confirmSuppr, setConfirmSuppr] = useState(null);
+
+  async function rafraichir() {
+    if (!MUR_ACTIF) { setEtat("inactif"); return; }
+    setEtat("chargement");
+    try { setIdees(await chargerIdees()); setEtat("ok"); }
+    catch { setEtat("echec"); }
+  }
+
+  useEffect(() => { rafraichir(); }, []);
+
+  async function envoyer() {
+    const auteur = (saisiePrenom || "").trim();
+    const idee = texte.trim();
+    if (!idee) { setErreur("Écris ton idée avant d'envoyer."); return; }
+    if (!auteur) { setErreur("Indique ton prénom."); return; }
+    onDefinirPrenom(auteur);
+    setEnvoiEtat("envoi");
+    setErreur("");
+    try {
+      await proposerIdee(auteur, idee);
+      setTexte("");
+      setEnvoiEtat("");
+      rafraichir();
+    } catch (e) {
+      setErreur(String(e.message || "Envoi impossible") + ".");
+      setEnvoiEtat("echec");
+    }
+  }
+
+  async function supprimer(id) {
+    try { await supprimerIdee(id); setIdees((prev) => prev.filter((x) => x.id !== id)); }
+    catch { rafraichir(); }
+    setConfirmSuppr(null);
+  }
+
+  if (!MUR_ACTIF) {
+    return (
+      <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", padding: "48px 24px", border: `1px solid ${C.bordure}`, borderRadius: 14, background: "linear-gradient(#191F15, #14180F)" }}>
+          <div style={{ fontSize: 38, marginBottom: 12 }}>💡</div>
+          <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier, marginBottom: 6 }}>Boîte à idées non configurée</div>
+          <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.5 }}>La connexion au serveur n'est pas active.</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Retour</Bouton>
+      <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.papier, marginBottom: 4 }}>💡 Boîte à idées</div>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 14, lineHeight: 1.5 }}>
+        Une envie, une amélioration, un bug à signaler ? Partage-la avec la bande — les meilleures idées finiront peut-être dans l'appli !
+      </div>
+
+      {/* Formulaire */}
+      <div style={{ padding: "12px 14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10, marginBottom: 18 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, whiteSpace: "nowrap" }}>Ton prénom :</span>
+          <input value={saisiePrenom} onChange={(e) => setSaisiePrenom(e.target.value)} placeholder="ex : Sylvain" maxLength={40}
+            style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
+        </div>
+        <textarea value={texte} onChange={(e) => setTexte(e.target.value)} placeholder="Ton idée…" maxLength={500} rows={3}
+          style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "10px 12px", fontFamily: sans, fontSize: 14, outline: "none", resize: "vertical", marginBottom: 8 }} />
+        <Bouton variante="primaire" onClick={envoyer} disabled={envoiEtat === "envoi"} style={{ width: "100%" }}>
+          {envoiEtat === "envoi" ? "Envoi…" : "💡 Proposer mon idée"}
+        </Bouton>
+        {erreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 8 }}>{erreur}</div>}
+      </div>
+
+      {/* Liste */}
+      {etat === "chargement" && <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, fontStyle: "italic", textAlign: "center", padding: "16px 0" }}>Chargement…</div>}
+      {etat === "echec" && <div style={{ fontFamily: sans, fontSize: 14, color: "#E8A88F", textAlign: "center", padding: "16px 0" }}>Impossible de charger les idées. Réessaie.</div>}
+      {etat === "ok" && idees.length === 0 && (
+        <div style={{ textAlign: "center", padding: "32px 24px", fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.6 }}>
+          Aucune idée pour l'instant.<br />Sois le premier à en proposer une !
+        </div>
+      )}
+      {etat === "ok" && idees.map((it) => (
+        <div key={it.id} style={{ marginBottom: 10, padding: "12px 14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
+          <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{it.idee}</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
+            <span>💡 {it.auteur || "Anonyme"} · {it.created_at ? new Date(it.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
+            {confirmSuppr === it.id ? (
+              <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button onClick={() => setConfirmSuppr(null)} style={{ fontFamily: sans, fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>Non</button>
+                <button onClick={() => supprimer(it.id)} style={{ fontFamily: sans, fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, cursor: "pointer" }}>Supprimer</button>
+              </span>
+            ) : (
+              <button onClick={() => setConfirmSuppr(it.id)} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 14, cursor: "pointer", padding: "0 4px" }} title="Supprimer">🗑️</button>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -3272,6 +3408,13 @@ function BioDex() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {MUR_ACTIF && (
+            <button className="bd-press" onClick={() => setVue("idees")}
+              style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", fontSize: 15 }}
+              aria-label="Boîte à idées" title="Boîte à idées">
+              💡
+            </button>
+          )}
+          {MUR_ACTIF && (
             <button className="bd-press" onClick={() => setVue("connexion")}
               style={{ height: 32, padding: utilisateur ? "0 12px" : 0, width: utilisateur ? "auto" : 32, borderRadius: utilisateur ? 16 : "50%", border: `1px solid ${utilisateur ? "#A8863A" : C.bordure}`, background: utilisateur ? "linear-gradient(#2C3623, #232B1D)" : C.panneau, color: utilisateur ? C.ambreClair : C.lichen, fontFamily: sans, fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
               aria-label="Connexion" title={utilisateur ? "Connecté" : "Se connecter"}>
@@ -3348,6 +3491,7 @@ function BioDex() {
       })()}
 
       {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} />}
+      {vue === "idees" && <BoiteIdees prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
       {vue === "cartes" && (
         <ModeCartes cartes={cartes} onOuvrir={(id) => { setSelectionId(id); setVue("detail"); }} />
       )}
