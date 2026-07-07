@@ -96,9 +96,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.53 (PWA) ============
+// ============ BioDex v0.54 (PWA) ============
 
-const VERSION = "v0.53";
+const VERSION = "v0.54";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -788,6 +788,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.54", date: "2026-07", items: ["💾 Rappel de sauvegarde : l'appli te propose d'exporter ta collection régulièrement, pour ne jamais rien perdre. Pense à ranger le fichier à l'abri (Drive, PC…) !"] },
   { v: "0.53", date: "2026-07", items: ["⚡ Optimisation interne : moins de requêtes réseau en double, pour une appli plus fluide et plus économe en données et batterie."] },
   { v: "0.52", date: "2026-07", items: ["🧹 En-tête simplifié : les notifications restent visibles, missions/idées/profil sont rangées dans un menu ☰ plus clair."] },
   { v: "0.51", date: "2026-07", items: ["🎯 Missions saisonnières : des défis d'observation communs à la bande, qui changent à chaque saison et se valident tout seuls. Vois qui les a réussies !"] },
@@ -3283,6 +3284,12 @@ function Aide({ onFermer, onImportTermine }) {
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
       setExportEtat("✓ " + toutes.length + " observation(s) exportée(s)");
+      // Mémorise la sauvegarde pour le rappel
+      try {
+        localStorage.setItem("biodex_derniere_sauvegarde", new Date().toISOString());
+        localStorage.setItem("biodex_sauvegarde_count", String(toutes.length));
+        window.dispatchEvent(new Event("biodex-sauvegarde-faite"));
+      } catch {}
     } catch {
       setExportEtat("Échec de l'export — réessaie.");
     }
@@ -3431,7 +3438,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>💾 Stockage & sauvegarde</div>
         <p style={p}>
-          Tes observations sont sauvegardées sur ton téléphone (photos jusqu'à 2560 px). Elles ne sont pas synchronisées entre appareils : pense à exporter régulièrement une sauvegarde et à la mettre à l'abri (Drive, PC…). L'import restaure une sauvegarde — les observations déjà présentes sont conservées, les doublons écrasés proprement.
+          Tes observations sont sauvegardées sur ton téléphone (photos jusqu'à 2560 px). Elles ne sont PAS synchronisées entre appareils, et vider les données du navigateur les efface : sauvegarde régulièrement ! L'appli te le rappelle avec une bannière 💾 quand ça fait un moment ou que tu as ajouté beaucoup d'observations. L'export crée un fichier .json à ranger à l'abri (Drive, PC…). L'import restaure une sauvegarde — les observations déjà présentes sont conservées, les doublons écrasés proprement.
         </p>
         <div style={{ display: "flex", gap: 10, marginBottom: 8, marginTop: 10 }}>
           <Bouton variante="primaire" onClick={exporter} style={{ flex: 1 }}>📤 Exporter</Bouton>
@@ -4036,6 +4043,77 @@ function BioDex() {
   const [installable, setInstallable] = useState(false);
   const [installRefusee, setInstallRefusee] = useState(() => { try { return localStorage.getItem("biodex_install_refusee") === "1"; } catch { return false; } });
 
+  // --- Rappel de sauvegarde ---
+  const [rappelSauvegarde, setRappelSauvegarde] = useState(false);
+  const [exportEnCours, setExportEnCours] = useState(false);
+
+  function verifierRappelSauvegarde() {
+    try {
+      const n = observations.length;
+      if (n === 0) { setRappelSauvegarde(false); return; }
+      const derniere = localStorage.getItem("biodex_derniere_sauvegarde");
+      const countSauve = parseInt(localStorage.getItem("biodex_sauvegarde_count") || "0", 10);
+      const refuseLe = localStorage.getItem("biodex_rappel_reporte");
+      // Reporté récemment (< 2 jours) ? on se tait
+      if (refuseLe && (Date.now() - new Date(refuseLe).getTime()) < 2 * 864e5) { setRappelSauvegarde(false); return; }
+      // Jamais sauvegardé, ou +10 obs depuis, ou +7 jours
+      const jamais = !derniere;
+      const beaucoupDeNouveau = n - countSauve >= 10;
+      const tropVieux = derniere && (Date.now() - new Date(derniere).getTime()) > 7 * 864e5;
+      setRappelSauvegarde(jamais || beaucoupDeNouveau || tropVieux);
+    } catch { setRappelSauvegarde(false); }
+  }
+
+  useEffect(() => { verifierRappelSauvegarde(); }, [observations]);
+  useEffect(() => {
+    const h = () => setRappelSauvegarde(false);
+    window.addEventListener("biodex-sauvegarde-faite", h);
+    return () => window.removeEventListener("biodex-sauvegarde-faite", h);
+  }, []);
+
+  async function exporterMaintenant() {
+    if (exportEnCours) return;
+    setExportEnCours(true);
+    try {
+      const toutes = await dbToutes();
+      const obsExport = [];
+      for (const o of toutes) {
+        let photo64 = null;
+        if (o.photo) {
+          photo64 = await new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.onerror = rej;
+            r.readAsDataURL(o.photo);
+          });
+        }
+        obsExport.push({ ...o, photo: photo64 });
+      }
+      const json = JSON.stringify({ app: "biodex", version: VERSION, exporteLe: new Date().toISOString(), observations: obsExport });
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "biodex-sauvegarde-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      try {
+        localStorage.setItem("biodex_derniere_sauvegarde", new Date().toISOString());
+        localStorage.setItem("biodex_sauvegarde_count", String(toutes.length));
+        localStorage.removeItem("biodex_rappel_reporte");
+      } catch {}
+      setRappelSauvegarde(false);
+    } catch {}
+    setExportEnCours(false);
+  }
+
+  function reporterRappel() {
+    try { localStorage.setItem("biodex_rappel_reporte", new Date().toISOString()); } catch {}
+    setRappelSauvegarde(false);
+  }
+
   useEffect(() => {
     // Déjà installée (mode standalone) : rien à proposer
     const standalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
@@ -4348,6 +4426,22 @@ function BioDex() {
               Plus tard
             </button>
             <Bouton variante="primaire" onClick={lancerInstallation}>Installer</Bouton>
+          </div>
+        </div>
+      )}
+
+      {rappelSauvegarde && !majDispo && (vue === "collection") && (
+        <div style={{ maxWidth: 560, margin: "0 auto", padding: "10px 16px 0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", boxShadow: "0 2px 8px rgba(0,0,0,.3)" }}>
+            <span style={{ fontSize: 20, flexShrink: 0 }}>💾</span>
+            <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, flex: 1, lineHeight: 1.4 }}>
+              Pense à sauvegarder ta collection ({observations.length} observation{observations.length > 1 ? "s" : ""}) — un fichier à garder à l'abri.
+            </span>
+            <button onClick={reporterRappel} aria-label="Plus tard"
+              style={{ background: "none", border: "none", color: C.papierSombre, fontFamily: sans, fontSize: 12, cursor: "pointer", padding: "4px 6px", flexShrink: 0 }}>
+              Plus tard
+            </button>
+            <Bouton variante="primaire" onClick={exporterMaintenant} disabled={exportEnCours}>{exportEnCours ? "…" : "Sauvegarder"}</Bouton>
           </div>
         </div>
       )}
