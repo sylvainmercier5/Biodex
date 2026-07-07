@@ -96,9 +96,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.50 (PWA) ============
+// ============ BioDex v0.51 (PWA) ============
 
-const VERSION = "v0.50";
+const VERSION = "v0.51";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -674,7 +674,121 @@ async function chargerMur(limite = 50) {
 // Les 4 réactions thématiques disponibles
 // Journal des nouveautés de l'appli (le plus récent en premier).
 // Sert au "Quoi de neuf" du centre de notifications.
+// ---------- Missions saisonnières ----------
+// La saison est déduite du mois (hémisphère nord). Chaque saison a son jeu de missions,
+// identiques pour toute la bande. La validation auto s'appuie sur des données fiables
+// de la collection locale (biotope, nombre, diversité, période, notable).
+function saisonActuelle(d = new Date()) {
+  const m = d.getMonth(); // 0 = janvier
+  const annee = d.getFullYear();
+  if (m >= 2 && m <= 4) return { cle: annee + "-printemps", label: "Printemps", emoji: "🌸", debut: new Date(annee, 2, 1), fin: new Date(annee, 5, 1) };
+  if (m >= 5 && m <= 7) return { cle: annee + "-ete", label: "Été", emoji: "☀️", debut: new Date(annee, 5, 1), fin: new Date(annee, 8, 1) };
+  if (m >= 8 && m <= 10) return { cle: annee + "-automne", label: "Automne", emoji: "🍂", debut: new Date(annee, 8, 1), fin: new Date(annee, 11, 1) };
+  // Hiver : déc-fév (à cheval sur deux années)
+  const anneeHiver = m === 11 ? annee : annee - 1;
+  return { cle: anneeHiver + "-hiver", label: "Hiver", emoji: "❄️", debut: new Date(anneeHiver, 11, 1), fin: new Date(anneeHiver + 1, 2, 1) };
+}
+
+// Missions par type de saison (le suffixe de la clé). Chaque mission a une condition auto.
+// type: "nombre" (X obs dans la saison), "biotope" (obs dans ce biotope), "diversite" (X espèces), "notable" (une notable).
+function missionsDe(saisonCle) {
+  const type = saisonCle.split("-")[1];
+  const communes = [
+    { id: "diversite5", emoji: "🦋", titre: "Explorateur", desc: "Observe 5 espèces différentes cette saison", cond: { type: "diversite", n: 5 } },
+    { id: "notable", emoji: "🌟", titre: "Œil de lynx", desc: "Repère une observation notable", cond: { type: "notable" } },
+  ];
+  const parSaison = {
+    printemps: [
+      { id: "pr_jardin", emoji: "🏡", titre: "Réveil du jardin", desc: "Observe un insecte au jardin", cond: { type: "biotope", biotope: "jardin" } },
+      { id: "pr_prairie", emoji: "🌾", titre: "Fleurs de printemps", desc: "Observe un insecte en prairie", cond: { type: "biotope", biotope: "prairie" } },
+      { id: "pr_actif", emoji: "🐝", titre: "Le printemps bourdonne", desc: "Fais 8 observations ce printemps", cond: { type: "nombre", n: 8 } },
+    ],
+    ete: [
+      { id: "et_eau", emoji: "🪷", titre: "Bord de l'eau", desc: "Observe un insecte en zone humide ou au bord de l'eau", cond: { type: "biotope", biotope: ["zone-humide", "riviere"] } },
+      { id: "et_actif", emoji: "🔥", titre: "Plein été", desc: "Fais 10 observations cet été", cond: { type: "nombre", n: 10 } },
+      { id: "et_foret", emoji: "🌲", titre: "Sous la canopée", desc: "Observe un insecte en forêt", cond: { type: "biotope", biotope: "foret" } },
+    ],
+    automne: [
+      { id: "au_foret", emoji: "🍂", titre: "Sous-bois d'automne", desc: "Observe un insecte en forêt", cond: { type: "biotope", biotope: "foret" } },
+      { id: "au_actif", emoji: "🍁", titre: "Récolte d'automne", desc: "Fais 6 observations cet automne", cond: { type: "nombre", n: 6 } },
+    ],
+    hiver: [
+      { id: "hi_actif", emoji: "❄️", titre: "Chasseur d'hiver", desc: "Fais 3 observations cet hiver (pas si facile !)", cond: { type: "nombre", n: 3 } },
+      { id: "hi_urbain", emoji: "🏙️", titre: "Refuges urbains", desc: "Observe un insecte en ville", cond: { type: "biotope", biotope: "urbain" } },
+    ],
+  };
+  return [...(parSaison[type] || []), ...communes];
+}
+
+// Vérifie si une mission est remplie par la collection, sur la fenêtre de la saison.
+function missionRemplie(mission, observations, saison) {
+  const dansSaison = observations.filter((o) => {
+    if (!o.date) return false;
+    const d = new Date(o.date);
+    return d >= saison.debut && d < saison.fin;
+  });
+  const c = mission.cond;
+  if (c.type === "nombre") return dansSaison.length >= c.n;
+  if (c.type === "diversite") {
+    const set = new Set(dansSaison.map((o) => (o.nomSci || o.nom || "").trim().toLowerCase()).filter(Boolean));
+    return set.size >= c.n;
+  }
+  if (c.type === "notable") return dansSaison.some((o) => o.notable && String(o.notable).trim().length > 3);
+  if (c.type === "biotope") {
+    const cibles = Array.isArray(c.biotope) ? c.biotope : [c.biotope];
+    return dansSaison.some((o) => cibles.includes(o.biotope));
+  }
+  return false;
+}
+
+// Progression chiffrée (pour l'affichage "3/5")
+function missionProgres(mission, observations, saison) {
+  const dansSaison = observations.filter((o) => {
+    if (!o.date) return false;
+    const d = new Date(o.date);
+    return d >= saison.debut && d < saison.fin;
+  });
+  const c = mission.cond;
+  if (c.type === "nombre") return { actuel: Math.min(dansSaison.length, c.n), cible: c.n };
+  if (c.type === "diversite") {
+    const set = new Set(dansSaison.map((o) => (o.nomSci || o.nom || "").trim().toLowerCase()).filter(Boolean));
+    return { actuel: Math.min(set.size, c.n), cible: c.n };
+  }
+  return null; // biotope/notable : binaire, pas de barre
+}
+
+// --- Supabase : validations de missions ---
+async function chargerValidations(saisonCle) {
+  const sb = clientSupabase();
+  if (!sb) return [];
+  try {
+    const { data, error } = await sb.from("missions_validees").select("mission_id, auteur, auto").eq("saison", saisonCle);
+    if (error || !data) return [];
+    return data;
+  } catch { return []; }
+}
+
+async function validerMission(saisonCle, missionId, auteur, auto) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { error } = await sb.from("missions_validees").upsert(
+    { saison: saisonCle, mission_id: missionId, auteur: (auteur || "Anonyme").slice(0, 40), auto: !!auto },
+    { onConflict: "saison,mission_id,auteur", ignoreDuplicates: true }
+  );
+  if (error) throw new Error("Validation impossible");
+  return true;
+}
+
+async function devaliderMission(saisonCle, missionId, auteur) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { error } = await sb.from("missions_validees").delete().eq("saison", saisonCle).eq("mission_id", missionId).eq("auteur", auteur);
+  if (error) throw new Error("Retrait impossible");
+  return true;
+}
+
 const NOUVEAUTES = [
+  { v: "0.51", date: "2026-07", items: ["🎯 Missions saisonnières : des défis d'observation communs à la bande, qui changent à chaque saison et se valident tout seuls. Vois qui les a réussies !"] },
   { v: "0.50", date: "2026-07", items: ["📊 L'onglet Stats est enrichi : espèces différentes, espèce star, badges de découverte, observations notables, cartes et fiches.", "↻ Les boutons de rafraîchissement sont plus visibles et animés."] },
   { v: "0.49", date: "2026-07", items: ["🌿 Les encarts « Pourquoi il compte » et « Un geste pour l'aider » sont maintenant tout en haut des fiches, bien visibles."] },
   { v: "0.48", date: "2026-07", items: ["🔔 Centre de notifications : retrouve d'un coup les nouveautés du mur, les réactions reçues, les idées et les mises à jour."] },
@@ -2820,6 +2934,150 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
   );
 }
 
+// ---------- Vue : missions saisonnières ----------
+function Missions({ observations, prenom, onDefinirPrenom, onFermer }) {
+  const saison = saisonActuelle();
+  const missions = missionsDe(saison.cle);
+  const [validations, setValidations] = useState([]); // [{mission_id, auteur, auto}]
+  const [etat, setEtat] = useState("chargement");
+  const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
+  const [enCours, setEnCours] = useState(null);
+
+  async function rafraichir() {
+    if (!MUR_ACTIF) { setEtat("inactif"); return; }
+    setEtat("chargement");
+    try { setValidations(await chargerValidations(saison.cle)); setEtat("ok"); }
+    catch { setEtat("echec"); }
+  }
+  useEffect(() => { rafraichir(); }, []);
+
+  // Validation auto : dès que la collection remplit une mission non encore validée par moi, on l'enregistre.
+  useEffect(() => {
+    if (etat !== "ok" || !MUR_ACTIF) return;
+    const moi = (prenom || "").trim();
+    if (!moi) return;
+    missions.forEach(async (m) => {
+      const dejaValidee = validations.some((v) => v.mission_id === m.id && (v.auteur || "").toLowerCase() === moi.toLowerCase());
+      if (!dejaValidee && missionRemplie(m, observations, saison)) {
+        try {
+          await validerMission(saison.cle, m.id, moi, true);
+          setValidations((prev) => [...prev, { mission_id: m.id, auteur: moi, auto: true }]);
+        } catch {}
+      }
+    });
+  }, [etat, observations, prenom]);
+
+  function quiAValide(missionId) {
+    return validations.filter((v) => v.mission_id === missionId).map((v) => v.auteur);
+  }
+  function jaiValide(missionId) {
+    const moi = (prenom || "").trim().toLowerCase();
+    return validations.some((v) => v.mission_id === missionId && (v.auteur || "").toLowerCase() === moi);
+  }
+
+  async function basculerManuel(m) {
+    const moi = (saisiePrenom || prenom || "").trim();
+    if (!moi) { alert("Indique ton prénom en haut pour valider une mission."); return; }
+    onDefinirPrenom(moi);
+    setEnCours(m.id);
+    try {
+      if (jaiValide(m.id)) {
+        await devaliderMission(saison.cle, m.id, moi);
+        setValidations((prev) => prev.filter((v) => !(v.mission_id === m.id && (v.auteur || "").toLowerCase() === moi.toLowerCase())));
+      } else {
+        await validerMission(saison.cle, m.id, moi, false);
+        setValidations((prev) => [...prev, { mission_id: m.id, auteur: moi, auto: false }]);
+      }
+    } catch {}
+    setEnCours(null);
+  }
+
+  const mesValidees = missions.filter((m) => jaiValide(m.id)).length;
+
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Retour</Bouton>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
+        <span style={{ fontSize: 32 }}>{saison.emoji}</span>
+        <div>
+          <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier, lineHeight: 1.1 }}>Missions · {saison.label}</div>
+          <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre }}>{mesValidees}/{missions.length} validée{mesValidees > 1 ? "s" : ""} par toi</div>
+        </div>
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 16, lineHeight: 1.5 }}>
+        Des défis d'observation qui changent à chaque saison, communs à toute la bande. Ils se valident tout seuls quand ta collection remplit les conditions — ou coche à la main en secours.
+      </div>
+
+      {MUR_ACTIF && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, padding: "10px 12px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
+          <span style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, whiteSpace: "nowrap" }}>Ton prénom :</span>
+          <input value={saisiePrenom} onChange={(e) => setSaisiePrenom(e.target.value)} onBlur={() => onDefinirPrenom((saisiePrenom || "").trim())} placeholder="ex : Sylvain" maxLength={40}
+            style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "7px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
+        </div>
+      )}
+
+      {!MUR_ACTIF && (
+        <div style={{ padding: "14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: C.papierSombre, marginBottom: 16 }}>
+          Le partage des missions avec la bande n'est pas actif (service non configuré). Tes missions restent visibles mais la progression de la bande n'apparaît pas.
+        </div>
+      )}
+
+      {etat === "chargement" && <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, fontStyle: "italic", textAlign: "center", padding: 16 }}>Chargement…</div>}
+      {etat === "echec" && <div style={{ fontFamily: sans, fontSize: 14, color: "#E8A88F", textAlign: "center", padding: 16 }}>Impossible de charger les validations.</div>}
+
+      {(etat === "ok" || etat === "inactif") && missions.map((m) => {
+        const remplie = missionRemplie(m, observations, saison);
+        const validee = jaiValide(m.id);
+        const progres = missionProgres(m, observations, saison);
+        const autres = quiAValide(m.id).filter((a) => (a || "").toLowerCase() !== (prenom || "").trim().toLowerCase());
+        return (
+          <div key={m.id} style={{ marginBottom: 12, padding: "14px", background: validee ? "linear-gradient(#1E2A18, #182213)" : C.panneau, border: `1px solid ${validee ? "#6F9450" : C.bordure}`, borderRadius: 12 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+              <span style={{ fontSize: 28, lineHeight: 1, opacity: validee ? 1 : 0.85 }}>{m.emoji}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontFamily: sans, fontSize: 15, fontWeight: 700, color: C.papier }}>{m.titre}</span>
+                  {validee && <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 800, color: "#A6CC82" }}>✓ Validée</span>}
+                </div>
+                <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, lineHeight: 1.45, marginTop: 2 }}>{m.desc}</div>
+
+                {progres && !validee && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ height: 6, borderRadius: 3, background: "#0F130C", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${(progres.actuel / progres.cible) * 100}%`, background: `linear-gradient(90deg, ${C.ambre}, ${C.ambreClair})` }} />
+                    </div>
+                    <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 3 }}>{progres.actuel}/{progres.cible}</div>
+                  </div>
+                )}
+
+                {/* Qui d'autre a validé */}
+                {MUR_ACTIF && autres.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
+                    {autres.slice(0, 8).map((a, i) => (
+                      <span key={i} style={{ fontFamily: sans, fontSize: 11, fontWeight: 600, color: C.ambreClair, background: "rgba(168,134,58,.15)", border: "1px solid rgba(168,134,58,.4)", borderRadius: 12, padding: "2px 8px" }}>🐛 {a}</span>
+                    ))}
+                    {autres.length > 8 && <span style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, padding: "2px 4px" }}>+{autres.length - 8}</span>}
+                  </div>
+                )}
+
+                {/* Validation manuelle (secours) */}
+                {MUR_ACTIF && (
+                  <button onClick={() => basculerManuel(m)} disabled={enCours === m.id || (remplie && !validee)}
+                    style={{ marginTop: 10, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 11px", borderRadius: 7, cursor: (remplie && !validee) ? "default" : "pointer",
+                      border: `1px solid ${validee ? C.bordure : "#A8863A"}`, background: validee ? "transparent" : "linear-gradient(#2C3623, #232B1D)", color: validee ? C.papierSombre : C.ambreClair }}>
+                    {enCours === m.id ? "…" : validee ? "Retirer ma validation" : (remplie ? "✓ Remplie (validation auto)" : "Valider à la main")}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ---------- Vue : carte ----------
 function Carte({ observations, onOuvrirFiche }) {
   const divRef = useRef(null);
@@ -3114,6 +3372,10 @@ function Aide({ onFermer, onImportTermine }) {
         <div style={t}>🏆 Profil de collectionneur</div>
         <p style={p}>
           Une fois connecté, depuis une observation identifiée, « Ajouter cette espèce à mon profil » l'ajoute à ton profil public (espèce, date, biotope — jamais la photo ni la position). Retrouve et gère la liste dans l'écran 👤. C'est la base pour te comparer à la bande (classement à venir).
+        </p>
+        <div style={t}>🎯 Missions saisonnières</div>
+        <p style={p}>
+          Le bouton 🎯 en haut ouvre les missions de la saison : des défis d'observation communs à toute la bande (explorer un biotope, observer plusieurs espèces, repérer une notable…), qui changent à chaque saison. Ils se valident automatiquement quand ta collection remplit les conditions, avec une validation manuelle en secours. Tu vois aussi qui, dans la bande, a réussi chaque défi.
         </p>
         <div style={t}>💡 Boîte à idées</div>
         <p style={p}>
@@ -4025,6 +4287,11 @@ function BioDex() {
               <span style={{ position: "absolute", top: -4, right: -4, minWidth: 17, height: 17, lineHeight: "17px", padding: "0 4px", borderRadius: 9, background: C.rouge, color: "#fff", fontFamily: sans, fontSize: 10.5, fontWeight: 800, boxSizing: "border-box" }}>{notifs.total > 9 ? "9+" : notifs.total}</span>
             )}
           </button>
+          <button className="bd-press" onClick={() => setVue("missions")}
+            style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", fontSize: 15 }}
+            aria-label="Missions saisonnières" title="Missions saisonnières">
+            🎯
+          </button>
           {MUR_ACTIF && (
             <button className="bd-press" onClick={() => setVue("idees")}
               style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", fontSize: 15 }}
@@ -4110,6 +4377,7 @@ function BioDex() {
 
       {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} />}
       {vue === "idees" && <BoiteIdees prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
+      {vue === "missions" && <Missions observations={observations} prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
       {centreOuvert && (
         <CentreNotifs
           notifs={notifs}
