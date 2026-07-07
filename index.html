@@ -26,6 +26,18 @@
   .bd-card:active { transform: scale(.975); }
   .bd-press { transition: transform .12s ease, box-shadow .12s ease, filter .12s ease; }
   .bd-press:active { transform: translateY(1px); filter: brightness(1.06); }
+  /* Boutons de rafraîchissement / régénération : plus visibles et cliquables */
+  .bd-refresh { display: inline-flex; align-items: center; gap: 7px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 13.5px; font-weight: 700; padding: 9px 16px; border-radius: 9px; cursor: pointer;
+    border: 1px solid #A8863A; background: linear-gradient(#2C3623, #232B1D); color: #E4C878;
+    transition: transform .12s ease, filter .12s ease, box-shadow .12s ease; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+  .bd-refresh:hover { filter: brightness(1.12); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+  .bd-refresh:active { transform: translateY(1px); }
+  .bd-refresh:disabled { opacity: .6; cursor: default; }
+  .bd-refresh .bd-refresh-ico { display: inline-block; font-size: 15px; transition: transform .4s ease; }
+  .bd-refresh:hover .bd-refresh-ico { transform: rotate(180deg); }
+  .bd-refresh.bd-spinning .bd-refresh-ico { animation: bdSpin .8s linear infinite; }
+  @keyframes bdSpin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
   @keyframes bdFade { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
   .bd-fade { animation: bdFade .35s ease both; }
   /* Effets de rareté des cartes */
@@ -84,9 +96,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.49 (PWA) ============
+// ============ BioDex v0.50 (PWA) ============
 
-const VERSION = "v0.49";
+const VERSION = "v0.50";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -663,6 +675,7 @@ async function chargerMur(limite = 50) {
 // Journal des nouveautés de l'appli (le plus récent en premier).
 // Sert au "Quoi de neuf" du centre de notifications.
 const NOUVEAUTES = [
+  { v: "0.50", date: "2026-07", items: ["📊 L'onglet Stats est enrichi : espèces différentes, espèce star, badges de découverte, observations notables, cartes et fiches.", "↻ Les boutons de rafraîchissement sont plus visibles et animés."] },
   { v: "0.49", date: "2026-07", items: ["🌿 Les encarts « Pourquoi il compte » et « Un geste pour l'aider » sont maintenant tout en haut des fiches, bien visibles."] },
   { v: "0.48", date: "2026-07", items: ["🔔 Centre de notifications : retrouve d'un coup les nouveautés du mur, les réactions reçues, les idées et les mises à jour."] },
   { v: "0.47", date: "2026-07", items: ["🌿 Chaque fiche explique désormais « Pourquoi il compte » et propose un geste concret pour aider l'insecte."] },
@@ -1238,6 +1251,26 @@ function Stats({ observations, onFermer }) {
   const identifies = observations.filter((o) => o.nom || o.nomSci).length;
   const positionnees = observations.filter((o) => o.gps).length;
 
+  // Espèces uniques (par nom scientifique en priorité, sinon nom commun normalisé)
+  const cleEspece = (o) => (o.nomSci || o.nom || "").trim().toLowerCase();
+  const especesSet = new Set(observations.map(cleEspece).filter(Boolean));
+  const especesUniques = especesSet.size;
+
+  // Diversité : compter les biotopes distincts explorés
+  const biotopesSet = new Set(observations.map((o) => o.biotope).filter(Boolean));
+
+  // Comptage par espèce → l'espèce la plus observée
+  const parEspece = {};
+  observations.forEach((o) => { const c = cleEspece(o); if (c) parEspece[c] = (parEspece[c] || 0) + 1; });
+  const especesTri = Object.entries(parEspece).sort((a, b) => b[1] - a[1]);
+  const star = especesTri.length ? especesTri[0] : null;
+  const nomStar = star ? (observations.find((o) => cleEspece(o) === star[0]) || {}) : {};
+
+  // Autres indicateurs
+  const notables = observations.filter((o) => o.notable && String(o.notable).trim().length > 3).length;
+  const cartesForgees = observations.filter((o) => o.carte).length;
+  const fichesGenerees = observations.filter((o) => o.fiche).length;
+
   // Répartition par biotope
   const parBiotope = {};
   observations.forEach((o) => { parBiotope[o.biotope] = (parBiotope[o.biotope] || 0) + 1; });
@@ -1250,26 +1283,89 @@ function Stats({ observations, onFermer }) {
   const moisTri = Object.entries(parMois).sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-6);
   const maxMois = moisTri.reduce((mx, [, n]) => Math.max(mx, n), 0);
 
+  // Badges de progression (paliers de découverte)
+  const badges = [
+    { seuil: 1, emoji: "🥚", label: "Premier spécimen", atteint: total >= 1 },
+    { seuil: 5, emoji: "🐛", label: "5 observations", atteint: total >= 5 },
+    { seuil: 10, emoji: "🦋", label: "10 espèces différentes", atteint: especesUniques >= 10, valeur: especesUniques },
+    { seuil: 25, emoji: "🔬", label: "25 observations", atteint: total >= 25 },
+    { seuil: 4, emoji: "🌍", label: "4 biotopes explorés", atteint: biotopesSet.size >= 4, valeur: biotopesSet.size },
+    { seuil: 1, emoji: "🌟", label: "Une observation notable", atteint: notables >= 1 },
+    { seuil: 50, emoji: "🏆", label: "50 observations", atteint: total >= 50 },
+    { seuil: 20, emoji: "💎", label: "20 espèces différentes", atteint: especesUniques >= 20, valeur: especesUniques },
+  ];
+  const badgesGagnes = badges.filter((b) => b.atteint).length;
+
   const carte = { background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid ${C.bordure}`, borderRadius: 12, padding: "16px", boxShadow: "0 3px 10px rgba(0,0,0,.25)" };
   const titre = { fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", color: C.lichen, marginBottom: 12 };
 
+  if (total === 0) {
+    return (
+      <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+        <div style={{ ...carte, textAlign: "center", color: C.papierSombre, fontFamily: sans, fontSize: 14, padding: "40px 24px" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
+          Ajoute des observations pour voir ta collection prendre forme ici — espèces, diversité, badges de découverte…
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-      {/* Chiffres clés */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
-        {[["Spécimens", total], ["Identifiés", identifies], ["Localisés", positionnees]].map(([lab, val]) => (
-          <div key={lab} style={{ ...carte, padding: "14px 10px", textAlign: "center" }}>
-            <div style={{ fontFamily: serif, fontSize: 30, fontWeight: 600, color: C.ambreClair, lineHeight: 1 }}>{val}</div>
-            <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 6 }}>{lab}</div>
+      {/* Chiffres clés — 4 tuiles */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, marginBottom: 12 }}>
+        {[["Spécimens", total, "🗃️"], ["Espèces différentes", especesUniques, "🦋"], ["Identifiés", identifies, "🔖"], ["Localisés", positionnees, "📍"]].map(([lab, val, emo]) => (
+          <div key={lab} style={{ ...carte, padding: "14px 12px", display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 24 }}>{emo}</span>
+            <div>
+              <div style={{ fontFamily: serif, fontSize: 26, fontWeight: 600, color: C.ambreClair, lineHeight: 1 }}>{val}</div>
+              <div style={{ fontFamily: sans, fontSize: 10.5, letterSpacing: 0.3, textTransform: "uppercase", color: C.papierSombre, marginTop: 4 }}>{lab}</div>
+            </div>
           </div>
         ))}
       </div>
 
-      {total === 0 && (
-        <div style={{ ...carte, textAlign: "center", color: C.papierSombre, fontFamily: sans, fontSize: 14 }}>
-          Ajoute des observations pour voir ta collection prendre forme ici.
+      {/* Ligne d'indicateurs secondaires */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+        {[["Notables", notables, "🌟"], ["Cartes", cartesForgees, "🎴"], ["Fiches", fichesGenerees, "📖"]].map(([lab, val, emo]) => (
+          <div key={lab} style={{ ...carte, padding: "12px 8px", textAlign: "center" }}>
+            <div style={{ fontSize: 18 }}>{emo}</div>
+            <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.ambreClair, lineHeight: 1, marginTop: 2 }}>{val}</div>
+            <div style={{ fontFamily: sans, fontSize: 10, textTransform: "uppercase", color: C.papierSombre, marginTop: 4 }}>{lab}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Espèce star */}
+      {star && star[1] > 1 && (
+        <div style={{ ...carte, marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 30 }}>⭐</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: C.lichen }}>Ton espèce star</div>
+            <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier }}>{nomStar.nom || nomStar.nomSci || "—"}</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 600, color: C.ambreClair, lineHeight: 1 }}>{star[1]}</div>
+            <div style={{ fontFamily: sans, fontSize: 10, color: C.papierSombre }}>fois</div>
+          </div>
         </div>
       )}
+
+      {/* Badges de découverte */}
+      <div style={{ ...carte, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+          <span style={titre}>Badges de découverte</span>
+          <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{badgesGagnes}/{badges.length}</span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+          {badges.map((b, i) => (
+            <div key={i} style={{ textAlign: "center", opacity: b.atteint ? 1 : 0.32, filter: b.atteint ? "none" : "grayscale(1)" }} title={b.label}>
+              <div style={{ fontSize: 26, lineHeight: 1.1 }}>{b.emoji}</div>
+              <div style={{ fontFamily: sans, fontSize: 9.5, color: b.atteint ? C.papier : C.papierSombre, marginTop: 3, lineHeight: 1.2 }}>{b.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Répartition par biotope */}
       {biotopesTri.length > 0 && (
@@ -2464,9 +2560,8 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
               </a>
             </div>
 
-            <button onClick={lancerFiche} disabled={ficheEtat === "recherche"}
-              style={{ marginTop: 10, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
-              {ficheEtat === "recherche" ? "Régénération…" : "↻ Régénérer"}
+            <button onClick={lancerFiche} disabled={ficheEtat === "recherche"} className={"bd-refresh" + (ficheEtat === "recherche" ? " bd-spinning" : "")} style={{ marginTop: 10 }}>
+              <span className="bd-refresh-ico">↻</span>{ficheEtat === "recherche" ? "Régénération…" : "Régénérer la fiche"}
             </button>
           </div>
         )}
@@ -2504,9 +2599,8 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
                       ✕ Retirer le cadre
                     </button>
                   )}
-                  <button onClick={lancerCarte} disabled={carteEtat === "recherche"}
-                    style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
-                    {carteEtat === "recherche" ? "Reforge…" : "↻ Reforger"}
+                  <button onClick={lancerCarte} disabled={carteEtat === "recherche"} className={"bd-refresh" + (carteEtat === "recherche" ? " bd-spinning" : "")}>
+                    <span className="bd-refresh-ico">↻</span>{carteEtat === "recherche" ? "Reforge…" : "Reforger"}
                   </button>
                 </div>
               </div>
@@ -3406,7 +3500,9 @@ function MurCommun({ prenom, onDefinirPrenom }) {
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.papier }}>🌐 Le mur de la bande</div>
-        <button onClick={rafraichir} style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>↻ Rafraîchir</button>
+        <button onClick={rafraichir} disabled={etat === "chargement"} className={"bd-refresh" + (etat === "chargement" ? " bd-spinning" : "")}>
+          <span className="bd-refresh-ico">↻</span>{etat === "chargement" ? "Actualisation…" : "Rafraîchir"}
+        </button>
       </div>
 
       {etat === "chargement" && <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, fontStyle: "italic", padding: "20px 0", textAlign: "center" }}>Chargement du mur…</div>}
