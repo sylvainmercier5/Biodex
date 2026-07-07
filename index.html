@@ -96,9 +96,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.52 (PWA) ============
+// ============ BioDex v0.53 (PWA) ============
 
-const VERSION = "v0.52";
+const VERSION = "v0.53";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -788,6 +788,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.53", date: "2026-07", items: ["⚡ Optimisation interne : moins de requêtes réseau en double, pour une appli plus fluide et plus économe en données et batterie."] },
   { v: "0.52", date: "2026-07", items: ["🧹 En-tête simplifié : les notifications restent visibles, missions/idées/profil sont rangées dans un menu ☰ plus clair."] },
   { v: "0.51", date: "2026-07", items: ["🎯 Missions saisonnières : des défis d'observation communs à la bande, qui changent à chaque saison et se valident tout seuls. Vois qui les a réussies !"] },
   { v: "0.50", date: "2026-07", items: ["📊 L'onglet Stats est enrichi : espèces différentes, espèce star, badges de découverte, observations notables, cartes et fiches.", "↻ Les boutons de rafraîchissement sont plus visibles et animés."] },
@@ -3711,7 +3712,7 @@ function DetailPost({ post, reactions, onReagir, onFermer }) {
 }
 
 // ---------- Mur commun (vue) ----------
-function MurCommun({ prenom, onDefinirPrenom }) {
+function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues }) {
   const [posts, setPosts] = useState([]);
   const [etat, setEtat] = useState("chargement"); // chargement | ok | echec | inactif
   const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
@@ -3739,7 +3740,19 @@ function MurCommun({ prenom, onDefinirPrenom }) {
     try {
       const p = await chargerMur(50);
       setPosts(p);
-      chargerReactions().then(setReactions);
+      chargerReactions().then((r) => {
+        setReactions(r);
+        // Marque les réactions reçues comme vues, à partir des données déjà chargées (pas de requête en plus)
+        if (prenom && onMarquerReactionsVues) {
+          const moi = prenom.trim().toLowerCase();
+          let total = 0;
+          p.filter((x) => (x.auteur || "").trim().toLowerCase() === moi).forEach((x) => {
+            const rr = r[x.id] || {};
+            total += Object.values(rr).reduce((a, b) => a + (b || 0), 0);
+          });
+          onMarquerReactionsVues(total);
+        }
+      });
       setEtat("ok");
     } catch (e) {
       if (!silencieux) setEtat("echec");
@@ -4075,23 +4088,10 @@ function BioDex() {
 
   const [murNouveau, setMurNouveau] = useState(false);
 
-  // Vérifie périodiquement s'il y a du nouveau sur le mur (pour la pastille de la nav)
+  // La pastille "nouveau sur le mur" dérive directement des notifications (pas de requête séparée).
   useEffect(() => {
-    if (!MUR_ACTIF) return;
-    let actif = true;
-    async function verifier() {
-      const dernier = await dernierPostMur();
-      if (!actif || !dernier) return;
-      let vu = null;
-      try { vu = localStorage.getItem("biodex_mur_vu"); } catch {}
-      setMurNouveau(!vu || new Date(dernier) > new Date(vu));
-    }
-    verifier();
-    const intervalle = setInterval(verifier, 60000); // toutes les minutes
-    const surVisible = () => { if (!document.hidden) verifier(); };
-    document.addEventListener("visibilitychange", surVisible);
-    return () => { actif = false; clearInterval(intervalle); document.removeEventListener("visibilitychange", surVisible); };
-  }, []);
+    setMurNouveau((notifs.murNouveaux || 0) > 0);
+  }, [notifs]);
 
   // Quand on ouvre le mur, on marque tout comme vu
   useEffect(() => {
@@ -4135,21 +4135,7 @@ function BioDex() {
     return () => { actif = false; clearInterval(intervalle); document.removeEventListener("visibilitychange", surVisible); };
   }, [prenom, vue]);
 
-  // Quand on ouvre le mur : marquer les réactions reçues comme vues (pour ne pas les re-signaler)
-  useEffect(() => {
-    if (vue === "mur" && MUR_ACTIF && prenom) {
-      (async () => {
-        try {
-          const posts = await chargerMur(200);
-          const mesPosts = posts.filter((p) => (p.auteur || "").trim().toLowerCase() === prenom.trim().toLowerCase());
-          const reacts = await chargerReactions();
-          let total = 0;
-          for (const p of mesPosts) { const r = reacts[p.id] || {}; total += Object.values(r).reduce((a, b) => a + (b || 0), 0); }
-          localStorage.setItem("biodex_reactions_vues", String(total));
-        } catch {}
-      })();
-    }
-  }, [vue, prenom]);
+  // Le marquage des réactions vues est fait par MurCommun (qui a déjà les données), via onMarquerReactionsVues.
 
   // Quand on ouvre les idées : marquer comme vues
   useEffect(() => {
@@ -4398,7 +4384,7 @@ function BioDex() {
         );
       })()}
 
-      {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} />}
+      {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} onMarquerReactionsVues={(total) => { try { localStorage.setItem("biodex_reactions_vues", String(total)); } catch {} setNotifs((n) => ({ ...n, reactionsRecues: 0, total: Math.max(0, (n.total || 0) - (n.reactionsRecues || 0)) })); }} />}
       {vue === "idees" && <BoiteIdees prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
       {vue === "missions" && <Missions observations={observations} prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
       {centreOuvert && (
