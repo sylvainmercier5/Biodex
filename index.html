@@ -84,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.46 (PWA) ============
+// ============ BioDex v0.48 (PWA) ============
 
-const VERSION = "v0.46";
+const VERSION = "v0.48";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -424,7 +424,7 @@ async function genererFiche(nom, nomSci) {
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.erreur) throw new Error(j.erreur || "Service indisponible");
-  return j.resultat; // { description, alimentation, periode, habitat, repartition, conservation, faits, fiabilite }
+  return j.resultat; // { description, alimentation, periode, habitat, repartition, conservation, role_ecosysteme, geste, faits, fiabilite }
 }
 
 // Lien de vérification sur iNaturalist (base communautaire fiable)
@@ -660,6 +660,18 @@ async function chargerMur(limite = 50) {
 }
 
 // Les 4 réactions thématiques disponibles
+// Journal des nouveautés de l'appli (le plus récent en premier).
+// Sert au "Quoi de neuf" du centre de notifications.
+const NOUVEAUTES = [
+  { v: "0.48", date: "2026-07", items: ["🔔 Centre de notifications : retrouve d'un coup les nouveautés du mur, les réactions reçues, les idées et les mises à jour."] },
+  { v: "0.47", date: "2026-07", items: ["🌿 Chaque fiche explique désormais « Pourquoi il compte » et propose un geste concret pour aider l'insecte."] },
+  { v: "0.46", date: "2026-07", items: ["✏️ Les observations sont modifiables : corrige le nom, la photo, la position, la météo… à tout moment."] },
+  { v: "0.45", date: "2026-07", items: ["🗺️ Carte de la bande : bascule entre ta carte et les trouvailles partagées par tout le monde (positions approximatives)."] },
+  { v: "0.44", date: "2026-07", items: ["📖 L'aide a été réorganisée en sections dépliables, plus claire."] },
+  { v: "0.43", date: "2026-07", items: ["🔥 Réactions sur le mur : encourage les trouvailles avec 🔥 😍 🤯 🔍."] },
+  { v: "0.42", date: "2026-07", items: ["🎯 Niveau de certitude affiché en jauge claire.", "📖 Les posts du mur sont cliquables pour une fiche détaillée."] },
+];
+
 const REACTIONS = [
   { type: "feu", emoji: "🔥", titre: "Belle trouvaille" },
   { type: "amour", emoji: "😍", titre: "Magnifique" },
@@ -690,6 +702,56 @@ async function reagir(postId, type) {
   const { error } = await sb.rpc("incrementer_reaction", { p_post_id: postId, p_type: type });
   if (error) throw new Error("Réaction impossible");
   return true;
+}
+
+// Calcule les notifications du centre : nouveautés mur, réactions reçues, nouvelles idées.
+// S'appuie sur des repères "vu" stockés en local (dates ISO / totaux).
+async function calculerNotifications(prenom) {
+  const sb = clientSupabase();
+  if (!sb) return { total: 0, murNouveaux: 0, ideesNouvelles: 0, reactionsRecues: 0 };
+
+  const lire = (cle) => { try { return localStorage.getItem(cle); } catch { return null; } };
+  let murNouveaux = 0, ideesNouvelles = 0, reactionsRecues = 0;
+
+  try {
+    const posts = await chargerMur(200);
+    // 1) Nouveaux posts depuis la dernière visite du mur
+    const vuMur = lire("biodex_mur_vu");
+    if (vuMur) murNouveaux = posts.filter((p) => p.created_at && new Date(p.created_at) > new Date(vuMur)).length;
+    else murNouveaux = posts.length;
+
+    // 2) Réactions reçues sur MES posts (identifiés par mon prénom)
+    if (prenom) {
+      const mesPosts = posts.filter((p) => (p.auteur || "").trim().toLowerCase() === prenom.trim().toLowerCase());
+      const idsMoi = mesPosts.map((p) => p.id);
+      if (idsMoi.length > 0) {
+        const reacts = await chargerReactions();
+        let totalReacts = 0;
+        for (const id of idsMoi) {
+          const r = reacts[id] || {};
+          totalReacts += Object.values(r).reduce((a, b) => a + (b || 0), 0);
+        }
+        const vuReacts = parseInt(lire("biodex_reactions_vues") || "0", 10);
+        reactionsRecues = Math.max(0, totalReacts - vuReacts);
+      }
+    }
+  } catch {}
+
+  try {
+    // 3) Nouvelles idées depuis la dernière visite
+    const idees = await chargerIdees();
+    const vuIdees = lire("biodex_idees_vu");
+    if (vuIdees) ideesNouvelles = idees.filter((i) => i.created_at && new Date(i.created_at) > new Date(vuIdees)).length;
+    else ideesNouvelles = idees.length;
+  } catch {}
+
+  // 4) Nouveauté d'appli : y a-t-il une version non "vue" ?
+  const vuVersion = lire("biodex_nouveautes_vu");
+  const versionRecente = NOUVEAUTES.length ? NOUVEAUTES[0].v : "";
+  const nouvelleVersion = versionRecente && vuVersion !== versionRecente ? 1 : 0;
+
+  const total = murNouveaux + ideesNouvelles + reactionsRecues + nouvelleVersion;
+  return { total, murNouveaux, ideesNouvelles, reactionsRecues, nouvelleVersion, versionRecente };
 }
 
 // Récupère la date de création du post le plus récent (léger, pour la pastille "nouveau")
@@ -2370,6 +2432,26 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
             {champFiche("Statut de conservation", fiche.conservation)}
             {champFiche("À savoir", fiche.faits)}
 
+            {fiche.role_ecosysteme && String(fiche.role_ecosysteme).trim().length > 3 && (
+              <div style={{ marginTop: 14, padding: "12px 14px", background: "linear-gradient(#1E2A18, #182213)", border: "1px solid #6F9450", borderRadius: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
+                  <span style={{ fontSize: 17 }}>🌿</span>
+                  <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#A6CC82" }}>Pourquoi il compte</span>
+                </div>
+                <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.55 }}>{fiche.role_ecosysteme}</div>
+              </div>
+            )}
+
+            {fiche.geste && String(fiche.geste).trim().length > 3 && (
+              <div style={{ marginTop: 10, padding: "12px 14px", background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", borderRadius: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
+                  <span style={{ fontSize: 17 }}>🤲</span>
+                  <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#E4C878" }}>Un geste pour l'aider</span>
+                </div>
+                <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.55 }}>{fiche.geste}</div>
+              </div>
+            )}
+
             <div style={{ marginTop: 12, padding: "10px 12px", background: "rgba(0,0,0,.2)", borderRadius: 8 }}>
               <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, lineHeight: 1.5 }}>
                 ⚠️ Fiche générée par IA, à titre indicatif{fiche.fiabilite ? ` (fiabilité estimée : ${fiche.fiabilite})` : ""}. Le statut de conservation notamment doit être vérifié sur une source officielle.
@@ -2555,6 +2637,88 @@ function SelecteurPoint({ point, onChange, onFermer }) {
       <div ref={divRef} style={{ width: "100%", height: 240, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.bordure}` }} />
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <Bouton onClick={onFermer} style={{ flex: 1 }}>Terminé</Bouton>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Centre de notifications ----------
+function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
+  const n = notifs || {};
+  const [voirNouveautes, setVoirNouveautes] = useState((n.nouvelleVersion || 0) > 0);
+
+  // Marque les nouveautés d'appli comme vues dès qu'on ouvre le centre
+  useEffect(() => {
+    try { if (NOUVEAUTES.length) localStorage.setItem("biodex_nouveautes_vu", NOUVEAUTES[0].v); } catch {}
+  }, []);
+
+  const rien = (n.murNouveaux || 0) === 0 && (n.ideesNouvelles || 0) === 0 && (n.reactionsRecues || 0) === 0;
+
+  return (
+    <div onClick={onFermer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 1200, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, margin: "56px 12px 0", background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 14, overflow: "hidden", maxHeight: "82vh", overflowY: "auto", boxShadow: "0 8px 30px rgba(0,0,0,.5)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.bordure}` }}>
+          <span style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier }}>🔔 Notifications</span>
+          <button onClick={onFermer} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+
+        <div style={{ padding: 14 }}>
+          {rien && (
+            <div style={{ textAlign: "center", padding: "20px 16px", fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.6 }}>
+              Rien de neuf pour l'instant.<br />Reviens après une sortie ou quand la bande aura partagé ses trouvailles !
+            </div>
+          )}
+
+          {(n.murNouveaux || 0) > 0 && (
+            <button onClick={onAllerMur} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", marginBottom: 8, borderRadius: 10, border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", textAlign: "left" }}>
+              <span style={{ fontSize: 22 }}>🆕</span>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.papier }}>{n.murNouveaux} nouvelle{n.murNouveaux > 1 ? "s" : ""} trouvaille{n.murNouveaux > 1 ? "s" : ""} sur le mur</span>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>Touche pour voir le mur commun →</span>
+              </span>
+            </button>
+          )}
+
+          {(n.reactionsRecues || 0) > 0 && (
+            <button onClick={onAllerMur} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", marginBottom: 8, borderRadius: 10, border: "1px solid #A8863A", background: "linear-gradient(#2C3623, #232B1D)", cursor: "pointer", textAlign: "left" }}>
+              <span style={{ fontSize: 22 }}>🔥</span>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.ambreClair }}>{n.reactionsRecues} réaction{n.reactionsRecues > 1 ? "s" : ""} sur tes photos</span>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>La bande a aimé tes trouvailles !</span>
+              </span>
+            </button>
+          )}
+
+          {(n.ideesNouvelles || 0) > 0 && (
+            <button onClick={onAllerIdees} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", marginBottom: 8, borderRadius: 10, border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", textAlign: "left" }}>
+              <span style={{ fontSize: 22 }}>💡</span>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.papier }}>{n.ideesNouvelles} nouvelle{n.ideesNouvelles > 1 ? "s" : ""} idée{n.ideesNouvelles > 1 ? "s" : ""}</span>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>Touche pour voir la boîte à idées →</span>
+              </span>
+            </button>
+          )}
+
+          {/* Quoi de neuf (nouveautés de l'appli) */}
+          <div style={{ marginTop: rien ? 4 : 14, borderTop: `1px solid ${C.bordure}`, paddingTop: 14 }}>
+            <button onClick={() => setVoirNouveautes((v) => !v)} style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <span style={{ fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.papier }}>📋 Quoi de neuf {n.nouvelleVersion > 0 && <span style={{ fontSize: 11, color: C.encre, background: C.rouge, borderRadius: 8, padding: "1px 6px", marginLeft: 4 }}>nouveau</span>}</span>
+              <span style={{ fontFamily: sans, fontSize: 13, color: C.ambre, transform: voirNouveautes ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▶</span>
+            </button>
+            {voirNouveautes && (
+              <div style={{ marginTop: 10 }}>
+                {NOUVEAUTES.map((maj) => (
+                  <div key={maj.v} style={{ marginBottom: 12 }}>
+                    <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 800, color: C.ambre, marginBottom: 4 }}>v{maj.v}</div>
+                    {maj.items.map((it, i) => (
+                      <div key={i} style={{ fontFamily: sans, fontSize: 13.5, color: C.papier, lineHeight: 1.5, marginBottom: 3 }}>{it}</div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -2789,6 +2953,10 @@ function Aide({ onFermer, onImportTermine }) {
         <p style={p}>
           Le bouton « Identifier (précis) » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un niveau de confiance. Pour affiner, l'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de jauge claire (Fiable / Probable / À vérifier), pour savoir d'un coup d'œil à quel point se fier à la proposition. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Combinable avec le ciblage de zone. Nécessite le réseau. Chaque identification coûte une fraction de centime.
         </p>
+        <div style={t}>🌿 Pourquoi il compte</div>
+        <p style={p}>
+          Chaque fiche naturaliste met en avant le rôle écologique de l'insecte (pollinisation, recyclage, régulation, nourriture pour d'autres animaux…) dans un encart « Pourquoi il compte », et propose un geste simple pour l'aider (« Un geste pour l'aider »). Une façon de rappeler que même la plus petite bestiole a son utilité — et qu'on peut agir à son échelle.
+        </p>
         <div style={t}>🔬 Identification (test local)</div>
         <p style={p}>
           Après avoir ajouté une photo, appuie sur « Identifier (test local) » : une IA tourne directement dans ton navigateur (aucune donnée envoyée, aucun coût). C'est un modèle généraliste qui ne reconnaît qu'une trentaine de grands groupes (coccinelle, abeille, libellule, mante, araignée…) et reste au niveau du groupe, jamais de l'espèce précise. Astuce : avec « 🎯 Cibler la zone », dessine un cadre sur l'insecte pour que l'IA ignore le décor — ça améliore nettement le résultat quand la bête est petite dans l'image. Vois-le comme un jeu : parfois bluffant, souvent approximatif. Premier lancement : téléchargement du modèle (~15 Mo), réseau requis.
@@ -2827,6 +2995,10 @@ function Aide({ onFermer, onImportTermine }) {
       </SectionPliable>
 
       <SectionPliable titre="🌐 La communauté">
+        <div style={t}>🔔 Centre de notifications</div>
+        <p style={p}>
+          La cloche 🔔 en haut regroupe tout ce qui s'est passé depuis ta dernière visite : nouvelles trouvailles sur le mur, réactions reçues sur tes photos, nouvelles idées de la bande, et un « Quoi de neuf » qui liste les dernières nouveautés de l'appli. Une pastille rouge indique le nombre d'éléments non vus.
+        </p>
         <div style={t}>👤 Connexion (facultative)</div>
         <p style={p}>
           Le bouton 👤 en haut permet de te connecter avec ton email : tu reçois un lien magique à cliquer, sans mot de passe. La connexion est facultative aujourd'hui ; elle prépare les fonctions sociales à venir (profil, collections des autres, classement). Sans compte, l'appli fonctionne normalement.
@@ -3545,6 +3717,57 @@ function BioDex() {
     try { localStorage.setItem("biodex_prenom", v); } catch {}
   }
 
+  const [notifs, setNotifs] = useState({ total: 0 });
+  const [centreOuvert, setCentreOuvert] = useState(false);
+
+  // Calcule les notifications périodiquement (mur, réactions reçues, idées, nouveautés)
+  useEffect(() => {
+    if (!MUR_ACTIF) {
+      // Sans backend, on peut quand même signaler les nouveautés d'appli
+      let vu = null; try { vu = localStorage.getItem("biodex_nouveautes_vu"); } catch {}
+      const nv = NOUVEAUTES.length && vu !== NOUVEAUTES[0].v ? 1 : 0;
+      setNotifs({ total: nv, nouvelleVersion: nv, versionRecente: NOUVEAUTES[0] ? NOUVEAUTES[0].v : "" });
+      return;
+    }
+    let actif = true;
+    async function verifier() {
+      const n = await calculerNotifications(prenom);
+      if (actif) setNotifs(n);
+    }
+    verifier();
+    const intervalle = setInterval(verifier, 60000);
+    const surVisible = () => { if (!document.hidden) verifier(); };
+    document.addEventListener("visibilitychange", surVisible);
+    return () => { actif = false; clearInterval(intervalle); document.removeEventListener("visibilitychange", surVisible); };
+  }, [prenom, vue]);
+
+  // Quand on ouvre le mur : marquer les réactions reçues comme vues (pour ne pas les re-signaler)
+  useEffect(() => {
+    if (vue === "mur" && MUR_ACTIF && prenom) {
+      (async () => {
+        try {
+          const posts = await chargerMur(200);
+          const mesPosts = posts.filter((p) => (p.auteur || "").trim().toLowerCase() === prenom.trim().toLowerCase());
+          const reacts = await chargerReactions();
+          let total = 0;
+          for (const p of mesPosts) { const r = reacts[p.id] || {}; total += Object.values(r).reduce((a, b) => a + (b || 0), 0); }
+          localStorage.setItem("biodex_reactions_vues", String(total));
+        } catch {}
+      })();
+    }
+  }, [vue, prenom]);
+
+  // Quand on ouvre les idées : marquer comme vues
+  useEffect(() => {
+    if (vue === "idees" && MUR_ACTIF) {
+      chargerIdees().then((idees) => {
+        if (idees && idees.length && idees[0].created_at) {
+          try { localStorage.setItem("biodex_idees_vu", idees[0].created_at); } catch {}
+        }
+      }).catch(() => {});
+    }
+  }, [vue]);
+
   useEffect(() => {
     if (window.__biodexMaj && window.__biodexMaj.dispo) setMajDispo(true);
     const h = () => setMajDispo(true);
@@ -3696,6 +3919,14 @@ function BioDex() {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button className="bd-press" onClick={() => setCentreOuvert(true)}
+            style={{ position: "relative", width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", fontSize: 15 }}
+            aria-label="Notifications" title="Notifications">
+            🔔
+            {notifs.total > 0 && (
+              <span style={{ position: "absolute", top: -4, right: -4, minWidth: 17, height: 17, lineHeight: "17px", padding: "0 4px", borderRadius: 9, background: C.rouge, color: "#fff", fontFamily: sans, fontSize: 10.5, fontWeight: 800, boxSizing: "border-box" }}>{notifs.total > 9 ? "9+" : notifs.total}</span>
+            )}
+          </button>
           {MUR_ACTIF && (
             <button className="bd-press" onClick={() => setVue("idees")}
               style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", fontSize: 15 }}
@@ -3781,6 +4012,14 @@ function BioDex() {
 
       {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} />}
       {vue === "idees" && <BoiteIdees prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
+      {centreOuvert && (
+        <CentreNotifs
+          notifs={notifs}
+          onFermer={() => setCentreOuvert(false)}
+          onAllerMur={() => { setCentreOuvert(false); if (MUR_ACTIF) setVue("mur"); }}
+          onAllerIdees={() => { setCentreOuvert(false); if (MUR_ACTIF) setVue("idees"); }}
+        />
+      )}
       {vue === "cartes" && (
         <ModeCartes cartes={cartes} onOuvrir={(id) => { setSelectionId(id); setVue("detail"); }} />
       )}
