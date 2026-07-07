@@ -4088,11 +4088,6 @@ function BioDex() {
 
   const [murNouveau, setMurNouveau] = useState(false);
 
-  // La pastille "nouveau sur le mur" dérive directement des notifications (pas de requête séparée).
-  useEffect(() => {
-    setMurNouveau((notifs.murNouveaux || 0) > 0);
-  }, [notifs]);
-
   // Quand on ouvre le mur, on marque tout comme vu
   useEffect(() => {
     if (vue === "mur" && MUR_ACTIF) {
@@ -4113,6 +4108,11 @@ function BioDex() {
   const [notifs, setNotifs] = useState({ total: 0 });
   const [centreOuvert, setCentreOuvert] = useState(false);
   const [menuOuvert, setMenuOuvert] = useState(false);
+
+  // La pastille "nouveau sur le mur" dérive directement des notifications (pas de requête séparée).
+  useEffect(() => {
+    setMurNouveau((notifs.murNouveaux || 0) > 0);
+  }, [notifs]);
 
   // Calcule les notifications périodiquement (mur, réactions reçues, idées, nouveautés)
   useEffect(() => {
