@@ -96,9 +96,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.51 (PWA) ============
+// ============ BioDex v0.52 (PWA) ============
 
-const VERSION = "v0.51";
+const VERSION = "v0.52";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -788,6 +788,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.52", date: "2026-07", items: ["🧹 En-tête simplifié : les notifications restent visibles, missions/idées/profil sont rangées dans un menu ☰ plus clair."] },
   { v: "0.51", date: "2026-07", items: ["🎯 Missions saisonnières : des défis d'observation communs à la bande, qui changent à chaque saison et se valident tout seuls. Vois qui les a réussies !"] },
   { v: "0.50", date: "2026-07", items: ["📊 L'onglet Stats est enrichi : espèces différentes, espèce star, badges de découverte, observations notables, cartes et fiches.", "↻ Les boutons de rafraîchissement sont plus visibles et animés."] },
   { v: "0.49", date: "2026-07", items: ["🌿 Les encarts « Pourquoi il compte » et « Un geste pour l'aider » sont maintenant tout en haut des fiches, bien visibles."] },
@@ -2934,6 +2935,38 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
   );
 }
 
+// ---------- Menu principal (regroupe missions, idées, profil) ----------
+function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller }) {
+  const item = (emoji, titre, sousTitre, action, pastille) => (
+    <button onClick={() => { onFermer(); action(); }}
+      style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: "none", border: "none", borderBottom: `1px solid ${C.bordure}`, cursor: "pointer", textAlign: "left" }}>
+      <span style={{ fontSize: 22, position: "relative" }}>
+        {emoji}
+        {pastille > 0 && <span style={{ position: "absolute", top: -6, right: -8, minWidth: 15, height: 15, lineHeight: "15px", padding: "0 3px", borderRadius: 8, background: C.rouge, color: "#fff", fontFamily: sans, fontSize: 9.5, fontWeight: 800, boxSizing: "border-box", textAlign: "center" }}>{pastille > 9 ? "9+" : pastille}</span>}
+      </span>
+      <span style={{ flex: 1 }}>
+        <span style={{ display: "block", fontFamily: sans, fontSize: 15, fontWeight: 700, color: C.papier }}>{titre}</span>
+        <span style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginTop: 1 }}>{sousTitre}</span>
+      </span>
+      <span style={{ fontFamily: sans, fontSize: 15, color: C.ambre }}>›</span>
+    </button>
+  );
+
+  return (
+    <div onClick={onFermer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 1200, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, margin: "56px 12px 0", background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 8px 30px rgba(0,0,0,.5)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.bordure}` }}>
+          <span style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier }}>Menu</span>
+          <button onClick={onFermer} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+        {item("🎯", "Missions saisonnières", "Défis d'observation de la bande", () => onAller("missions"), missionsNouv)}
+        {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
+        {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Mon profil" : "Se connecter", utilisateur ? "Ta collection d'espèces" : "Connexion facultative par email", () => onAller("connexion"), 0)}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Vue : missions saisonnières ----------
 function Missions({ observations, prenom, onDefinirPrenom, onFermer }) {
   const saison = saisonActuelle();
@@ -4079,6 +4112,7 @@ function BioDex() {
 
   const [notifs, setNotifs] = useState({ total: 0 });
   const [centreOuvert, setCentreOuvert] = useState(false);
+  const [menuOuvert, setMenuOuvert] = useState(false);
 
   // Calcule les notifications périodiquement (mur, réactions reçues, idées, nouveautés)
   useEffect(() => {
@@ -4287,25 +4321,14 @@ function BioDex() {
               <span style={{ position: "absolute", top: -4, right: -4, minWidth: 17, height: 17, lineHeight: "17px", padding: "0 4px", borderRadius: 9, background: C.rouge, color: "#fff", fontFamily: sans, fontSize: 10.5, fontWeight: 800, boxSizing: "border-box" }}>{notifs.total > 9 ? "9+" : notifs.total}</span>
             )}
           </button>
-          <button className="bd-press" onClick={() => setVue("missions")}
-            style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", fontSize: 15 }}
-            aria-label="Missions saisonnières" title="Missions saisonnières">
-            🎯
+          <button className="bd-press" onClick={() => setMenuOuvert(true)}
+            style={{ position: "relative", width: 32, height: 32, borderRadius: "50%", border: `1px solid ${utilisateur ? "#A8863A" : C.bordure}`, background: utilisateur ? "linear-gradient(#2C3623, #232B1D)" : C.panneau, cursor: "pointer", fontSize: 16, color: C.papier }}
+            aria-label="Menu" title="Menu">
+            ☰
+            {(notifs.ideesNouvelles || 0) > 0 && (
+              <span style={{ position: "absolute", top: -4, right: -4, width: 10, height: 10, borderRadius: 5, background: C.rouge, boxSizing: "border-box" }} />
+            )}
           </button>
-          {MUR_ACTIF && (
-            <button className="bd-press" onClick={() => setVue("idees")}
-              style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", fontSize: 15 }}
-              aria-label="Boîte à idées" title="Boîte à idées">
-              💡
-            </button>
-          )}
-          {MUR_ACTIF && (
-            <button className="bd-press" onClick={() => setVue("connexion")}
-              style={{ height: 32, padding: utilisateur ? "0 12px" : 0, width: utilisateur ? "auto" : 32, borderRadius: utilisateur ? 16 : "50%", border: `1px solid ${utilisateur ? "#A8863A" : C.bordure}`, background: utilisateur ? "linear-gradient(#2C3623, #232B1D)" : C.panneau, color: utilisateur ? C.ambreClair : C.lichen, fontFamily: sans, fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
-              aria-label="Connexion" title={utilisateur ? "Connecté" : "Se connecter"}>
-              {utilisateur ? "🐛" : "👤"}{utilisateur && <span style={{ fontSize: 12 }}>Moi</span>}
-            </button>
-          )}
           <button className="bd-press" onClick={() => setVue("aide")}
             style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, color: C.lichen, fontFamily: serif, fontSize: 17, cursor: "pointer" }}
             aria-label="Aide">
@@ -4384,6 +4407,15 @@ function BioDex() {
           onFermer={() => setCentreOuvert(false)}
           onAllerMur={() => { setCentreOuvert(false); if (MUR_ACTIF) setVue("mur"); }}
           onAllerIdees={() => { setCentreOuvert(false); if (MUR_ACTIF) setVue("idees"); }}
+        />
+      )}
+      {menuOuvert && (
+        <MenuPrincipal
+          utilisateur={utilisateur}
+          missionsNouv={0}
+          ideesNouv={notifs.ideesNouvelles || 0}
+          onFermer={() => setMenuOuvert(false)}
+          onAller={(v) => setVue(v)}
         />
       )}
       {vue === "cartes" && (
