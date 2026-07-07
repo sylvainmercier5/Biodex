@@ -114,11 +114,13 @@ exports.handler = async (event) => {
     const nom = String(corps.nom || "").slice(0, 120);
     const nomSci = String(corps.nomSci || "").slice(0, 120);
     systeme =
-      "Tu es un entomologiste francophone rigoureux. On te donne une espèce (ou un taxon) déjà identifiée. " +
+      "Tu es un entomologiste francophone rigoureux et pédagogue, sensible à la protection de la biodiversité. On te donne une espèce (ou un taxon) déjà identifiée. " +
       "Rédige une fiche naturaliste synthétique et fiable, en français. " +
       "IMPORTANT sur le statut de conservation : les listes rouges évoluent et tu ne peux pas les vérifier en temps réel. " +
       "N'affirme JAMAIS un statut avec certitude : donne une indication prudente et signale qu'elle doit être vérifiée. " +
       "Si tu n'es pas sûr d'un champ, mets une valeur honnête comme \"variable\", \"mal connu\" ou \"à vérifier\" plutôt que d'inventer. " +
+      "Pour le champ 'role_ecosysteme', explique concrètement pourquoi cet insecte compte dans son écosystème (pollinisation, décomposition/recyclage de matière, régulation d'autres populations, source de nourriture pour oiseaux/chauves-souris, bio-indicateur de la qualité d'un milieu...). Reste factuel et valorisant sans exagérer. " +
+      "Pour le champ 'geste', propose UNE action simple et concrète que n'importe qui peut faire pour aider cette espèce ou son groupe (laisser un coin de jardin sauvage, éviter les pesticides, installer un point d'eau, laisser du bois mort, planter des fleurs mellifères...). Si l'espèce est nuisible ou invasive, adapte le conseil honnêtement. " +
       "Réponds UNIQUEMENT par un objet JSON valide, sans texte ni Markdown autour, de la forme exacte : " +
       '{"description":"2-3 phrases : allure générale, taille, traits distinctifs",' +
       '"alimentation":"régime de l\'adulte et de la larve si pertinent",' +
@@ -126,10 +128,12 @@ exports.handler = async (event) => {
       '"habitat":"habitats et biotopes typiques",' +
       '"repartition":"répartition géographique générale (France/Europe si pertinent)",' +
       '"conservation":"statut indicatif et prudent, ex : \'apparemment commun, à vérifier\' ou \'espèce protégée en France, à confirmer\'",' +
+      '"role_ecosysteme":"pourquoi cet insecte compte : son rôle écologique concret, 1-2 phrases valorisantes et justes",' +
+      '"geste":"une action simple et concrète pour l\'aider, formulée de façon encourageante (1 phrase)",' +
       '"faits":"un ou deux faits marquants ou remarquables",' +
       '"fiabilite":"élevée|moyenne|faible — ta confiance globale dans cette fiche selon que le taxon est commun/bien connu ou non"}';
     messages = [{ role: "user", content: [{ type: "text", text: "Espèce à documenter : " + nom + (nomSci ? " (" + nomSci + ")" : "") + "." }] }];
-    maxTokens = 900;
+    maxTokens = 1100;
   } else {
     // Identification poussée à partir de la photo
     if (!corps.image || !corps.media_type) {
