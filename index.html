@@ -84,9 +84,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.48 (PWA) ============
+// ============ BioDex v0.49 (PWA) ============
 
-const VERSION = "v0.48";
+const VERSION = "v0.49";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -663,6 +663,7 @@ async function chargerMur(limite = 50) {
 // Journal des nouveautés de l'appli (le plus récent en premier).
 // Sert au "Quoi de neuf" du centre de notifications.
 const NOUVEAUTES = [
+  { v: "0.49", date: "2026-07", items: ["🌿 Les encarts « Pourquoi il compte » et « Un geste pour l'aider » sont maintenant tout en haut des fiches, bien visibles."] },
   { v: "0.48", date: "2026-07", items: ["🔔 Centre de notifications : retrouve d'un coup les nouveautés du mur, les réactions reçues, les idées et les mises à jour."] },
   { v: "0.47", date: "2026-07", items: ["🌿 Chaque fiche explique désormais « Pourquoi il compte » et propose un geste concret pour aider l'insecte."] },
   { v: "0.46", date: "2026-07", items: ["✏️ Les observations sont modifiables : corrige le nom, la photo, la position, la météo… à tout moment."] },
@@ -2424,16 +2425,9 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
         {fiche && (
           <div style={{ padding: "14px 16px", background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid ${C.bordure}`, borderRadius: 12, boxShadow: "0 3px 10px rgba(0,0,0,.25)" }}>
             <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.ambreClair, marginBottom: 12 }}>📖 Fiche naturaliste</div>
-            {champFiche("Description", fiche.description)}
-            {champFiche("Alimentation", fiche.alimentation)}
-            {champFiche("Période d'apparition", fiche.periode)}
-            {champFiche("Habitat", fiche.habitat)}
-            {champFiche("Répartition", fiche.repartition)}
-            {champFiche("Statut de conservation", fiche.conservation)}
-            {champFiche("À savoir", fiche.faits)}
 
             {fiche.role_ecosysteme && String(fiche.role_ecosysteme).trim().length > 3 && (
-              <div style={{ marginTop: 14, padding: "12px 14px", background: "linear-gradient(#1E2A18, #182213)", border: "1px solid #6F9450", borderRadius: 10 }}>
+              <div style={{ marginBottom: 10, padding: "12px 14px", background: "linear-gradient(#1E2A18, #182213)", border: "1px solid #6F9450", borderRadius: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
                   <span style={{ fontSize: 17 }}>🌿</span>
                   <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#A6CC82" }}>Pourquoi il compte</span>
@@ -2443,7 +2437,7 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
             )}
 
             {fiche.geste && String(fiche.geste).trim().length > 3 && (
-              <div style={{ marginTop: 10, padding: "12px 14px", background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", borderRadius: 10 }}>
+              <div style={{ marginBottom: 14, padding: "12px 14px", background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", borderRadius: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
                   <span style={{ fontSize: 17 }}>🤲</span>
                   <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#E4C878" }}>Un geste pour l'aider</span>
@@ -2451,6 +2445,14 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
                 <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.55 }}>{fiche.geste}</div>
               </div>
             )}
+
+            {champFiche("Description", fiche.description)}
+            {champFiche("Alimentation", fiche.alimentation)}
+            {champFiche("Période d'apparition", fiche.periode)}
+            {champFiche("Habitat", fiche.habitat)}
+            {champFiche("Répartition", fiche.repartition)}
+            {champFiche("Statut de conservation", fiche.conservation)}
+            {champFiche("À savoir", fiche.faits)}
 
             <div style={{ marginTop: 12, padding: "10px 12px", background: "rgba(0,0,0,.2)", borderRadius: 8 }}>
               <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, lineHeight: 1.5 }}>
