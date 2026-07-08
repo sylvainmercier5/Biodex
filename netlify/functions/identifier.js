@@ -2,7 +2,11 @@
 // Fonction serverless BioDex : identification d'insecte + fiche naturaliste, via l'API Claude (Sonnet).
 // La clé API vit UNIQUEMENT ici (variable d'environnement Netlify), jamais dans le navigateur.
 
-const MODELE = "claude-sonnet-4-6";
+// Modèle pour les tâches VISUELLES où la précision compte (identification, affinage).
+// Opus 4.8 : le plus précis d'après le benchmark sur photos de terrain.
+const MODELE_VISION = "claude-opus-4-8";
+// Modèle pour les tâches TEXTE (fiches, forge de cartes) : moins cher, largement suffisant.
+const MODELE_TEXTE = "claude-sonnet-5";
 
 // Garde-fou léger (anti-accident, pas anti-attaque déterminée) : limite par IP.
 // Stockage en mémoire de l'instance ; se réinitialise quand la fonction "dort". Suffisant pour un cercle privé.
@@ -187,6 +191,9 @@ exports.handler = async (event) => {
     maxTokens = 700;
   }
 
+  // Choix du modèle : texte (fiche, carte) = Sonnet 5 ; vision (identification, affinage) = Opus.
+  const modeleUtilise = (mode === "fiche" || mode === "carte") ? MODELE_TEXTE : MODELE_VISION;
+
   try {
     const ctrl = new AbortController();
     const minuteur = setTimeout(() => ctrl.abort(), 25000); // 25 s max
@@ -195,7 +202,7 @@ exports.handler = async (event) => {
       reponse = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": cle, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: MODELE, max_tokens: maxTokens, system: systeme, messages }),
+        body: JSON.stringify({ model: modeleUtilise, max_tokens: maxTokens, system: systeme, messages }),
         signal: ctrl.signal,
       });
     } finally {
