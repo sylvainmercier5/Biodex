@@ -38,6 +38,25 @@
   .bd-refresh:hover .bd-refresh-ico { transform: rotate(180deg); }
   .bd-refresh.bd-spinning .bd-refresh-ico { animation: bdSpin .8s linear infinite; }
   @keyframes bdSpin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+  /* --- Animations de combat --- */
+  @keyframes bdSecousse { 0%,100%{transform:translateX(0)} 15%{transform:translateX(-9px) rotate(-3deg)} 30%{transform:translateX(8px) rotate(3deg)} 45%{transform:translateX(-7px)} 60%{transform:translateX(6px)} 75%{transform:translateX(-4px)} }
+  .bd-touche { animation: bdSecousse .5s ease; }
+  @keyframes bdAttaqueG { 0%,100%{transform:translateX(0)} 40%{transform:translateX(22px) scale(1.06)} }
+  @keyframes bdAttaqueD { 0%,100%{transform:translateX(0)} 40%{transform:translateX(-22px) scale(1.06)} }
+  .bd-attaque-g { animation: bdAttaqueG .4s ease; }
+  .bd-attaque-d { animation: bdAttaqueD .4s ease; }
+  @keyframes bdDegatMonte { 0%{opacity:0; transform:translateY(6px) scale(.6)} 20%{opacity:1; transform:translateY(-6px) scale(1.15)} 80%{opacity:1; transform:translateY(-30px) scale(1)} 100%{opacity:0; transform:translateY(-48px) scale(.9)} }
+  .bd-degat { animation: bdDegatMonte 1.1s ease forwards; }
+  @keyframes bdFlash { 0%,100%{opacity:0} 30%{opacity:.55} }
+  .bd-flash { animation: bdFlash .45s ease; }
+  @keyframes bdEntreeG { from{opacity:0; transform:translateX(-30px)} to{opacity:1; transform:translateX(0)} }
+  @keyframes bdEntreeD { from{opacity:0; transform:translateX(30px)} to{opacity:1; transform:translateX(0)} }
+  .bd-entree-g { animation: bdEntreeG .5s ease both; }
+  .bd-entree-d { animation: bdEntreeD .5s ease both; }
+  @keyframes bdPulseVictoire { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+  .bd-victoire { animation: bdPulseVictoire 1s ease infinite; }
+  @keyframes bdKO { 0%{opacity:1; transform:rotate(0) scale(1)} 100%{opacity:.3; transform:rotate(8deg) scale(.9) translateY(10px)} }
+  .bd-ko { animation: bdKO .6s ease forwards; filter: grayscale(1); }
   @keyframes bdFade { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
   .bd-fade { animation: bdFade .35s ease both; }
   /* Effets de rareté des cartes */
@@ -96,9 +115,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.57 (PWA) ============
+// ============ BioDex v0.58 (PWA) ============
 
-const VERSION = "v0.57";
+const VERSION = "v0.58";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -864,6 +883,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.58", date: "2026-07", items: ["✨ Combat relooké : les insectes s'affrontent en face à face dans une arène, avec animations d'attaque, dégâts qui sautent à l'écran, secousses d'impact et types en couleur. Beaucoup plus lisible et fun !"] },
   { v: "0.57", date: "2026-07", items: ["⚔️ Combat repensé façon Pokémon : duel tour par tour avec 8 types d'insectes (forces/faiblesses), points de vie, énergie et capacités spéciales. Choisis bien ton insecte selon le type adverse !"] },
   { v: "0.56", date: "2026-07", items: ["📷 Position lue dans la photo : prends tes photos avec ton appli habituelle, BioDex récupère automatiquement le lieu depuis la photo à l'import (si la géolocalisation photo est activée)."] },
   { v: "0.55", date: "2026-07", items: ["📍 Précision de position au choix : au moment de partager une trouvaille, choisis si tu montres l'endroit exact, une zone approximative (~1 km) ou rien du tout. Chacun est libre !"] },
@@ -4045,14 +4065,14 @@ function ModeCartes({ cartes, onOuvrir }) {
 // ═══════════════ MOTEUR DE COMBAT (façon Pokémon) ═══════════════
 // 8 types d'insectes avec forces/faiblesses. Chaque type est fort contre 2 autres.
 const TYPES_COMBAT = [
-  { id: "volant", label: "Volant", emoji: "🦋", fort: ["rampant", "social"] },
-  { id: "cuirasse", label: "Cuirassé", emoji: "🪲", fort: ["volant", "venimeux"] },
-  { id: "rampant", label: "Rampant", emoji: "🐛", fort: ["aquatique", "cuirasse"] },
-  { id: "bondissant", label: "Bondissant", emoji: "🦗", fort: ["rampant", "nocturne"] },
-  { id: "venimeux", label: "Venimeux", emoji: "🕷️", fort: ["bondissant", "social"] },
-  { id: "aquatique", label: "Aquatique", emoji: "💧", fort: ["cuirasse", "venimeux"] },
-  { id: "social", label: "Social", emoji: "🐜", fort: ["aquatique", "nocturne"] },
-  { id: "nocturne", label: "Nocturne", emoji: "🌙", fort: ["volant", "bondissant"] },
+  { id: "volant", label: "Volant", emoji: "🦋", fort: ["rampant", "social"], couleur: "#5B9BD5" },
+  { id: "cuirasse", label: "Cuirassé", emoji: "🪲", fort: ["volant", "venimeux"], couleur: "#8B6F3A" },
+  { id: "rampant", label: "Rampant", emoji: "🐛", fort: ["aquatique", "cuirasse"], couleur: "#7FA84E" },
+  { id: "bondissant", label: "Bondissant", emoji: "🦗", fort: ["rampant", "nocturne"], couleur: "#5FA88A" },
+  { id: "venimeux", label: "Venimeux", emoji: "🕷️", fort: ["bondissant", "social"], couleur: "#A05BC4" },
+  { id: "aquatique", label: "Aquatique", emoji: "💧", fort: ["cuirasse", "venimeux"], couleur: "#4A90B8" },
+  { id: "social", label: "Social", emoji: "🐜", fort: ["aquatique", "nocturne"], couleur: "#D08A3E" },
+  { id: "nocturne", label: "Nocturne", emoji: "🌙", fort: ["volant", "bondissant"], couleur: "#7A6BA8" },
 ];
 function typeInfo(id) { return TYPES_COMBAT.find((t) => t.id === id) || TYPES_COMBAT[0]; }
 
@@ -4142,6 +4162,32 @@ const CRITERES = [
   { id: "vitesse", label: "Vitesse", emoji: "💨" },
 ];
 
+// Portrait de combat : photo ronde de l'insecte depuis IndexedDB, avec effets d'état
+function PortraitCombat({ combattant, cote, anim, ko }) {
+  const [photoBlob, setPhotoBlob] = useState(null);
+  useEffect(() => {
+    let vivant = true;
+    if (combattant && combattant.obs && combattant.obs.photo) {
+      // La photo est déjà un blob dans obs.photo
+      setPhotoBlob(combattant.obs.photo);
+    } else setPhotoBlob(null);
+    return () => { vivant = false; };
+  }, [combattant && combattant.id]);
+  const photoUrl = useBlobUrl(photoBlob);
+  const t = typeInfo(combattant.type);
+  const classeAnim = ko ? "bd-ko" : (anim === "touche" ? "bd-touche" : anim === "attaque" ? (cote === "g" ? "bd-attaque-g" : "bd-attaque-d") : "");
+  return (
+    <div className={(cote === "g" ? "bd-entree-g" : "bd-entree-d")} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", maxWidth: 150 }}>
+      <div className={classeAnim} style={{ position: "relative", width: 96, height: 96, borderRadius: "50%", overflow: "hidden", border: `3px solid ${t.couleur || C.ambre}`, boxShadow: `0 0 16px ${t.couleur || C.ambre}55`, background: C.panneau }}>
+        {photoUrl ? <img src={photoUrl} alt={combattant.nom} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> :
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>{t.emoji}</div>}
+      </div>
+      <div style={{ marginTop: 6, fontFamily: sans, fontSize: 13, fontWeight: 700, color: C.papier, textAlign: "center", lineHeight: 1.2 }}>{combattant.nom}</div>
+      <div style={{ margintop: 2, fontFamily: sans, fontSize: 11, fontWeight: 700, color: "#fff", background: t.couleur || C.ambre, borderRadius: 10, padding: "1px 9px", marginTop: 3 }}>{t.emoji} {t.label}</div>
+    </div>
+  );
+}
+
 function Combat({ cartes }) {
   const jouables = cartes.filter((c) => c.carte);
   const [phase, setPhase] = useState("choix"); // choix | combat | fin
@@ -4149,8 +4195,13 @@ function Combat({ cartes }) {
   const [adv, setAdv] = useState(null);
   const [journal, setJournal] = useState([]);
   const [tour, setTour] = useState(1);
-  const [aMoi, setAMoi] = useState(true); // à qui de jouer
+  const [aMoi, setAMoi] = useState(true);
   const [anim, setAnim] = useState(false);
+  const [animMoi, setAnimMoi] = useState("");   // "" | attaque | touche
+  const [animAdv, setAnimAdv] = useState("");
+  const [degatMoi, setDegatMoi] = useState(null); // {n, eff, id}
+  const [degatAdv, setDegatAdv] = useState(null);
+  const [flash, setFlash] = useState(false);
   const journalRef = useRef(null);
 
   useEffect(() => {
@@ -4169,112 +4220,125 @@ function Combat({ cartes }) {
     const advObs = jouables[Math.floor(Math.random() * jouables.length)];
     const c1 = prepCombattant(carteChoisie);
     const c2 = prepCombattant(advObs);
-    setMoi(c1);
-    setAdv(c2);
+    setMoi(c1); setAdv(c2);
     const premierMoi = c1.vitesse >= c2.vitesse;
     setAMoi(premierMoi);
     setTour(1);
     setJournal([
-      `⚔️ ${c1.nom} (${typeInfo(c1.type).emoji} ${typeInfo(c1.type).label}) affronte ${c2.nom} (${typeInfo(c2.type).emoji} ${typeInfo(c2.type).label}) !`,
-      premierMoi ? `${c1.nom} est plus rapide et attaque en premier.` : `${c2.nom} est plus rapide et attaque en premier.`,
+      `⚔️ ${c1.nom} affronte ${c2.nom} !`,
+      premierMoi ? `${c1.nom} est plus rapide et frappe en premier.` : `${c2.nom} est plus rapide et frappe en premier.`,
     ]);
     setPhase("combat");
-    if (!premierMoi) setTimeout(() => tourIA(c1, c2), 900);
+    if (!premierMoi) setTimeout(() => tourIA(c1, c2), 1100);
   }
 
   function ajouterJournal(lignes) {
     setJournal((j) => [...j, ...(Array.isArray(lignes) ? lignes : [lignes])]);
   }
-
   function texteEfficacite(eff) {
-    if (eff >= 1.5) return " C'est super efficace !";
-    if (eff <= 0.7) return " Ce n'est pas très efficace…";
+    if (eff >= 1.5) return " Super efficace !";
+    if (eff <= 0.7) return " Peu efficace…";
     return "";
   }
 
-  // --- Action du joueur ---
+  // Joue les animations d'une attaque : attaquant avance, cible secoue, dégât monte
+  function animerAttaque(cibleEstAdv, degats, eff) {
+    if (cibleEstAdv) {
+      setAnimMoi("attaque");
+      setTimeout(() => { setAnimMoi(""); setAnimAdv("touche"); setDegatAdv({ n: degats, eff, id: Date.now() }); setFlash(true); }, 200);
+      setTimeout(() => { setAnimAdv(""); setFlash(false); }, 700);
+      setTimeout(() => setDegatAdv(null), 1200);
+    } else {
+      setAnimAdv("attaque");
+      setTimeout(() => { setAnimAdv(""); setAnimMoi("touche"); setDegatMoi({ n: degats, eff, id: Date.now() }); setFlash(true); }, 200);
+      setTimeout(() => { setAnimMoi(""); setFlash(false); }, 700);
+      setTimeout(() => setDegatMoi(null), 1200);
+    }
+  }
+
   function actionJoueur(type) {
     if (!aMoi || anim || phase !== "combat") return;
     setAnim(true);
     let m = { ...moi }, a = { ...adv };
-    // recharge d'énergie en début d'action
     m.energie = Math.min(m.energieMax, m.energie + 2);
-
+    let degats, efficacite;
     if (type === "capacite") {
       if (m.energie < 4) { setAnim(false); return; }
       m.energie -= 4;
-      const { degats, efficacite } = calculerDegats(m, a, 1.8);
+      ({ degats, efficacite } = calculerDegats(m, a, 1.8));
       a.pv = Math.max(0, a.pv - degats);
-      ajouterJournal(`✨ ${m.nom} utilise ${m.capacite.nom} et inflige ${degats} dégâts !${texteEfficacite(efficacite)}`);
+      ajouterJournal(`✨ ${m.nom} utilise ${m.capacite.nom} : ${degats} dégâts !${texteEfficacite(efficacite)}`);
     } else {
-      const { degats, efficacite } = calculerDegats(m, a, 1.0);
+      ({ degats, efficacite } = calculerDegats(m, a, 1.0));
       a.pv = Math.max(0, a.pv - degats);
-      ajouterJournal(`⚔️ ${m.nom} attaque et inflige ${degats} dégâts.${texteEfficacite(efficacite)}`);
+      ajouterJournal(`⚔️ ${m.nom} attaque : ${degats} dégâts.${texteEfficacite(efficacite)}`);
     }
+    animerAttaque(true, degats, efficacite);
     setMoi(m); setAdv(a);
-
     if (a.pv <= 0) {
-      ajouterJournal(`🏆 ${a.nom} est K.O. ! Tu remportes le combat !`);
-      setPhase("fin");
-      setAnim(false);
+      setTimeout(() => { ajouterJournal(`🏆 ${a.nom} est K.O. ! Victoire !`); setPhase("fin"); setAnim(false); }, 800);
       return;
     }
     setAMoi(false);
-    setTimeout(() => tourIA(m, a), 1000);
+    setTimeout(() => tourIA(m, a), 1300);
   }
 
-  // --- Action de l'IA ---
   function tourIA(m, a) {
     let adv2 = { ...a }, moi2 = { ...m };
     adv2.energie = Math.min(adv2.energieMax, adv2.energie + 2);
-    // IA : utilise sa capacité si elle a l'énergie ET (avantage de type OU joueur à PV bas OU 50% de chance)
-    const eff = efficaciteType(adv2.type, moi2.type);
-    const veutCapacite = adv2.energie >= 4 && (eff >= 1.5 || moi2.pv < moi2.pvMax * 0.4 || Math.random() < 0.5);
+    const eff0 = efficaciteType(adv2.type, moi2.type);
+    const veutCapacite = adv2.energie >= 4 && (eff0 >= 1.5 || moi2.pv < moi2.pvMax * 0.4 || Math.random() < 0.5);
+    let degats, efficacite;
     if (veutCapacite) {
       adv2.energie -= 4;
-      const { degats, efficacite } = calculerDegats(adv2, moi2, 1.8);
+      ({ degats, efficacite } = calculerDegats(adv2, moi2, 1.8));
       moi2.pv = Math.max(0, moi2.pv - degats);
-      ajouterJournal(`✨ ${adv2.nom} utilise ${adv2.capacite.nom} et inflige ${degats} dégâts !${texteEfficacite(efficacite)}`);
+      ajouterJournal(`✨ ${adv2.nom} utilise ${adv2.capacite.nom} : ${degats} dégâts !${texteEfficacite(efficacite)}`);
     } else {
-      const { degats, efficacite } = calculerDegats(adv2, moi2, 1.0);
+      ({ degats, efficacite } = calculerDegats(adv2, moi2, 1.0));
       moi2.pv = Math.max(0, moi2.pv - degats);
-      ajouterJournal(`⚔️ ${adv2.nom} attaque et inflige ${degats} dégâts.${texteEfficacite(efficacite)}`);
+      ajouterJournal(`⚔️ ${adv2.nom} attaque : ${degats} dégâts.${texteEfficacite(efficacite)}`);
     }
+    animerAttaque(false, degats, efficacite);
     setMoi(moi2); setAdv(adv2);
-
     if (moi2.pv <= 0) {
-      ajouterJournal(`💀 ${moi2.nom} est K.O. ! ${adv2.nom} l'emporte…`);
-      setPhase("fin");
-      setAnim(false);
+      setTimeout(() => { ajouterJournal(`💀 ${moi2.nom} est K.O. ! ${adv2.nom} l'emporte…`); setPhase("fin"); setAnim(false); }, 800);
       return;
     }
-    setTour((t) => t + 1);
-    setAMoi(true);
-    setAnim(false);
+    setTimeout(() => { setTour((t) => t + 1); setAMoi(true); setAnim(false); }, 700);
   }
 
   function rejouer() {
-    setPhase("choix"); setMoi(null); setAdv(null); setJournal([]); setTour(1); setAMoi(true); setAnim(false);
+    setPhase("choix"); setMoi(null); setAdv(null); setJournal([]); setTour(1);
+    setAMoi(true); setAnim(false); setAnimMoi(""); setAnimAdv(""); setDegatMoi(null); setDegatAdv(null); setFlash(false);
   }
 
-  // ---------- Rendu ----------
+  // Barre de vie stylisée
   const BarreVie = ({ combattant, aGauche }) => {
     const pct = Math.max(0, Math.round((combattant.pv / combattant.pvMax) * 100));
-    const couleur = pct > 50 ? "#8AAE6B" : pct > 20 ? "#D9A93E" : "#D96A4E";
-    const t = typeInfo(combattant.type);
+    const couleur = pct > 50 ? "#7FC24E" : pct > 22 ? "#E8B84B" : "#E5603E";
     return (
-      <div style={{ flex: 1 }}>
-        <div style={{ display: "flex", justifyContent: aGauche ? "flex-start" : "flex-end", alignItems: "center", gap: 6, marginBottom: 4 }}>
-          <span style={{ fontFamily: sans, fontSize: 13, fontWeight: 700, color: C.papier }}>{combattant.nom}</span>
-          <span style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>{t.emoji}</span>
+      <div style={{ width: "100%" }}>
+        <div style={{ height: 13, borderRadius: 7, background: "#0C0F08", overflow: "hidden", border: `1px solid ${C.bordure}`, boxShadow: "inset 0 1px 3px rgba(0,0,0,.5)" }}>
+          <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(${couleur}, ${couleur}cc)`, transition: "width .55s cubic-bezier(.4,0,.2,1), background .3s", borderRadius: 7 }} />
         </div>
-        <div style={{ height: 10, borderRadius: 5, background: "#0F130C", overflow: "hidden", border: `1px solid ${C.bordure}` }}>
-          <div style={{ height: "100%", width: `${pct}%`, background: couleur, transition: "width .5s ease, background .3s" }} />
+        <div style={{ display: "flex", justifyContent: aGauche ? "space-between" : "row-reverse", marginTop: 3, gap: 6 }}>
+          <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: C.papier }}>{combattant.pv}<span style={{ color: C.papierSombre, fontWeight: 400 }}>/{combattant.pvMax}</span></span>
+          <span style={{ fontFamily: sans, fontSize: 11, color: "#E8B84B" }}>{combattant.energie}/{combattant.energieMax}⚡</span>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
-          <span style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre }}>{combattant.pv}/{combattant.pvMax} PV</span>
-          <span style={{ fontFamily: sans, fontSize: 10.5, color: "#D9A93E" }}>{"⚡".repeat(Math.floor(combattant.energie / 2))}<span style={{ color: C.papierSombre }}>{combattant.energie}/{combattant.energieMax}</span></span>
-        </div>
+      </div>
+    );
+  };
+
+  const DegatFlottant = ({ degat, aGauche }) => {
+    if (!degat) return null;
+    const grosCoup = degat.eff >= 1.5;
+    const petitCoup = degat.eff <= 0.7;
+    return (
+      <div key={degat.id} className="bd-degat" style={{ position: "absolute", top: 10, left: aGauche ? "50%" : "50%", transform: "translateX(-50%)", zIndex: 5, pointerEvents: "none",
+        fontFamily: serif, fontWeight: 700, fontSize: grosCoup ? 34 : 26,
+        color: grosCoup ? "#FFD84D" : petitCoup ? "#B8B0A0" : "#FF6B4A", textShadow: "0 2px 6px rgba(0,0,0,.7)" }}>
+        -{degat.n}{grosCoup && <span style={{ fontSize: 15 }}> ⚡</span>}
       </div>
     );
   };
@@ -4282,17 +4346,17 @@ function Combat({ cartes }) {
   if (phase === "choix") {
     return (
       <div>
-        <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, textAlign: "center", marginBottom: 6 }}>Choisis ta carte pour le duel :</div>
-        <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, textAlign: "center", marginBottom: 14, lineHeight: 1.5 }}>
-          Combat tour par tour avec types, points de vie et énergie. Ton adversaire est tiré au sort parmi tes cartes.
+        <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.papier, textAlign: "center", marginBottom: 4 }}>⚔️ Choisis ton champion</div>
+        <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, textAlign: "center", marginBottom: 16, lineHeight: 1.5 }}>
+          Combat tour par tour. Chaque type a ses forces et faiblesses — choisis bien !
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(118px, 1fr))", gap: 12 }}>
           {jouables.map((o) => {
             const t = typeInfo(deduireType(o));
             return (
               <div key={o.id} style={{ position: "relative" }}>
                 <CarteInsecte obs={o} taille="compact" onClick={() => demarrer(o)} />
-                <div style={{ textAlign: "center", marginTop: 4, fontFamily: sans, fontSize: 11, fontWeight: 700, color: C.lichen }}>{t.emoji} {t.label}</div>
+                <div style={{ textAlign: "center", marginTop: 5, fontFamily: sans, fontSize: 10.5, fontWeight: 800, color: "#fff", background: t.couleur || C.ambre, borderRadius: 9, padding: "2px 6px", display: "inline-block", width: "100%" }}>{t.emoji} {t.label}</div>
               </div>
             );
           })}
@@ -4305,59 +4369,77 @@ function Combat({ cartes }) {
 
   return (
     <div>
-      {/* Zone de combat : barres de vie */}
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 14, padding: "14px", borderRadius: 12, background: "linear-gradient(#1A2015, #141810)", border: `1px solid ${C.bordure}` }}>
-        {moi && <BarreVie combattant={moi} aGauche={true} />}
-        <div style={{ alignSelf: "center", fontFamily: serif, fontSize: 16, color: C.papierSombre, flexShrink: 0 }}>VS</div>
-        {adv && <BarreVie combattant={adv} aGauche={false} />}
+      {/* Arène */}
+      <div style={{ position: "relative", padding: "18px 14px 16px", borderRadius: 14, background: "radial-gradient(ellipse at center, #232D1A 0%, #161C10 75%)", border: `1px solid ${C.bordure}`, overflow: "hidden", marginBottom: 12 }}>
+        {/* Flash d'impact */}
+        {flash && <div className="bd-flash" style={{ position: "absolute", inset: 0, background: "#fff", pointerEvents: "none" }} />}
+        {/* Tour */}
+        <div style={{ textAlign: "center", fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: C.papierSombre, marginBottom: 12 }}>Tour {tour}</div>
+        {/* Portraits + barres */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <div style={{ position: "relative", flex: 1 }}>
+            <DegatFlottant degat={degatMoi} aGauche={true} />
+            {moi && <PortraitCombat combattant={moi} cote="g" anim={animMoi} ko={phase === "fin" && moi.pv <= 0} />}
+            <div style={{ marginTop: 8 }}>{moi && <BarreVie combattant={moi} aGauche={true} />}</div>
+          </div>
+          <div style={{ alignSelf: "center", fontFamily: serif, fontSize: 18, color: C.ambre, fontWeight: 600, flexShrink: 0, paddingTop: 30 }}>⚔</div>
+          <div style={{ position: "relative", flex: 1 }}>
+            <DegatFlottant degat={degatAdv} aGauche={false} />
+            {adv && <PortraitCombat combattant={adv} cote="d" anim={animAdv} ko={phase === "fin" && adv.pv <= 0} />}
+            <div style={{ marginTop: 8 }}>{adv && <BarreVie combattant={adv} aGauche={false} />}</div>
+          </div>
+        </div>
+        {/* Indicateur d'avantage */}
+        {phase === "combat" && (
+          <div style={{ textAlign: "center", marginTop: 12, fontFamily: sans, fontSize: 11.5, fontWeight: 700 }}>
+            {advantageMoi >= 1.5 && <span style={{ color: "#7FC24E" }}>✓ Ton type domine l'adversaire</span>}
+            {advantageMoi <= 0.7 && <span style={{ color: "#E5603E" }}>⚠ Ton type est en difficulté</span>}
+            {advantageMoi > 0.7 && advantageMoi < 1.5 && <span style={{ color: C.papierSombre }}>Types équilibrés</span>}
+          </div>
+        )}
       </div>
 
-      {/* Indicateur de type */}
-      {phase === "combat" && (
-        <div style={{ textAlign: "center", marginBottom: 12, fontFamily: sans, fontSize: 12 }}>
-          {advantageMoi >= 1.5 && <span style={{ color: "#8AAE6B", fontWeight: 700 }}>✓ Ton type est fort contre l'adversaire</span>}
-          {advantageMoi <= 0.7 && <span style={{ color: "#D96A4E", fontWeight: 700 }}>⚠ Ton type est faible contre l'adversaire</span>}
-          {advantageMoi > 0.7 && advantageMoi < 1.5 && <span style={{ color: C.papierSombre }}>Types neutres</span>}
-        </div>
-      )}
-
-      {/* Journal de combat */}
-      <div ref={journalRef} style={{ height: 150, overflowY: "auto", padding: "10px 12px", marginBottom: 14, borderRadius: 10, background: "#0F130C", border: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.6 }}>
-        {journal.map((l, i) => (
-          <div key={i} style={{ marginBottom: 5, opacity: i === journal.length - 1 ? 1 : 0.75 }}>{l}</div>
+      {/* Journal (3 dernières lignes, compact) */}
+      <div ref={journalRef} style={{ height: 74, overflowY: "auto", padding: "8px 12px", marginBottom: 12, borderRadius: 10, background: "#0F130C", border: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 12.5, color: C.papier, lineHeight: 1.55 }}>
+        {journal.slice(-6).map((l, i, arr) => (
+          <div key={i} style={{ marginBottom: 3, opacity: i === arr.length - 1 ? 1 : 0.6 }}>{l}</div>
         ))}
       </div>
 
       {/* Actions */}
       {phase === "combat" && (
         <div>
-          {aMoi ? (
+          {aMoi && !anim ? (
             <div style={{ display: "flex", gap: 10 }}>
-              <Bouton variante="primaire" onClick={() => actionJoueur("base")} disabled={anim} style={{ flex: 1 }}>⚔️ Attaquer</Bouton>
-              <Bouton variante="primaire" onClick={() => actionJoueur("capacite")} disabled={anim || (moi && Math.min(moi.energieMax, moi.energie + 2) < 4)} style={{ flex: 1, opacity: (moi && Math.min(moi.energieMax, moi.energie + 2) < 4) ? 0.5 : 1 }}>
-                ✨ {moi ? moi.capacite.nom : "Capacité"} <span style={{ fontSize: 11 }}>(4⚡)</span>
-              </Bouton>
+              <button onClick={() => actionJoueur("base")} style={{ flex: 1, padding: "13px", borderRadius: 10, border: "1px solid #5A6B3E", background: "linear-gradient(#3A4A28, #2C3820)", color: C.papier, fontFamily: sans, fontSize: 14.5, fontWeight: 700, cursor: "pointer" }}>⚔️ Attaquer</button>
+              <button onClick={() => actionJoueur("capacite")} disabled={moi && Math.min(moi.energieMax, moi.energie + 2) < 4}
+                style={{ flex: 1.3, padding: "13px", borderRadius: 10, border: `1px solid ${(moi && Math.min(moi.energieMax, moi.energie + 2) >= 4) ? "#A8863A" : C.bordure}`,
+                  background: (moi && Math.min(moi.energieMax, moi.energie + 2) >= 4) ? "linear-gradient(#4A3D18, #382E10)" : C.panneau,
+                  color: (moi && Math.min(moi.energieMax, moi.energie + 2) >= 4) ? C.ambreClair : C.papierSombre,
+                  fontFamily: sans, fontSize: 14, fontWeight: 700, cursor: (moi && Math.min(moi.energieMax, moi.energie + 2) >= 4) ? "pointer" : "default", opacity: (moi && Math.min(moi.energieMax, moi.energie + 2) >= 4) ? 1 : 0.55 }}>
+                ✨ {moi ? moi.capacite.nom : "Capacité"}<br /><span style={{ fontSize: 10.5, fontWeight: 400 }}>coûte 4⚡</span>
+              </button>
             </div>
           ) : (
-            <div style={{ textAlign: "center", fontFamily: sans, fontSize: 13, color: C.papierSombre, fontStyle: "italic", padding: "10px" }}>L'adversaire réfléchit…</div>
-          )}
-          {moi && moi.capacite.effet && (
-            <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, textAlign: "center", marginTop: 8, fontStyle: "italic" }}>✨ {moi.capacite.nom} : {moi.capacite.effet}</div>
+            <div style={{ textAlign: "center", fontFamily: sans, fontSize: 13, color: C.papierSombre, fontStyle: "italic", padding: "14px" }}>
+              {anim ? "⚔️ …" : "L'adversaire prépare son attaque…"}
+            </div>
           )}
         </div>
       )}
 
       {phase === "fin" && (
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: moi && moi.pv > 0 ? "#8AAE6B" : "#D96A4E", marginBottom: 14 }}>
+          <div className={moi && moi.pv > 0 ? "bd-victoire" : ""} style={{ fontFamily: serif, fontSize: 26, fontWeight: 600, color: moi && moi.pv > 0 ? "#7FC24E" : "#E5603E", marginBottom: 14 }}>
             {moi && moi.pv > 0 ? "🏆 Victoire !" : "💀 Défaite…"}
           </div>
-          <Bouton variante="primaire" onClick={rejouer} style={{ width: "100%" }}>Nouveau combat</Bouton>
+          <button onClick={rejouer} style={{ width: "100%", padding: "13px", borderRadius: 10, border: "none", background: "linear-gradient(#C9A24B, #B8912F)", color: "#2A2416", fontFamily: sans, fontWeight: 700, fontSize: 15, cursor: "pointer" }}>Nouveau combat</button>
         </div>
       )}
     </div>
   );
 }
+
 
 
 function BioDex() {
