@@ -115,9 +115,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.62 (PWA) ============
+// ============ BioDex v0.63 (PWA) ============
 
-const VERSION = "v0.62";
+const VERSION = "v0.63";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -572,6 +572,32 @@ const ELEMENTS = {
 };
 function elementInfo(e) { return ELEMENTS[e] || { emoji: "🐞", c: "#94A97B" }; }
 
+// Normalise une confiance (nombre 0..1, nombre 0..100, ou texte "élevée/moyenne/faible") en pourcentage 0..100, ou null si inconnu.
+function pourcentConfiance(confiance) {
+  if (confiance === null || confiance === undefined || confiance === "") return null;
+  if (typeof confiance === "number") {
+    if (confiance <= 1) return Math.round(confiance * 100); // 0..1 (test local)
+    return Math.round(Math.min(100, confiance));            // 0..100 (IA)
+  }
+  const c = String(confiance).toLowerCase();
+  if (c.includes("élev") || c.includes("elev") || c.includes("haut")) return 85;
+  if (c.includes("moy")) return 60;
+  if (c.includes("faib") || c.includes("bas")) return 35;
+  const n = parseInt(c, 10);
+  return isNaN(n) ? null : Math.min(100, n);
+}
+
+// Couleur d'un pourcentage : dégradé continu rouge (bas) -> orange -> vert (haut).
+function couleurPourcent(pct) {
+  if (pct === null || pct === undefined) return "#8A8065";
+  const p = Math.max(0, Math.min(100, pct)) / 100;
+  // interpolation rouge (0) -> jaune (0.5) -> vert (1)
+  let r, g, b = 60;
+  if (p < 0.5) { r = 210; g = Math.round(90 + (185 - 90) * (p / 0.5)); }      // rouge -> jaune
+  else { r = Math.round(210 - (210 - 110) * ((p - 0.5) / 0.5)); g = 185; }     // jaune -> vert
+  return `rgb(${r},${g},${b})`;
+}
+
 // Traduit une confiance ("élevée/moyenne/faible" ou un nombre 0..1) en visuel clair
 function infoConfiance(confiance, niveau) {
   let cle = "";
@@ -595,15 +621,34 @@ function infoConfiance(confiance, niveau) {
 
 function JaugeConfiance({ confiance, niveau, compact }) {
   const info = infoConfiance(confiance, niveau);
+  const pct = pourcentConfiance(confiance);
+  const coul = pct === null ? info.couleur : couleurPourcent(pct);
+  const nbBarres = pct === null ? info.barres : (pct >= 70 ? 3 : pct >= 45 ? 2 : 1);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div style={{ display: "flex", gap: 2, alignItems: "flex-end" }}>
         {[0, 1, 2].map((i) => (
-          <div key={i} style={{ width: compact ? 4 : 5, height: compact ? (7 + i * 3) : (8 + i * 4), borderRadius: 1.5, background: i < info.barres ? info.couleur : "rgba(255,255,255,.14)" }} />
+          <div key={i} style={{ width: compact ? 4 : 5, height: compact ? (7 + i * 3) : (8 + i * 4), borderRadius: 1.5, background: i < nbBarres ? coul : "rgba(255,255,255,.14)" }} />
         ))}
       </div>
-      <span style={{ fontFamily: sans, fontSize: compact ? 11 : 12.5, fontWeight: 700, color: info.couleur }}>{compact ? info.court : info.label}</span>
+      {pct === null ? (
+        <span style={{ fontFamily: sans, fontSize: compact ? 11 : 12.5, fontWeight: 700, color: coul }}>{compact ? info.court : info.label}</span>
+      ) : (
+        <span style={{ fontFamily: sans, fontSize: compact ? 12 : 14, fontWeight: 800, color: coul }}>{pct}%{!compact && niveau ? <span style={{ fontWeight: 600, color: C.papierSombre, fontSize: 12 }}> · {niveau}</span> : null}</span>
+      )}
     </div>
+  );
+}
+
+// Petit badge de pourcentage de confiance, coloré du rouge (bas) au vert (haut).
+function BadgePourcent({ confiance, style }) {
+  const pct = pourcentConfiance(confiance);
+  if (pct === null) return null;
+  const coul = couleurPourcent(pct);
+  return (
+    <span title="Confiance de l'identification" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: sans, fontSize: 11.5, fontWeight: 800, color: "#12160D", background: coul, borderRadius: 8, padding: "1px 7px", ...style }}>
+      {pct}%
+    </span>
   );
 }
 
@@ -749,6 +794,7 @@ async function publierAuMur(obs, auteur, precision) {
     auteur: (auteur || "Anonyme").slice(0, 40),
     espece: obs.nom || "",
     espece_sci: obs.nomSci || "",
+    confiance: (obs.confiance === undefined || obs.confiance === null || obs.confiance === "") ? null : obs.confiance,
     lieu: obs.biotope ? biotopeOf(obs.biotope).label : "",
     lat: pos.lat,
     lon: pos.lon,
@@ -975,6 +1021,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.63", date: "2026-07", items: ["📊 Confiance en pourcentage : l'identification affiche maintenant un pourcentage de certitude avec une couleur qui va du rouge (incertain) au vert (fiable). Ce pourcentage est aussi visible sur les publications du mur !"] },
   { v: "0.62", date: "2026-07", items: ["🔍 Authenticité des cartes : à la forge, l'appli vérifie que la photo ressemble à une vraie photo d'insecte prise sur le terrain. Les images suspectes (captures d'écran, images web, dessins) sont marquées « non vérifiées » — visible dans la ligue pour que le jeu reste fair-play."] },
   { v: "0.61", date: "2026-07", items: ["🏆 La Ligue est arrivée ! Engage jusqu'à 3 cartes, défie celles de la bande (l'appli joue la carte adverse), et grimpe au classement. Chaque carte garde ses stats de victoires/défaites !"] },
   { v: "0.60", date: "2026-07", items: ["⚡ Mode auto en combat : un bouton pour laisser l'appli jouer le combat toute seule (le manuel reste par défaut). Pratique pour aller vite !"] },
@@ -1899,6 +1946,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
   const [photoBlob, setPhotoBlob] = useState(base ? base.photo : null);
   const [nom, setNom] = useState(base ? base.nom || "" : "");
   const [nomSci, setNomSci] = useState(base ? base.nomSci || "" : "");
+  const [confiance, setConfiance] = useState(base ? (base.confiance !== undefined ? base.confiance : null) : null);
   const [notable, setNotable] = useState(base ? base.notable || "" : "");
   const [biotope, setBiotope] = useState(base ? base.biotope || "" : "");
   const [ciel, setCiel] = useState(base ? base.ciel || "" : "");
@@ -2087,6 +2135,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
     if (!idResultat) return;
     if (idResultat.nom) setNom(idResultat.nom);
     if (idResultat.nomSci) setNomSci(idResultat.nomSci);
+    if (idResultat.confiance !== undefined) setConfiance(idResultat.confiance);
   }
 
   async function lancerIdentificationCloud() {
@@ -2110,6 +2159,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
     if (!res) return;
     if (res.nom) setNom(res.nom);
     if (res.nomSci) setNomSci(res.nomSci);
+    if (res.confiance !== undefined) setConfiance(res.confiance);
     if (res.inhabituel && String(res.inhabituel).trim().length > 3) setNotable(String(res.inhabituel).trim());
   }
 
@@ -2169,6 +2219,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
     if (!affinageFinal) return;
     if (affinageFinal.nom) setNom(affinageFinal.nom);
     if (affinageFinal.nomSci) setNomSci(affinageFinal.nomSci);
+    if (affinageFinal.confiance !== undefined) setConfiance(affinageFinal.confiance);
     setAffinageActif(false);
   }
 
@@ -2190,6 +2241,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
           ...base,
           nom: nom.trim(),
           nomSci: nomSci.trim(),
+          confiance: confiance,
           biotope: biotope || "autre",
           ciel: ciel || "",
           temp: temp.trim(),
@@ -2205,6 +2257,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
           ...base,
           nom: nom.trim(),
           nomSci: nomSci.trim(),
+          confiance: confiance,
           biotope: biotope || "autre",
           ciel: ciel || "",
           temp: temp.trim(),
@@ -2219,6 +2272,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
           id: `${Date.now()}-${Math.floor(Math.random() * 9999)}`,
           nom: nom.trim(),
           nomSci: nomSci.trim(),
+          confiance: confiance,
           biotope: biotope || "autre",
           ciel: ciel || "",
           temp: temp.trim(),
@@ -2398,7 +2452,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
           {/* Affinage : proposé dès qu'une photo est là, mis en avant si l'ID cloud hésite */}
           {photoBlob && !affinageActif && (
             <Bouton
-              variante={cloudResultat && (cloudResultat.confiance === "moyenne" || cloudResultat.confiance === "faible") ? "primaire" : "normal"}
+              variante={cloudResultat && pourcentConfiance(cloudResultat.confiance) !== null && pourcentConfiance(cloudResultat.confiance) < 70 ? "primaire" : "normal"}
               onClick={demarrerAffinage} style={{ width: "100%", marginBottom: 8 }}>
               🔍 Affiner l'identification (questions)
             </Bouton>
@@ -2505,7 +2559,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
           {idResultat && (
             <div style={{ marginTop: 12 }}>
               <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", color: C.lichen, marginBottom: 8 }}>
-                Proposition · {Math.round((idResultat.confiance || 0) * 100)}% · {idResultat.niveau}
+                Proposition · {pourcentConfiance(idResultat.confiance)}% · {idResultat.niveau}
               </div>
               <div style={{ fontFamily: sans, fontSize: 16, fontWeight: 700, color: C.papier }}>{idResultat.nom}</div>
               <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambre, marginBottom: 10 }}>{idResultat.nomSci}</div>
@@ -3803,7 +3857,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>✨ Identification précise (Claude)</div>
         <p style={p}>
-          Le bouton « Identifier (précis) » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un niveau de confiance. Pour affiner, l'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de jauge claire (Fiable / Probable / À vérifier), pour savoir d'un coup d'œil à quel point se fier à la proposition. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Combinable avec le ciblage de zone. Nécessite le réseau. Chaque identification coûte une fraction de centime.
+          Le bouton « Identifier (précis) » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un niveau de confiance. Pour affiner, l'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Combinable avec le ciblage de zone. Nécessite le réseau. Chaque identification coûte une fraction de centime.
         </p>
         <div style={t}>🌿 Pourquoi il compte</div>
         <p style={p}>
@@ -4131,7 +4185,10 @@ function DetailPost({ post, reactions, onReagir, onFermer }) {
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "92vh", overflowY: "auto", background: C.fond, borderRadius: "16px 16px 0 0", border: `1px solid ${C.bordure}`, borderBottom: "none" }}>
         {p.photo_url && <img src={p.photo_url} alt={p.espece} style={{ width: "100%", maxHeight: 380, objectFit: "cover", display: "block", borderRadius: "16px 16px 0 0" }} />}
         <div style={{ padding: 18 }}>
-          <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier, lineHeight: 1.2 }}>{p.espece || "Spécimen non identifié"}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier, lineHeight: 1.2 }}>{p.espece || "Spécimen non identifié"}</span>
+            <BadgePourcent confiance={p.confiance} style={{ fontSize: 13, padding: "2px 9px" }} />
+          </div>
           {p.espece_sci && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 16, color: C.ambre, marginTop: 2 }}>{p.espece_sci}</div>}
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
@@ -4294,7 +4351,10 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues }) {
           <div onClick={() => setPostDetail(p)} style={{ cursor: "pointer" }}>
             {p.photo_url && <img src={p.photo_url} alt={p.espece} loading="lazy" style={{ width: "100%", maxHeight: 360, objectFit: "cover", display: "block" }} />}
             <div style={{ padding: "10px 14px 4px" }}>
-              <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier }}>{p.espece || "Spécimen non identifié"}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier }}>{p.espece || "Spécimen non identifié"}</span>
+                <BadgePourcent confiance={p.confiance} />
+              </div>
               {p.espece_sci && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambre }}>{p.espece_sci}</div>}
               {p.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginTop: 6 }}>{p.note}</div>}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
