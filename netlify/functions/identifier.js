@@ -92,8 +92,10 @@ exports.handler = async (event) => {
     maxTokens = 600;
   } else if (mode === "carte") {
     // Génère des stats de jeu équilibrées + une capacité spéciale, ancrées dans la biologie réelle.
+    // Si une photo est fournie, évalue aussi son authenticité (vraie photo terrain vs image web/capture/dessin).
     const nom = String(corps.nom || "").slice(0, 120);
     const nomSci = String(corps.nomSci || "").slice(0, 120);
+    const aImage = corps.image && corps.media_type;
     systeme =
       "Tu es le game designer d'un jeu de cartes à collectionner sur les insectes. " +
       "À partir d'une espèce réelle, tu génères une carte de combat équilibrée dont les stats reflètent la BIOLOGIE réelle de l'animal " +
@@ -106,13 +108,22 @@ exports.handler = async (event) => {
       "volant (papillons, libellules, mouches), cuirasse (coléoptères, scarabées à carapace), rampant (chenilles, mille-pattes, vers), " +
       "bondissant (sauterelles, criquets, grillons), venimeux (araignées, guêpes, frelons), aquatique (insectes d'eau, larves aquatiques), " +
       "social (fourmis, abeilles, termites en colonie), nocturne (papillons de nuit, blattes, perce-oreilles). " +
+      (aImage
+        ? "IMPORTANT — AUTHENTICITÉ : on te fournit la photo qui a servi à créer la carte. Évalue si c'est vraisemblablement une VRAIE photographie d'insecte prise sur le terrain par un amateur, " +
+          "ou au contraire une image suspecte : capture d'écran (interface, texte, curseur visibles), dessin ou illustration, image de synthèse, ou photo manifestement issue du web/studio (fond blanc parfait, qualité pro irréaliste). " +
+          "Sois indulgent : dans le doute, considère la photo comme authentique (authentique=true). Ne signale (authentique=false) que les cas MANIFESTES. " +
+          'Ajoute au JSON les champs "authentique":true/false et "authenticite_raison":"courte raison si false, sinon vide". '
+        : "") +
       "Réponds UNIQUEMENT par un objet JSON valide, sans texte ni Markdown : " +
       '{"attaque":N,"defense":N,"vitesse":N,"rarete":N,' +
       '"element":"un des 8 types : volant, cuirasse, rampant, bondissant, venimeux, aquatique, social ou nocturne",' +
       '"capacite":{"nom":"nom court de la capacité","effet":"effet de jeu en une phrase"},' +
+      (aImage ? '"authentique":true,"authenticite_raison":"",' : "") +
       '"citation":"une phrase d\'ambiance évocatrice sur l\'espèce (max 15 mots)"}';
-    messages = [{ role: "user", content: [{ type: "text", text: "Crée la carte de : " + nom + (nomSci ? " (" + nomSci + ")" : "") + "." }] }];
-    maxTokens = 400;
+    const contenu = [{ type: "text", text: "Crée la carte de : " + nom + (nomSci ? " (" + nomSci + ")" : "") + "." }];
+    if (aImage) contenu.push({ type: "image", source: { type: "base64", media_type: corps.media_type, data: corps.image } });
+    messages = [{ role: "user", content: contenu }];
+    maxTokens = 450;
   } else if (mode === "fiche") {
     // Génération d'une fiche naturaliste à partir d'un nom déjà identifié
     const nom = String(corps.nom || "").slice(0, 120);
