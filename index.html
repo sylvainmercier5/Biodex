@@ -115,9 +115,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.63 (PWA) ============
+// ============ BioDex v0.64 (PWA) ============
 
-const VERSION = "v0.63";
+const VERSION = "v0.64";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1021,6 +1021,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.64", date: "2026-07", items: ["🎯 Identification plus précise : le moteur d'identification par photo passe sur un modèle plus performant (nettement moins d'erreurs, d'après un test sur photos réelles). Les fiches et cartes restent sur un modèle rapide et économique."] },
   { v: "0.63", date: "2026-07", items: ["📊 Confiance en pourcentage : l'identification affiche maintenant un pourcentage de certitude avec une couleur qui va du rouge (incertain) au vert (fiable). Ce pourcentage est aussi visible sur les publications du mur !"] },
   { v: "0.62", date: "2026-07", items: ["🔍 Authenticité des cartes : à la forge, l'appli vérifie que la photo ressemble à une vraie photo d'insecte prise sur le terrain. Les images suspectes (captures d'écran, images web, dessins) sont marquées « non vérifiées » — visible dans la ligue pour que le jeu reste fair-play."] },
   { v: "0.61", date: "2026-07", items: ["🏆 La Ligue est arrivée ! Engage jusqu'à 3 cartes, défie celles de la bande (l'appli joue la carte adverse), et grimpe au classement. Chaque carte garde ses stats de victoires/défaites !"] },
