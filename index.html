@@ -115,9 +115,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.58 (PWA) ============
+// ============ BioDex v0.62 (PWA) ============
 
-const VERSION = "v0.58";
+const VERSION = "v0.62";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -537,15 +537,19 @@ function lienINaturalist(nomSci, nom) {
 }
 
 // ---------- Cartes de collection (mode jeu) ----------
-async function genererCarte(nom, nomSci) {
+async function genererCarte(nom, nomSci, photoBlob) {
+  let image = null;
+  if (photoBlob) {
+    try { image = await blobVersCanvasBase64(photoBlob, null); } catch {}
+  }
   const r = await fetch("/.netlify/functions/identifier", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "carte", nom, nomSci }),
+    body: JSON.stringify(image ? { mode: "carte", nom, nomSci, image, media_type: "image/jpeg" } : { mode: "carte", nom, nomSci }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.erreur) throw new Error(j.erreur || "Service indisponible");
-  return j.resultat; // { attaque, defense, vitesse, rarete, element, capacite:{nom,effet}, citation }
+  return j.resultat; // { attaque, defense, vitesse, rarete, element, capacite:{nom,effet}, authentique, authenticite_raison, citation }
 }
 
 // Rareté -> palier (nom, couleur, éclat)
@@ -853,6 +857,94 @@ function missionProgres(mission, observations, saison) {
 }
 
 // --- Supabase : validations de missions ---
+// ---------- Ligue : cartes engagées, défis, scores ----------
+async function chargerLigue() {
+  const sb = clientSupabase();
+  if (!sb) return [];
+  try {
+    const { data, error } = await sb.from("cartes_ligue").select("*").order("victoires", { ascending: false });
+    if (error || !data) return [];
+    return data;
+  } catch { return []; }
+}
+
+async function chargerScores() {
+  const sb = clientSupabase();
+  if (!sb) return [];
+  try {
+    const { data, error } = await sb.from("ligue_scores").select("*").order("victoires", { ascending: false });
+    if (error || !data) return [];
+    return data;
+  } catch { return []; }
+}
+
+// Engage une carte (observation) dans la ligue. Copie ses stats de combat + photo.
+async function engagerCarte(obs, proprietaire) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const c = obs.carte || {};
+  const combattant = prepCombattant(obs);
+  // Upload de la photo (comme le mur) pour que les autres la voient
+  let photoUrl = "";
+  if (obs.photo) {
+    try {
+      const compresse = await compresserPourMur(obs.photo);
+      const nomFichier = `ligue-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+      const { error: errUp } = await sb.storage.from("photos").upload(nomFichier, compresse, { contentType: "image/jpeg", upsert: false });
+      if (!errUp) { const { data: pub } = sb.storage.from("photos").getPublicUrl(nomFichier); photoUrl = pub ? pub.publicUrl : ""; }
+    } catch {}
+  }
+  const ligne = {
+    proprietaire: (proprietaire || "Anonyme").slice(0, 40),
+    carte_id: String(obs.id),
+    nom: obs.nom || "Spécimen",
+    nom_sci: obs.nomSci || "",
+    type: combattant.type,
+    attaque: combattant.attaque,
+    defense: combattant.defense,
+    vitesse: combattant.vitesse,
+    rarete: c.rarete || 30,
+    capacite_nom: (c.capacite && c.capacite.nom) || "Coup spécial",
+    capacite_effet: (c.capacite && c.capacite.effet) || "",
+    photo_url: photoUrl,
+    authentique: c.authentique === false ? false : true,
+  };
+  const { error } = await sb.from("cartes_ligue").upsert(ligne, { onConflict: "proprietaire,carte_id", ignoreDuplicates: true });
+  if (error) throw new Error("Impossible d'engager cette carte");
+  return true;
+}
+
+async function retirerCarteLigue(proprietaire, carteId) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { error } = await sb.from("cartes_ligue").delete().eq("proprietaire", proprietaire).eq("carte_id", String(carteId));
+  if (error) throw new Error("Retrait impossible");
+  return true;
+}
+
+// Enregistre le résultat d'un défi : met à jour les compteurs de la carte défendue et les scores des deux joueurs.
+async function enregistrerResultatDefi(carteLigue, defieur, defieurGagne) {
+  const sb = clientSupabase();
+  if (!sb) return;
+  try {
+    // 1) Compteurs de la carte défendue (en défense)
+    const majCarte = defieurGagne
+      ? { defaites: (carteLigue.defaites || 0) + 1 }
+      : { victoires: (carteLigue.victoires || 0) + 1 };
+    await sb.from("cartes_ligue").update(majCarte).eq("id", carteLigue.id);
+
+    // 2) Scores des deux joueurs (upsert incrémental)
+    async function majScore(proprietaire, gagne) {
+      const { data } = await sb.from("ligue_scores").select("*").eq("proprietaire", proprietaire).maybeSingle();
+      const v = (data ? data.victoires : 0) + (gagne ? 1 : 0);
+      const d = (data ? data.defaites : 0) + (gagne ? 0 : 1);
+      await sb.from("ligue_scores").upsert({ proprietaire, victoires: v, defaites: d, maj: new Date().toISOString() }, { onConflict: "proprietaire" });
+    }
+    await majScore(defieur, defieurGagne);
+    await majScore(carteLigue.proprietaire, !defieurGagne);
+  } catch {}
+}
+
 async function chargerValidations(saisonCle) {
   const sb = clientSupabase();
   if (!sb) return [];
@@ -883,6 +975,10 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.62", date: "2026-07", items: ["🔍 Authenticité des cartes : à la forge, l'appli vérifie que la photo ressemble à une vraie photo d'insecte prise sur le terrain. Les images suspectes (captures d'écran, images web, dessins) sont marquées « non vérifiées » — visible dans la ligue pour que le jeu reste fair-play."] },
+  { v: "0.61", date: "2026-07", items: ["🏆 La Ligue est arrivée ! Engage jusqu'à 3 cartes, défie celles de la bande (l'appli joue la carte adverse), et grimpe au classement. Chaque carte garde ses stats de victoires/défaites !"] },
+  { v: "0.60", date: "2026-07", items: ["⚡ Mode auto en combat : un bouton pour laisser l'appli jouer le combat toute seule (le manuel reste par défaut). Pratique pour aller vite !"] },
+  { v: "0.59", date: "2026-07", items: ["🔧 Correction du combat : l'énergie affichée correspond maintenant exactement à ce que tu peux dépenser (la capacité spéciale ne se déclenche plus quand l'énergie est trop basse)."] },
   { v: "0.58", date: "2026-07", items: ["✨ Combat relooké : les insectes s'affrontent en face à face dans une arène, avec animations d'attaque, dégâts qui sautent à l'écran, secousses d'impact et types en couleur. Beaucoup plus lisible et fun !"] },
   { v: "0.57", date: "2026-07", items: ["⚔️ Combat repensé façon Pokémon : duel tour par tour avec 8 types d'insectes (forces/faiblesses), points de vie, énergie et capacités spéciales. Choisis bien ton insecte selon le type adverse !"] },
   { v: "0.56", date: "2026-07", items: ["📷 Position lue dans la photo : prends tes photos avec ton appli habituelle, BioDex récupère automatiquement le lieu depuis la photo à l'import (si la géolocalisation photo est activée)."] },
@@ -2576,6 +2672,9 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
           <PhotoBlobRecadree blob={obs.photo} zone={obs.cadreCarte} alt={obs.nom} style={{ width: "100%", aspectRatio: compact ? "1" : "4/3", objectFit: "cover", display: "block" }} />
           <div style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at center, transparent 62%, rgba(0,0,0,.28) 100%)" }} />
           <div style={{ position: "absolute", top: 5, right: 5, background: "rgba(42,36,22,.88)", color: pal.couleur, border: `1px solid ${pal.bord}`, fontFamily: sans, fontSize: compact ? 8 : 9.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", padding: "2px 7px", borderRadius: 10 }}>{pal.nom}</div>
+          {c.authentique === false && (
+            <div title={c.authenticite_raison || "Authenticité douteuse"} style={{ position: "absolute", top: 5, left: 5, background: "rgba(140,40,30,.92)", color: "#FFDDD4", border: "1px solid #E5603E", fontFamily: sans, fontSize: compact ? 8 : 9, fontWeight: 800, letterSpacing: 0.3, padding: "2px 6px", borderRadius: 10 }}>⚠ NON VÉRIFIÉE</div>
+          )}
         </div>
         {/* Nom latin */}
         {!compact && (
@@ -2608,6 +2707,7 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
   const [ficheErreur, setFicheErreur] = useState("");
   const [carteEtat, setCarteEtat] = useState(""); // "" | recherche | echec
   const [carteErreur, setCarteErreur] = useState("");
+  const [avertAuth, setAvertAuth] = useState("");
   const [murEtat, setMurEtat] = useState(""); // "" | envoi | ok | echec
   const [murErreur, setMurErreur] = useState("");
   const [prenomSaisi, setPrenomSaisi] = useState(prenom || "");
@@ -2644,10 +2744,14 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
     if (carteEtat === "recherche") return;
     setCarteEtat("recherche");
     setCarteErreur("");
+    setAvertAuth("");
     try {
-      const c = await genererCarte(obs.nom, obs.nomSci);
+      const c = await genererCarte(obs.nom, obs.nomSci, obs.photo);
       await onMajCarte(obs.id, c);
       setCarteEtat("");
+      if (c && c.authentique === false) {
+        setAvertAuth(c.authenticite_raison || "Cette photo ne semble pas être une photo d'insecte prise sur le terrain.");
+      }
     } catch (e) {
       setCarteErreur("Forge indisponible (réseau, ou service non configuré).");
       setCarteEtat("echec");
@@ -2847,6 +2951,13 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
               {carteEtat === "recherche" ? "🎴 Forge de la carte…" : "🎴 Forger une carte de collection"}
             </Bouton>
             {carteErreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 8 }}>{carteErreur}</div>}
+            {avertAuth && (
+              <div style={{ marginTop: 10, padding: "10px 12px", background: "linear-gradient(#2E1815, #241310)", border: "1px solid #E5603E", borderRadius: 8, fontFamily: sans, fontSize: 12.5, color: "#FFDDD4", lineHeight: 1.5 }}>
+                ⚠️ <b>Carte marquée « non vérifiée »</b><br />
+                {avertAuth}<br />
+                <span style={{ color: "#D8A090", fontSize: 11.5 }}>La carte est utilisable, mais elle portera un badge « non vérifiée » dans la ligue. Pour une carte vérifiée, forge-la depuis une photo que tu as prise toi-même sur le terrain.</span>
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, fontStyle: "italic" }}>
@@ -3103,9 +3214,211 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
           <button onClick={onFermer} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
         </div>
         {item("🎯", "Missions saisonnières", "Défis d'observation de la bande", () => onAller("missions"), missionsNouv)}
+        {MUR_ACTIF && item("🏆", "La Ligue", "Défie les cartes de la bande", () => onAller("ligue"), 0)}
         {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Mon profil" : "Se connecter", utilisateur ? "Ta collection d'espèces" : "Connexion facultative par email", () => onAller("connexion"), 0)}
       </div>
+    </div>
+  );
+}
+
+// ---------- Vue : Ligue (défis sociaux) ----------
+function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer }) {
+  const [onglet, setOnglet] = useState("champions"); // champions | mescartes | classement
+  const [ligue, setLigue] = useState([]);
+  const [scores, setScores] = useState([]);
+  const [etat, setEtat] = useState("chargement");
+  const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
+  const [enCours, setEnCours] = useState(null);
+  const [message, setMessage] = useState("");
+
+  const mesCartesForgees = observations.filter((o) => o.carte);
+  const moi = (prenom || "").trim().toLowerCase();
+
+  async function rafraichir() {
+    if (!MUR_ACTIF) { setEtat("inactif"); return; }
+    setEtat("chargement");
+    try {
+      const [l, s] = await Promise.all([chargerLigue(), chargerScores()]);
+      setLigue(l); setScores(s); setEtat("ok");
+    } catch { setEtat("echec"); }
+  }
+  useEffect(() => { rafraichir(); }, []);
+
+  const mesCartesEngagees = ligue.filter((c) => (c.proprietaire || "").trim().toLowerCase() === moi);
+  const championsAdverses = ligue.filter((c) => (c.proprietaire || "").trim().toLowerCase() !== moi);
+
+  async function engager(obs) {
+    const p = (saisiePrenom || prenom || "").trim();
+    if (!p) { setMessage("Indique ton prénom d'abord."); return; }
+    if (mesCartesEngagees.length >= 3) { setMessage("Tu as déjà 3 cartes dans la ligue (le maximum)."); return; }
+    onDefinirPrenom(p);
+    setEnCours("engager-" + obs.id);
+    setMessage("");
+    try {
+      await engagerCarte(obs, p);
+      await rafraichir();
+      setMessage("✓ " + (obs.nom || "Carte") + " engagée dans la ligue !");
+    } catch (e) { setMessage(String(e.message || "Échec")); }
+    setEnCours(null);
+  }
+
+  async function retirer(carte) {
+    setEnCours("retirer-" + carte.id);
+    try { await retirerCarteLigue(carte.proprietaire, carte.carte_id); await rafraichir(); }
+    catch {}
+    setEnCours(null);
+  }
+
+  const dejaEngagee = (obsId) => mesCartesEngagees.some((c) => c.carte_id === String(obsId));
+
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Retour</Bouton>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+        <span style={{ fontSize: 28 }}>🏆</span>
+        <div className="serif" style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier }}>La Ligue</div>
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 14, lineHeight: 1.5 }}>
+        Engage tes meilleures cartes, défie celles de la bande. Quand tu défies une carte, son propriétaire n'a pas besoin d'être là : l'appli la joue pour lui.
+      </div>
+
+      {/* Prénom */}
+      {MUR_ACTIF && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, padding: "10px 12px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
+          <span style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, whiteSpace: "nowrap" }}>Ton prénom :</span>
+          <input value={saisiePrenom} onChange={(e) => setSaisiePrenom(e.target.value)} onBlur={() => onDefinirPrenom((saisiePrenom || "").trim())} placeholder="ex : Sylvain" maxLength={40}
+            style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "7px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
+        </div>
+      )}
+
+      {!MUR_ACTIF && (
+        <div style={{ padding: 14, background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: C.papierSombre }}>
+          La ligue nécessite le service en ligne (non configuré).
+        </div>
+      )}
+
+      {message && <div style={{ fontFamily: sans, fontSize: 13, color: message.startsWith("✓") ? "#A6CC82" : "#E8A88F", marginBottom: 12, textAlign: "center" }}>{message}</div>}
+
+      {/* Onglets */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, background: C.panneau, padding: 4, borderRadius: 10, border: `1px solid ${C.bordure}` }}>
+        {[["champions", "⚔️ Défier"], ["mescartes", "🎴 Mes cartes"], ["classement", "📊 Classement"]].map(([id, lab]) => (
+          <button key={id} onClick={() => setOnglet(id)} style={{ flex: 1, padding: "8px 6px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: 700, background: onglet === id ? "linear-gradient(#C9A24B, #B8912F)" : "transparent", color: onglet === id ? C.encre : C.papierSombre }}>{lab}</button>
+        ))}
+      </div>
+
+      {etat === "chargement" && <div style={{ textAlign: "center", color: C.papierSombre, fontStyle: "italic", padding: 20 }}>Chargement…</div>}
+      {etat === "echec" && <div style={{ textAlign: "center", color: "#E8A88F", padding: 20 }}>Impossible de charger la ligue.</div>}
+
+      {/* ONGLET DÉFIER */}
+      {etat === "ok" && onglet === "champions" && (
+        <div>
+          {championsAdverses.length === 0 ? (
+            <div style={{ textAlign: "center", color: C.papierSombre, fontSize: 14, padding: "24px 16px", background: C.panneau, borderRadius: 10, lineHeight: 1.6 }}>
+              Aucun champion adverse pour l'instant.<br />Attends que la bande engage des cartes !
+            </div>
+          ) : mesCartesForgees.length === 0 ? (
+            <div style={{ textAlign: "center", color: C.papierSombre, fontSize: 14, padding: "24px 16px", background: C.panneau, borderRadius: 10 }}>
+              Il te faut au moins une carte forgée pour défier. Forge une carte depuis une observation !
+            </div>
+          ) : (
+            championsAdverses.map((c) => {
+              const t = typeInfo(c.type);
+              return (
+                <div key={c.id} style={{ display: "flex", gap: 12, alignItems: "center", padding: 12, marginBottom: 10, background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 12 }}>
+                  <div style={{ width: 54, height: 54, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: `2px solid ${t.couleur}`, background: C.fond }}>
+                    {c.photo_url ? <img src={c.photo_url} alt={c.nom} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>{t.emoji}</div>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.papier }}>{c.nom} {c.authentique === false && <span title="Photo non vérifiée" style={{ fontFamily: sans, fontSize: 10, fontWeight: 800, color: "#FFDDD4", background: "rgba(140,40,30,.92)", border: "1px solid #E5603E", borderRadius: 8, padding: "1px 5px", verticalAlign: "middle" }}>⚠ non vérifiée</span>}</div>
+                    <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre }}>par {c.proprietaire} · {t.emoji} {t.label}</div>
+                    <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 2 }}>⚔️{c.attaque} 🛡️{c.defense} 💨{c.vitesse} · <span style={{ color: "#8AAE6B" }}>{c.victoires || 0}V</span>/<span style={{ color: "#E5603E" }}>{c.defaites || 0}D</span></div>
+                  </div>
+                  <Bouton variante="primaire" onClick={() => onDefier(c)} style={{ flexShrink: 0 }}>Défier</Bouton>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ONGLET MES CARTES */}
+      {etat === "ok" && onglet === "mescartes" && (
+        <div>
+          <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 12 }}>
+            Tu as engagé <b style={{ color: C.ambreClair }}>{mesCartesEngagees.length}/3</b> cartes dans la ligue.
+          </div>
+          {mesCartesEngagees.length > 0 && (
+            <div style={{ marginBottom: 18 }}>
+              {mesCartesEngagees.map((c) => {
+                const t = typeInfo(c.type);
+                return (
+                  <div key={c.id} style={{ display: "flex", gap: 12, alignItems: "center", padding: 12, marginBottom: 8, background: "linear-gradient(#1E2A18, #182213)", border: "1px solid #6F9450", borderRadius: 12 }}>
+                    <div style={{ width: 46, height: 46, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: `2px solid ${t.couleur}`, background: C.fond }}>
+                      {c.photo_url ? <img src={c.photo_url} alt={c.nom} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{t.emoji}</div>}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: C.papier }}>{c.nom} {c.authentique === false && <span title="Photo non vérifiée" style={{ fontFamily: sans, fontSize: 9.5, fontWeight: 800, color: "#FFDDD4", background: "rgba(140,40,30,.92)", border: "1px solid #E5603E", borderRadius: 8, padding: "1px 5px", verticalAlign: "middle" }}>⚠ non vérifiée</span>}</div>
+                      <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>{t.emoji} {t.label} · <span style={{ color: "#8AAE6B" }}>{c.victoires || 0}V</span>/<span style={{ color: "#E5603E" }}>{c.defaites || 0}D</span> en défense</div>
+                    </div>
+                    <button onClick={() => retirer(c)} disabled={enCours === "retirer-" + c.id} style={{ flexShrink: 0, background: "none", border: `1px solid ${C.bordure}`, color: C.papierSombre, borderRadius: 8, padding: "6px 10px", fontFamily: sans, fontSize: 12, cursor: "pointer" }}>Retirer</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{ fontFamily: sans, fontSize: 13, fontWeight: 700, color: C.lichen, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>Engager une carte</div>
+          {mesCartesForgees.length === 0 ? (
+            <div style={{ color: C.papierSombre, fontSize: 14, padding: "16px", background: C.panneau, borderRadius: 10 }}>Tu n'as pas encore de carte forgée. Forge-en depuis tes observations !</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 10 }}>
+              {mesCartesForgees.map((o) => {
+                const engagee = dejaEngagee(o.id);
+                const t = typeInfo(deduireType(o));
+                return (
+                  <div key={o.id} style={{ opacity: engagee ? 0.5 : 1 }}>
+                    <CarteInsecte obs={o} taille="compact" onClick={engagee ? undefined : () => engager(o)} />
+                    <div style={{ textAlign: "center", marginTop: 4 }}>
+                      {engagee ? <span style={{ fontFamily: sans, fontSize: 11, color: "#8AAE6B", fontWeight: 700 }}>✓ Engagée</span> :
+                        <span style={{ fontFamily: sans, fontSize: 11, color: C.ambre, fontWeight: 700 }}>{enCours === "engager-" + o.id ? "…" : "+ Engager"}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ONGLET CLASSEMENT */}
+      {etat === "ok" && onglet === "classement" && (
+        <div>
+          {scores.length === 0 ? (
+            <div style={{ textAlign: "center", color: C.papierSombre, fontSize: 14, padding: "24px 16px", background: C.panneau, borderRadius: 10 }}>
+              Aucun défi joué pour l'instant. Lance le premier combat !
+            </div>
+          ) : (
+            scores.map((s, i) => {
+              const total = (s.victoires || 0) + (s.defaites || 0);
+              const ratio = total > 0 ? Math.round((s.victoires / total) * 100) : 0;
+              const estMoi = (s.proprietaire || "").trim().toLowerCase() === moi;
+              const medaille = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+              return (
+                <div key={s.proprietaire} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", marginBottom: 7, background: estMoi ? "linear-gradient(#2C3623, #232B1D)" : C.panneau, border: `1px solid ${estMoi ? "#A8863A" : C.bordure}`, borderRadius: 10 }}>
+                  <span style={{ fontSize: 18, width: 28, textAlign: "center" }}>{medaille}</span>
+                  <span style={{ flex: 1, fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: estMoi ? C.ambreClair : C.papier }}>{s.proprietaire}{estMoi && " (toi)"}</span>
+                  <span style={{ fontFamily: sans, fontSize: 13 }}>
+                    <span style={{ color: "#8AAE6B", fontWeight: 700 }}>{s.victoires || 0}V</span> <span style={{ color: C.papierSombre }}>/</span> <span style={{ color: "#E5603E", fontWeight: 700 }}>{s.defaites || 0}D</span>
+                    <span style={{ color: C.papierSombre, marginLeft: 6 }}>({ratio}%)</span>
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -3561,6 +3874,10 @@ function Aide({ onFermer, onImportTermine }) {
         <div style={t}>🎯 Missions saisonnières</div>
         <p style={p}>
           Le bouton 🎯 en haut ouvre les missions de la saison : des défis d'observation communs à toute la bande (explorer un biotope, observer plusieurs espèces, repérer une notable…), qui changent à chaque saison. Ils se valident automatiquement quand ta collection remplit les conditions, avec une validation manuelle en secours. Tu vois aussi qui, dans la bande, a réussi chaque défi.
+        </p>
+        <div style={t}>🏆 La Ligue</div>
+        <p style={p}>
+          Depuis le menu ☰, la Ligue te permet de défier les cartes de la bande. Engage jusqu'à 3 de tes cartes forgées (elles restent dans ta collection), et défie celles des autres : quand tu défies une carte, son propriétaire n'a pas besoin d'être connecté, l'appli la joue pour lui. Chaque défi met à jour le classement des joueurs (victoires/défaites) et les stats de chaque carte. Tu peux jouer le combat en manuel, en auto, ou juste voir le résultat. Pour que le jeu reste fair-play, chaque carte forgée est vérifiée : si la photo ne ressemble pas à une vraie photo d'insecte prise sur le terrain (capture d'écran, image trouvée sur internet, dessin), la carte est marquée « non vérifiée » et porte un badge visible dans la ligue. La carte reste jouable, mais tout le monde voit qu'elle est douteuse.
         </p>
         <div style={t}>💡 Boîte à idées</div>
         <p style={p}>
@@ -4124,6 +4441,27 @@ function deduireType(obs) {
   return "rampant";
 }
 
+// Prépare un combattant à partir d'une carte engagée dans la ligue (données Supabase).
+function prepCombattantLigue(carteLigue) {
+  const defense = carteLigue.defense || 50;
+  const pvMax = Math.round(150 + defense * 1.0);
+  return {
+    id: carteLigue.carte_id,
+    nom: carteLigue.nom || "Champion",
+    obs: null,
+    photoUrlDistante: carteLigue.photo_url || "",
+    type: carteLigue.type || "rampant",
+    attaque: carteLigue.attaque || 50,
+    defense,
+    vitesse: carteLigue.vitesse || 50,
+    pvMax, pv: pvMax,
+    energie: 3, energieMax: 6,
+    capacite: { nom: carteLigue.capacite_nom || "Coup spécial", effet: carteLigue.capacite_effet || "" },
+    rarete: carteLigue.rarete || 30,
+    ligue: carteLigue, // référence pour enregistrer le résultat
+  };
+}
+
 // Prépare l'état de combat d'une carte (PV, énergie, type) à partir de l'observation.
 function prepCombattant(obs) {
   const c = obs.carte || {};
@@ -4162,18 +4500,15 @@ const CRITERES = [
   { id: "vitesse", label: "Vitesse", emoji: "💨" },
 ];
 
-// Portrait de combat : photo ronde de l'insecte depuis IndexedDB, avec effets d'état
+// Portrait de combat : photo ronde de l'insecte (blob local OU url distante), avec effets d'état
 function PortraitCombat({ combattant, cote, anim, ko }) {
   const [photoBlob, setPhotoBlob] = useState(null);
   useEffect(() => {
-    let vivant = true;
-    if (combattant && combattant.obs && combattant.obs.photo) {
-      // La photo est déjà un blob dans obs.photo
-      setPhotoBlob(combattant.obs.photo);
-    } else setPhotoBlob(null);
-    return () => { vivant = false; };
+    if (combattant && combattant.obs && combattant.obs.photo) setPhotoBlob(combattant.obs.photo);
+    else setPhotoBlob(null);
   }, [combattant && combattant.id]);
-  const photoUrl = useBlobUrl(photoBlob);
+  const photoLocale = useBlobUrl(photoBlob);
+  const photoUrl = photoLocale || (combattant && combattant.photoUrlDistante) || null;
   const t = typeInfo(combattant.type);
   const classeAnim = ko ? "bd-ko" : (anim === "touche" ? "bd-touche" : anim === "attaque" ? (cote === "g" ? "bd-attaque-g" : "bd-attaque-d") : "");
   return (
@@ -4183,12 +4518,12 @@ function PortraitCombat({ combattant, cote, anim, ko }) {
           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>{t.emoji}</div>}
       </div>
       <div style={{ marginTop: 6, fontFamily: sans, fontSize: 13, fontWeight: 700, color: C.papier, textAlign: "center", lineHeight: 1.2 }}>{combattant.nom}</div>
-      <div style={{ margintop: 2, fontFamily: sans, fontSize: 11, fontWeight: 700, color: "#fff", background: t.couleur || C.ambre, borderRadius: 10, padding: "1px 9px", marginTop: 3 }}>{t.emoji} {t.label}</div>
+      <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: "#fff", background: t.couleur || C.ambre, borderRadius: 10, padding: "1px 9px", marginTop: 3 }}>{t.emoji} {t.label}</div>
     </div>
   );
 }
 
-function Combat({ cartes }) {
+function Combat({ cartes, adversaireImpose, defieur, onResultatDefi }) {
   const jouables = cartes.filter((c) => c.carte);
   const [phase, setPhase] = useState("choix"); // choix | combat | fin
   const [moi, setMoi] = useState(null);
@@ -4197,16 +4532,28 @@ function Combat({ cartes }) {
   const [tour, setTour] = useState(1);
   const [aMoi, setAMoi] = useState(true);
   const [anim, setAnim] = useState(false);
+  const [auto, setAuto] = useState(false);
   const [animMoi, setAnimMoi] = useState("");   // "" | attaque | touche
   const [animAdv, setAnimAdv] = useState("");
   const [degatMoi, setDegatMoi] = useState(null); // {n, eff, id}
   const [degatAdv, setDegatAdv] = useState(null);
   const [flash, setFlash] = useState(false);
+  const [resultatEnvoye, setResultatEnvoye] = useState(false);
   const journalRef = useRef(null);
+  const estDefi = !!adversaireImpose;
 
   useEffect(() => {
     if (journalRef.current) journalRef.current.scrollTop = journalRef.current.scrollHeight;
   }, [journal]);
+
+  // Fin d'un défi de ligue : on remonte le résultat une seule fois
+  useEffect(() => {
+    if (phase === "fin" && estDefi && !resultatEnvoye && moi && adv) {
+      setResultatEnvoye(true);
+      const jaiGagne = moi.pv > 0;
+      if (onResultatDefi) onResultatDefi(jaiGagne);
+    }
+  }, [phase]);
 
   if (jouables.length < 1) {
     return (
@@ -4217,15 +4564,14 @@ function Combat({ cartes }) {
   }
 
   function demarrer(carteChoisie) {
-    const advObs = jouables[Math.floor(Math.random() * jouables.length)];
     const c1 = prepCombattant(carteChoisie);
-    const c2 = prepCombattant(advObs);
+    const c2 = estDefi ? prepCombattantLigue(adversaireImpose) : prepCombattant(jouables[Math.floor(Math.random() * jouables.length)]);
     setMoi(c1); setAdv(c2);
     const premierMoi = c1.vitesse >= c2.vitesse;
     setAMoi(premierMoi);
     setTour(1);
     setJournal([
-      `⚔️ ${c1.nom} affronte ${c2.nom} !`,
+      `⚔️ ${c1.nom} affronte ${c2.nom}${estDefi ? " (" + adversaireImpose.proprietaire + ")" : ""} !`,
       premierMoi ? `${c1.nom} est plus rapide et frappe en premier.` : `${c2.nom} est plus rapide et frappe en premier.`,
     ]);
     setPhase("combat");
@@ -4258,12 +4604,12 @@ function Combat({ cartes }) {
 
   function actionJoueur(type) {
     if (!aMoi || anim || phase !== "combat") return;
+    // On travaille sur l'énergie RÉELLEMENT affichée (pas de recharge anticipée)
+    if (type === "capacite" && moi.energie < 4) return; // sécurité
     setAnim(true);
     let m = { ...moi }, a = { ...adv };
-    m.energie = Math.min(m.energieMax, m.energie + 2);
     let degats, efficacite;
     if (type === "capacite") {
-      if (m.energie < 4) { setAnim(false); return; }
       m.energie -= 4;
       ({ degats, efficacite } = calculerDegats(m, a, 1.8));
       a.pv = Math.max(0, a.pv - degats);
@@ -4282,6 +4628,22 @@ function Combat({ cartes }) {
     setAMoi(false);
     setTimeout(() => tourIA(m, a), 1300);
   }
+
+  // Décide l'action du joueur en mode auto (même tactique que l'IA)
+  function actionAuto() {
+    if (!moi || !adv) return;
+    const eff = efficaciteType(moi.type, adv.type);
+    const utiliseCapacite = moi.energie >= 4 && (eff >= 1.5 || adv.pv < adv.pvMax * 0.4 || Math.random() < 0.5);
+    actionJoueur(utiliseCapacite ? "capacite" : "base");
+  }
+
+  // En mode auto : joue automatiquement quand c'est au tour du joueur
+  useEffect(() => {
+    if (auto && aMoi && !anim && phase === "combat") {
+      const t = setTimeout(() => actionAuto(), 800);
+      return () => clearTimeout(t);
+    }
+  }, [auto, aMoi, anim, phase]);
 
   function tourIA(m, a) {
     let adv2 = { ...a }, moi2 = { ...m };
@@ -4305,12 +4667,18 @@ function Combat({ cartes }) {
       setTimeout(() => { ajouterJournal(`💀 ${moi2.nom} est K.O. ! ${adv2.nom} l'emporte…`); setPhase("fin"); setAnim(false); }, 800);
       return;
     }
-    setTimeout(() => { setTour((t) => t + 1); setAMoi(true); setAnim(false); }, 700);
+    // Retour au joueur : on recharge SON énergie (+2) pour le tour qui commence
+    setTimeout(() => {
+      setMoi((prev) => ({ ...prev, energie: Math.min(prev.energieMax, prev.energie + 2) }));
+      setTour((t) => t + 1);
+      setAMoi(true);
+      setAnim(false);
+    }, 700);
   }
 
   function rejouer() {
     setPhase("choix"); setMoi(null); setAdv(null); setJournal([]); setTour(1);
-    setAMoi(true); setAnim(false); setAnimMoi(""); setAnimAdv(""); setDegatMoi(null); setDegatAdv(null); setFlash(false);
+    setAMoi(true); setAnim(false); setAuto(false); setAnimMoi(""); setAnimAdv(""); setDegatMoi(null); setDegatAdv(null); setFlash(false);
   }
 
   // Barre de vie stylisée
@@ -4409,14 +4777,28 @@ function Combat({ cartes }) {
       {/* Actions */}
       {phase === "combat" && (
         <div>
-          {aMoi && !anim ? (
+          {/* Bouton bascule Auto */}
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+            <button onClick={() => setAuto((v) => !v)}
+              style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${auto ? "#A8863A" : C.bordure}`, cursor: "pointer",
+                background: auto ? "linear-gradient(#4A3D18, #382E10)" : C.panneau, color: auto ? C.ambreClair : C.papierSombre,
+                fontFamily: sans, fontSize: 12.5, fontWeight: 700 }}>
+              {auto ? "⚡ Mode auto activé" : "🎮 Mode manuel"} · toucher pour {auto ? "reprendre la main" : "laisser jouer l'appli"}
+            </button>
+          </div>
+
+          {auto ? (
+            <div style={{ textAlign: "center", fontFamily: sans, fontSize: 13, color: C.papierSombre, fontStyle: "italic", padding: "14px" }}>
+              ⚡ Combat automatique en cours…
+            </div>
+          ) : aMoi && !anim ? (
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => actionJoueur("base")} style={{ flex: 1, padding: "13px", borderRadius: 10, border: "1px solid #5A6B3E", background: "linear-gradient(#3A4A28, #2C3820)", color: C.papier, fontFamily: sans, fontSize: 14.5, fontWeight: 700, cursor: "pointer" }}>⚔️ Attaquer</button>
-              <button onClick={() => actionJoueur("capacite")} disabled={moi && Math.min(moi.energieMax, moi.energie + 2) < 4}
-                style={{ flex: 1.3, padding: "13px", borderRadius: 10, border: `1px solid ${(moi && Math.min(moi.energieMax, moi.energie + 2) >= 4) ? "#A8863A" : C.bordure}`,
-                  background: (moi && Math.min(moi.energieMax, moi.energie + 2) >= 4) ? "linear-gradient(#4A3D18, #382E10)" : C.panneau,
-                  color: (moi && Math.min(moi.energieMax, moi.energie + 2) >= 4) ? C.ambreClair : C.papierSombre,
-                  fontFamily: sans, fontSize: 14, fontWeight: 700, cursor: (moi && Math.min(moi.energieMax, moi.energie + 2) >= 4) ? "pointer" : "default", opacity: (moi && Math.min(moi.energieMax, moi.energie + 2) >= 4) ? 1 : 0.55 }}>
+              <button onClick={() => actionJoueur("capacite")} disabled={moi && moi.energie < 4}
+                style={{ flex: 1.3, padding: "13px", borderRadius: 10, border: `1px solid ${(moi && moi.energie >= 4) ? "#A8863A" : C.bordure}`,
+                  background: (moi && moi.energie >= 4) ? "linear-gradient(#4A3D18, #382E10)" : C.panneau,
+                  color: (moi && moi.energie >= 4) ? C.ambreClair : C.papierSombre,
+                  fontFamily: sans, fontSize: 14, fontWeight: 700, cursor: (moi && moi.energie >= 4) ? "pointer" : "default", opacity: (moi && moi.energie >= 4) ? 1 : 0.55 }}>
                 ✨ {moi ? moi.capacite.nom : "Capacité"}<br /><span style={{ fontSize: 10.5, fontWeight: 400 }}>coûte 4⚡</span>
               </button>
             </div>
@@ -4596,6 +4978,7 @@ function BioDex() {
   const [notifs, setNotifs] = useState({ total: 0 });
   const [centreOuvert, setCentreOuvert] = useState(false);
   const [menuOuvert, setMenuOuvert] = useState(false);
+  const [carteDefiee, setCarteDefiee] = useState(null);
 
   // La pastille "nouveau sur le mur" dérive directement des notifications (pas de requête séparée).
   useEffect(() => {
@@ -4891,6 +5274,28 @@ function BioDex() {
       {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} onMarquerReactionsVues={(total) => { try { localStorage.setItem("biodex_reactions_vues", String(total)); } catch {} setNotifs((n) => ({ ...n, reactionsRecues: 0, total: Math.max(0, (n.total || 0) - (n.reactionsRecues || 0)) })); }} />}
       {vue === "idees" && <BoiteIdees prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
       {vue === "missions" && <Missions observations={observations} prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
+      {vue === "ligue" && (
+        <Ligue
+          observations={observations}
+          prenom={prenom}
+          onDefinirPrenom={definirPrenom}
+          onDefier={(carte) => { setCarteDefiee(carte); setVue("defi"); }}
+          onFermer={() => setVue("collection")}
+        />
+      )}
+      {vue === "defi" && carteDefiee && (
+        <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+          <Bouton onClick={() => { setVue("ligue"); setCarteDefiee(null); }} style={{ marginBottom: 14 }}>← Retour à la ligue</Bouton>
+          <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.papier, marginBottom: 4 }}>⚔️ Défi contre {carteDefiee.nom}</div>
+          <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 16 }}>Carte de {carteDefiee.proprietaire}. Choisis ton champion !</div>
+          <Combat
+            cartes={observations}
+            adversaireImpose={carteDefiee}
+            defieur={prenom}
+            onResultatDefi={(jaiGagne) => { enregistrerResultatDefi(carteDefiee, prenom, jaiGagne); }}
+          />
+        </div>
+      )}
       {centreOuvert && (
         <CentreNotifs
           notifs={notifs}
