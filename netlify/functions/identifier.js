@@ -102,9 +102,13 @@ exports.handler = async (event) => {
       "Barème : chaque stat de 1 à 100, équilibrées pour que la SOMME attaque+defense+vitesse soit proche de 150 (ni trop faible, ni surpuissant). " +
       "La rareté (1 à 100) reflète la rareté réelle et le statut de conservation. " +
       "La capacité spéciale est un pouvoir de jeu court inspiré d'un trait réel de l'espèce (vol stationnaire, camouflage, stridulation, dard, bioluminescence, mimétisme...). " +
+      "Le type de combat doit refléter la nature de l'insecte et être choisi STRICTEMENT parmi ces 8 valeurs : " +
+      "volant (papillons, libellules, mouches), cuirasse (coléoptères, scarabées à carapace), rampant (chenilles, mille-pattes, vers), " +
+      "bondissant (sauterelles, criquets, grillons), venimeux (araignées, guêpes, frelons), aquatique (insectes d'eau, larves aquatiques), " +
+      "social (fourmis, abeilles, termites en colonie), nocturne (papillons de nuit, blattes, perce-oreilles). " +
       "Réponds UNIQUEMENT par un objet JSON valide, sans texte ni Markdown : " +
       '{"attaque":N,"defense":N,"vitesse":N,"rarete":N,' +
-      '"element":"un type thématique parmi : Volant, Rampant, Aquatique, Fouisseur, Nocturne, Prédateur, Butineur",' +
+      '"element":"un des 8 types : volant, cuirasse, rampant, bondissant, venimeux, aquatique, social ou nocturne",' +
       '"capacite":{"nom":"nom court de la capacité","effet":"effet de jeu en une phrase"},' +
       '"citation":"une phrase d\'ambiance évocatrice sur l\'espèce (max 15 mots)"}';
     messages = [{ role: "user", content: [{ type: "text", text: "Crée la carte de : " + nom + (nomSci ? " (" + nomSci + ")" : "") + "." }] }];
