@@ -96,9 +96,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.55 (PWA) ============
+// ============ BioDex v0.57 (PWA) ============
 
-const VERSION = "v0.55";
+const VERSION = "v0.57";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -230,6 +230,78 @@ async function dbSupprimer(id) {
 }
 
 // ---------- Compression photo (qualité conservée : 1600px max) ----------
+// Lit la position GPS dans les métadonnées EXIF d'un fichier JPEG (sans bibliothèque externe).
+// Renvoie { lat, lon } ou null. Utile pour récupérer le lieu d'une photo prise avec l'appli native.
+function lireGpsExif(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        const view = new DataView(e.target.result);
+        if (view.getUint16(0, false) !== 0xFFD8) { resolve(null); return; } // pas un JPEG
+        const length = view.byteLength;
+        let offset = 2;
+        while (offset < length) {
+          const marker = view.getUint16(offset, false);
+          offset += 2;
+          if (marker === 0xFFE1) {
+            // APP1 (EXIF)
+            if (view.getUint32(offset + 2, false) !== 0x45786966) { resolve(null); return; } // "Exif"
+            const tiffOffset = offset + 8;
+            const little = view.getUint16(tiffOffset, false) === 0x4949;
+            const dirStart = tiffOffset + view.getUint32(tiffOffset + 4, little);
+            const entries = view.getUint16(dirStart, little);
+            let gpsIFD = null;
+            for (let i = 0; i < entries; i++) {
+              const entryOffset = dirStart + 2 + i * 12;
+              if (view.getUint16(entryOffset, little) === 0x8825) { // GPSInfo tag
+                gpsIFD = tiffOffset + view.getUint32(entryOffset + 8, little);
+                break;
+              }
+            }
+            if (gpsIFD === null) { resolve(null); return; }
+            // Lecture du GPS IFD
+            const gpsEntries = view.getUint16(gpsIFD, little);
+            let latRef = null, lonRef = null, lat = null, lon = null;
+            const lireRational3 = (off) => {
+              const val = [];
+              for (let k = 0; k < 3; k++) {
+                const num = view.getUint32(off + k * 8, little);
+                const den = view.getUint32(off + k * 8 + 4, little);
+                val.push(den ? num / den : 0);
+              }
+              return val[0] + val[1] / 60 + val[2] / 3600;
+            };
+            for (let i = 0; i < gpsEntries; i++) {
+              const entryOffset = gpsIFD + 2 + i * 12;
+              const tag = view.getUint16(entryOffset, little);
+              const valOffset = tiffOffset + view.getUint32(entryOffset + 8, little);
+              if (tag === 0x0001) latRef = String.fromCharCode(view.getUint8(entryOffset + 8)); // N/S
+              else if (tag === 0x0003) lonRef = String.fromCharCode(view.getUint8(entryOffset + 8)); // E/W
+              else if (tag === 0x0002) lat = lireRational3(valOffset);
+              else if (tag === 0x0004) lon = lireRational3(valOffset);
+            }
+            if (lat === null || lon === null) { resolve(null); return; }
+            if (latRef === "S") lat = -lat;
+            if (lonRef === "W") lon = -lon;
+            // Arrondi à 5 décimales (précision GPS classique)
+            resolve({ lat: Math.round(lat * 100000) / 100000, lon: Math.round(lon * 100000) / 100000 });
+            return;
+          } else if ((marker & 0xFF00) !== 0xFF00) {
+            break;
+          } else {
+            offset += view.getUint16(offset, false);
+          }
+        }
+        resolve(null);
+      } catch { resolve(null); }
+    };
+    reader.onerror = () => resolve(null);
+    // On ne lit que les premiers 128 Ko (l'EXIF est au début du fichier)
+    reader.readAsArrayBuffer(file.slice(0, 131072));
+  });
+}
+
 function compresserImage(file, maxDim = 2560, qualite = 0.85) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -792,6 +864,8 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.57", date: "2026-07", items: ["⚔️ Combat repensé façon Pokémon : duel tour par tour avec 8 types d'insectes (forces/faiblesses), points de vie, énergie et capacités spéciales. Choisis bien ton insecte selon le type adverse !"] },
+  { v: "0.56", date: "2026-07", items: ["📷 Position lue dans la photo : prends tes photos avec ton appli habituelle, BioDex récupère automatiquement le lieu depuis la photo à l'import (si la géolocalisation photo est activée)."] },
   { v: "0.55", date: "2026-07", items: ["📍 Précision de position au choix : au moment de partager une trouvaille, choisis si tu montres l'endroit exact, une zone approximative (~1 km) ou rien du tout. Chacun est libre !"] },
   { v: "0.54", date: "2026-07", items: ["💾 Rappel de sauvegarde : l'appli te propose d'exporter ta collection régulièrement, pour ne jamais rien perdre. Pense à ranger le fichier à l'abri (Drive, PC…) !"] },
   { v: "0.53", date: "2026-07", items: ["⚡ Optimisation interne : moins de requêtes réseau en double, pour une appli plus fluide et plus économe en données et batterie."] },
@@ -1718,6 +1792,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
   const [notes, setNotes] = useState(base ? base.notes || "" : "");
   const [gps, setGps] = useState(base ? base.gps || null : null);
   const [gpsEtat, setGpsEtat] = useState(base ? (base.gps ? "ok" : "refuse") : "attente");
+  const [infoGpsPhoto, setInfoGpsPhoto] = useState(false);
   const [enregistrement, setEnregistrement] = useState(false);
   const [montrerCamera, setMontrerCamera] = useState(false);
   const [erreur, setErreur] = useState("");
@@ -1856,9 +1931,18 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
     if (!f) return;
     setErreur("");
     try {
+      // Lire la position GPS dans les métadonnées de la photo (avant compression, qui les efface)
+      const gpsExif = await lireGpsExif(f);
       const blob = await compresserImage(f);
       setPhotoBlob(blob);
       setIdEtat(""); setIdResultat(null); setIdBrut(null); setCiblage(false);
+      // Si la photo contient une position ET qu'on n'en a pas déjà une fiable, on la pré-remplit
+      if (gpsExif && (!gps || gps.manuel || gpsEtat !== "ok")) {
+        setGps({ lat: gpsExif.lat, lon: gpsExif.lon, precision: 0, depuisPhoto: true });
+        setGpsEtat("ok");
+        setInfoGpsPhoto(true);
+        setTimeout(() => setInfoGpsPhoto(false), 6000);
+      }
     } catch {
       setErreur("Impossible de lire cette image. Essaie avec un autre fichier.");
     }
@@ -2100,10 +2184,15 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
         {gpsEtat === "attente" && "📡 Recherche de la position GPS…"}
         {gpsEtat === "ok" && gps && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <span style={{ color: C.lichen }}>📍 {gps.manuel ? "Position (placée à la main)" : `Position : ${gps.lat}, ${gps.lon}`} {!gps.manuel && <span style={{ color: C.papierSombre }}>(±{gps.precision} m)</span>}</span>
+            <span style={{ color: C.lichen }}>📍 {gps.manuel ? "Position (placée à la main)" : (gps.depuisPhoto ? `Position (lue dans la photo) : ${gps.lat}, ${gps.lon}` : `Position : ${gps.lat}, ${gps.lon}`)} {!gps.manuel && !gps.depuisPhoto && <span style={{ color: C.papierSombre }}>(±{gps.precision} m)</span>}</span>
             <button onClick={() => setChoixPoint((v) => !v)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
               {choixPoint ? "Fermer" : "Modifier"}
             </button>
+          </div>
+        )}
+        {infoGpsPhoto && (
+          <div style={{ marginTop: 8, padding: "7px 10px", background: "linear-gradient(#1E2A18, #182213)", border: "1px solid #6F9450", borderRadius: 7, fontFamily: sans, fontSize: 12, color: "#A6CC82", lineHeight: 1.4 }}>
+            ✓ Position récupérée depuis la photo ! Tu peux prendre tes photos avec ton appli habituelle, le lieu est conservé.
           </div>
         )}
         {gpsEtat === "refuse" && (
@@ -3462,7 +3551,7 @@ function Aide({ onFermer, onImportTermine }) {
       <SectionPliable titre="🎴 Jeu & cartes">
         <div style={t}>🎴 Cartes de collection</div>
         <p style={p}>
-          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse, rareté) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Retrouve toutes tes cartes dans l'onglet 🎴, et affronte l'IA en combat de stats (il te faut au moins 2 cartes). Chaque forge coûte un appel (~0,8 centime).
+          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse, rareté) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Retrouve toutes tes cartes dans l'onglet 🎴, et affronte l'IA en combat tour par tour (onglet ⚔️). Chaque insecte a un type parmi 8 (🦋 Volant, 🪲 Cuirassé, 🐛 Rampant, 🦗 Bondissant, 🕷️ Venimeux, 💧 Aquatique, 🐜 Social, 🌙 Nocturne) avec des forces et faiblesses, des points de vie, de l'énergie qui se recharge, une attaque de base et une capacité spéciale qui coûte de l'énergie. Choisis ton insecte selon le type de l'adversaire ! Chaque forge coûte un appel (~0,8 centime).
         </p>
       </SectionPliable>
 
@@ -3953,6 +4042,100 @@ function ModeCartes({ cartes, onOuvrir }) {
   );
 }
 
+// ═══════════════ MOTEUR DE COMBAT (façon Pokémon) ═══════════════
+// 8 types d'insectes avec forces/faiblesses. Chaque type est fort contre 2 autres.
+const TYPES_COMBAT = [
+  { id: "volant", label: "Volant", emoji: "🦋", fort: ["rampant", "social"] },
+  { id: "cuirasse", label: "Cuirassé", emoji: "🪲", fort: ["volant", "venimeux"] },
+  { id: "rampant", label: "Rampant", emoji: "🐛", fort: ["aquatique", "cuirasse"] },
+  { id: "bondissant", label: "Bondissant", emoji: "🦗", fort: ["rampant", "nocturne"] },
+  { id: "venimeux", label: "Venimeux", emoji: "🕷️", fort: ["bondissant", "social"] },
+  { id: "aquatique", label: "Aquatique", emoji: "💧", fort: ["cuirasse", "venimeux"] },
+  { id: "social", label: "Social", emoji: "🐜", fort: ["aquatique", "nocturne"] },
+  { id: "nocturne", label: "Nocturne", emoji: "🌙", fort: ["volant", "bondissant"] },
+];
+function typeInfo(id) { return TYPES_COMBAT.find((t) => t.id === id) || TYPES_COMBAT[0]; }
+
+// Multiplicateur d'efficacité d'un type attaquant contre un type défenseur.
+function efficaciteType(typeAtt, typeDef) {
+  const att = typeInfo(typeAtt);
+  if (att.fort.includes(typeDef)) return 1.5;      // super efficace
+  const def = typeInfo(typeDef);
+  if (def.fort.includes(typeAtt)) return 0.66;     // peu efficace (l'adversaire résiste)
+  return 1;                                         // neutre
+}
+
+// Déduit le type de combat d'une carte existante à partir de ses infos (sans appel IA).
+// Priorité : élément explicite déjà dans les 8 types > mots-clés du nom/espèce > biotope > défaut.
+function deduireType(obs) {
+  const carte = obs.carte || {};
+  // 1) élément déjà l'un des 8 types ?
+  const el = (carte.element || "").toLowerCase();
+  const direct = TYPES_COMBAT.find((t) => t.id === el || t.label.toLowerCase() === el);
+  if (direct) return direct.id;
+
+  const texte = ((obs.nom || "") + " " + (obs.nomSci || "") + " " + (carte.element || "")).toLowerCase();
+  const contient = (mots) => mots.some((m) => texte.includes(m));
+  // 2) mots-clés d'espèces
+  if (contient(["libellul", "papillon", "abeille", "mouche", "guêpe", "syrphe", "moustique", "coccinelle"])) {
+    if (contient(["guêpe", "abeille"])) return "venimeux";
+    return "volant";
+  }
+  if (contient(["araign", "scorpion", "veuve", "tégénaire", "épeire"])) return "venimeux";
+  if (contient(["scarab", "hanneton", "bousier", "charançon", "lucane", "carabe"])) return "cuirasse";
+  if (contient(["sauterelle", "criquet", "grillon"])) return "bondissant";
+  if (contient(["fourmi", "termite", "abeille", "guêpe"])) return "social";
+  if (contient(["chenille", "mille-patte", "iule", "ver", "limace"])) return "rampant";
+  if (contient(["dytique", "notonecte", "gerris", "éphémère", "larve"])) return "aquatique";
+  if (contient(["phalène", "noctuelle", "perce-oreille", "blatte", "cafard"])) return "nocturne";
+
+  // 3) biotope
+  const bio = obs.biotope || "";
+  if (bio === "zone-humide" || bio === "riviere" || bio === "littoral") return "aquatique";
+  if (bio === "foret") return "cuirasse";
+  if (bio === "prairie" || bio === "lande") return "bondissant";
+  if (bio === "urbain") return "nocturne";
+  if (bio === "jardin") return "volant";
+
+  // 4) défaut : dérivé de la stat dominante
+  const a = carte.attaque || 50, d = carte.defense || 50, v = carte.vitesse || 50;
+  if (v >= a && v >= d) return "volant";
+  if (d >= a) return "cuirasse";
+  return "rampant";
+}
+
+// Prépare l'état de combat d'une carte (PV, énergie, type) à partir de l'observation.
+function prepCombattant(obs) {
+  const c = obs.carte || {};
+  const attaque = c.attaque || 50;
+  const defense = c.defense || 50;
+  const vitesse = c.vitesse || 50;
+  const type = deduireType(obs);
+  // PV calibrés pour des combats de ~10-12 tours (testé)
+  const pvMax = Math.round(150 + defense * 1.0); // ~200 pour défense 50
+  return {
+    id: obs.id,
+    nom: obs.nom || "Spécimen",
+    obs,
+    type,
+    attaque, defense, vitesse,
+    pvMax, pv: pvMax,
+    energie: 3, energieMax: 6, // commence à 3, +2/tour, plafonné
+    capacite: c.capacite || { nom: "Coup spécial", effet: "" },
+    rarete: c.rarete || 30,
+  };
+}
+
+// Calcule les dégâts d'une attaque. base = puissance de l'attaque (1.0 = normale).
+function calculerDegats(attaquant, defenseur, puissance) {
+  const brut = attaquant.attaque * 0.32 * puissance; // facteur d'échelle pour des combats de plusieurs tours
+  const reduction = defenseur.defense / (defenseur.defense + 100); // défense = mitigation douce
+  const eff = efficaciteType(attaquant.type, defenseur.type);
+  const variance = 0.9 + Math.random() * 0.2; // ±10%
+  const degats = Math.max(1, Math.round(brut * (1 - reduction) * eff * variance));
+  return { degats, efficacite: eff };
+}
+
 const CRITERES = [
   { id: "attaque", label: "Attaque", emoji: "⚔️" },
   { id: "defense", label: "Défense", emoji: "🛡️" },
@@ -3961,111 +4144,221 @@ const CRITERES = [
 
 function Combat({ cartes }) {
   const jouables = cartes.filter((c) => c.carte);
-  const [etape, setEtape] = useState("choix"); // choix | resultat
-  const [maCarte, setMaCarte] = useState(null);
-  const [carteIA, setCarteIA] = useState(null);
-  const [critere, setCritere] = useState(null);
-  const [scores, setScores] = useState({ moi: 0, ia: 0 });
-  const [manche, setManche] = useState(0);
+  const [phase, setPhase] = useState("choix"); // choix | combat | fin
+  const [moi, setMoi] = useState(null);
+  const [adv, setAdv] = useState(null);
+  const [journal, setJournal] = useState([]);
+  const [tour, setTour] = useState(1);
+  const [aMoi, setAMoi] = useState(true); // à qui de jouer
+  const [anim, setAnim] = useState(false);
+  const journalRef = useRef(null);
 
-  if (jouables.length < 2) {
+  useEffect(() => {
+    if (journalRef.current) journalRef.current.scrollTop = journalRef.current.scrollHeight;
+  }, [journal]);
+
+  if (jouables.length < 1) {
     return (
       <div style={{ textAlign: "center", padding: "40px 24px", border: `1px solid ${C.bordure}`, borderRadius: 14, background: "linear-gradient(#191F15, #14180F)", fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.6 }}>
-        Il te faut au moins <b style={{ color: C.papier }}>2 cartes</b> forgées pour combattre.<br />Tu en as {jouables.length}.
+        Il te faut au moins <b style={{ color: C.papier }}>1 carte</b> forgée pour combattre.<br />Tu en as {jouables.length}.
       </div>
     );
   }
 
-  function lancerManche(carteChoisie) {
-    // l'IA pioche une carte au hasard (différente si possible)
-    const autres = jouables.filter((c) => c.id !== carteChoisie.id);
-    const ia = autres[Math.floor(Math.random() * autres.length)] || carteChoisie;
-    // l'IA choisit le critère qui l'avantage
-    let meilleur = CRITERES[0].id, ecart = -999;
-    CRITERES.forEach((cr) => {
-      const e = (ia.carte[cr.id] || 0) - (carteChoisie.carte[cr.id] || 0);
-      if (e > ecart) { ecart = e; meilleur = cr.id; }
-    });
-    setMaCarte(carteChoisie);
-    setCarteIA(ia);
-    setCritere(meilleur);
-    const maVal = carteChoisie.carte[meilleur] || 0;
-    const iaVal = ia.carte[meilleur] || 0;
-    const gagne = maVal >= iaVal; // égalité avantage joueur
-    setScores((s) => ({ moi: s.moi + (gagne ? 1 : 0), ia: s.ia + (gagne ? 0 : 1) }));
-    setManche((m) => m + 1);
-    setEtape("resultat");
+  function demarrer(carteChoisie) {
+    const advObs = jouables[Math.floor(Math.random() * jouables.length)];
+    const c1 = prepCombattant(carteChoisie);
+    const c2 = prepCombattant(advObs);
+    setMoi(c1);
+    setAdv(c2);
+    const premierMoi = c1.vitesse >= c2.vitesse;
+    setAMoi(premierMoi);
+    setTour(1);
+    setJournal([
+      `⚔️ ${c1.nom} (${typeInfo(c1.type).emoji} ${typeInfo(c1.type).label}) affronte ${c2.nom} (${typeInfo(c2.type).emoji} ${typeInfo(c2.type).label}) !`,
+      premierMoi ? `${c1.nom} est plus rapide et attaque en premier.` : `${c2.nom} est plus rapide et attaque en premier.`,
+    ]);
+    setPhase("combat");
+    if (!premierMoi) setTimeout(() => tourIA(c1, c2), 900);
+  }
+
+  function ajouterJournal(lignes) {
+    setJournal((j) => [...j, ...(Array.isArray(lignes) ? lignes : [lignes])]);
+  }
+
+  function texteEfficacite(eff) {
+    if (eff >= 1.5) return " C'est super efficace !";
+    if (eff <= 0.7) return " Ce n'est pas très efficace…";
+    return "";
+  }
+
+  // --- Action du joueur ---
+  function actionJoueur(type) {
+    if (!aMoi || anim || phase !== "combat") return;
+    setAnim(true);
+    let m = { ...moi }, a = { ...adv };
+    // recharge d'énergie en début d'action
+    m.energie = Math.min(m.energieMax, m.energie + 2);
+
+    if (type === "capacite") {
+      if (m.energie < 4) { setAnim(false); return; }
+      m.energie -= 4;
+      const { degats, efficacite } = calculerDegats(m, a, 1.8);
+      a.pv = Math.max(0, a.pv - degats);
+      ajouterJournal(`✨ ${m.nom} utilise ${m.capacite.nom} et inflige ${degats} dégâts !${texteEfficacite(efficacite)}`);
+    } else {
+      const { degats, efficacite } = calculerDegats(m, a, 1.0);
+      a.pv = Math.max(0, a.pv - degats);
+      ajouterJournal(`⚔️ ${m.nom} attaque et inflige ${degats} dégâts.${texteEfficacite(efficacite)}`);
+    }
+    setMoi(m); setAdv(a);
+
+    if (a.pv <= 0) {
+      ajouterJournal(`🏆 ${a.nom} est K.O. ! Tu remportes le combat !`);
+      setPhase("fin");
+      setAnim(false);
+      return;
+    }
+    setAMoi(false);
+    setTimeout(() => tourIA(m, a), 1000);
+  }
+
+  // --- Action de l'IA ---
+  function tourIA(m, a) {
+    let adv2 = { ...a }, moi2 = { ...m };
+    adv2.energie = Math.min(adv2.energieMax, adv2.energie + 2);
+    // IA : utilise sa capacité si elle a l'énergie ET (avantage de type OU joueur à PV bas OU 50% de chance)
+    const eff = efficaciteType(adv2.type, moi2.type);
+    const veutCapacite = adv2.energie >= 4 && (eff >= 1.5 || moi2.pv < moi2.pvMax * 0.4 || Math.random() < 0.5);
+    if (veutCapacite) {
+      adv2.energie -= 4;
+      const { degats, efficacite } = calculerDegats(adv2, moi2, 1.8);
+      moi2.pv = Math.max(0, moi2.pv - degats);
+      ajouterJournal(`✨ ${adv2.nom} utilise ${adv2.capacite.nom} et inflige ${degats} dégâts !${texteEfficacite(efficacite)}`);
+    } else {
+      const { degats, efficacite } = calculerDegats(adv2, moi2, 1.0);
+      moi2.pv = Math.max(0, moi2.pv - degats);
+      ajouterJournal(`⚔️ ${adv2.nom} attaque et inflige ${degats} dégâts.${texteEfficacite(efficacite)}`);
+    }
+    setMoi(moi2); setAdv(adv2);
+
+    if (moi2.pv <= 0) {
+      ajouterJournal(`💀 ${moi2.nom} est K.O. ! ${adv2.nom} l'emporte…`);
+      setPhase("fin");
+      setAnim(false);
+      return;
+    }
+    setTour((t) => t + 1);
+    setAMoi(true);
+    setAnim(false);
   }
 
   function rejouer() {
-    setEtape("choix");
-    setMaCarte(null); setCarteIA(null); setCritere(null);
-  }
-  function reset() {
-    rejouer();
-    setScores({ moi: 0, ia: 0 });
-    setManche(0);
+    setPhase("choix"); setMoi(null); setAdv(null); setJournal([]); setTour(1); setAMoi(true); setAnim(false);
   }
 
-  const critereInfo = CRITERES.find((c) => c.id === critere);
-  const maVal = maCarte && critere ? (maCarte.carte[critere] || 0) : 0;
-  const iaVal = carteIA && critere ? (carteIA.carte[critere] || 0) : 0;
-  const gagne = maVal >= iaVal;
+  // ---------- Rendu ----------
+  const BarreVie = ({ combattant, aGauche }) => {
+    const pct = Math.max(0, Math.round((combattant.pv / combattant.pvMax) * 100));
+    const couleur = pct > 50 ? "#8AAE6B" : pct > 20 ? "#D9A93E" : "#D96A4E";
+    const t = typeInfo(combattant.type);
+    return (
+      <div style={{ flex: 1 }}>
+        <div style={{ display: "flex", justifyContent: aGauche ? "flex-start" : "flex-end", alignItems: "center", gap: 6, marginBottom: 4 }}>
+          <span style={{ fontFamily: sans, fontSize: 13, fontWeight: 700, color: C.papier }}>{combattant.nom}</span>
+          <span style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>{t.emoji}</span>
+        </div>
+        <div style={{ height: 10, borderRadius: 5, background: "#0F130C", overflow: "hidden", border: `1px solid ${C.bordure}` }}>
+          <div style={{ height: "100%", width: `${pct}%`, background: couleur, transition: "width .5s ease, background .3s" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
+          <span style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre }}>{combattant.pv}/{combattant.pvMax} PV</span>
+          <span style={{ fontFamily: sans, fontSize: 10.5, color: "#D9A93E" }}>{"⚡".repeat(Math.floor(combattant.energie / 2))}<span style={{ color: C.papierSombre }}>{combattant.energie}/{combattant.energieMax}</span></span>
+        </div>
+      </div>
+    );
+  };
+
+  if (phase === "choix") {
+    return (
+      <div>
+        <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, textAlign: "center", marginBottom: 6 }}>Choisis ta carte pour le duel :</div>
+        <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, textAlign: "center", marginBottom: 14, lineHeight: 1.5 }}>
+          Combat tour par tour avec types, points de vie et énergie. Ton adversaire est tiré au sort parmi tes cartes.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 12 }}>
+          {jouables.map((o) => {
+            const t = typeInfo(deduireType(o));
+            return (
+              <div key={o.id} style={{ position: "relative" }}>
+                <CarteInsecte obs={o} taille="compact" onClick={() => demarrer(o)} />
+                <div style={{ textAlign: "center", marginTop: 4, fontFamily: sans, fontSize: 11, fontWeight: 700, color: C.lichen }}>{t.emoji} {t.label}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  const advantageMoi = moi && adv ? efficaciteType(moi.type, adv.type) : 1;
 
   return (
     <div>
-      {/* Score */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 24, marginBottom: 16, fontFamily: sans }}>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: C.ambreClair }}>{scores.moi}</div>
-          <div style={{ fontSize: 11, color: C.papierSombre, textTransform: "uppercase", letterSpacing: 0.5 }}>Toi</div>
-        </div>
-        <div style={{ fontSize: 22, color: C.papierSombre, alignSelf: "center" }}>·</div>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: C.papier }}>{scores.ia}</div>
-          <div style={{ fontSize: 11, color: C.papierSombre, textTransform: "uppercase", letterSpacing: 0.5 }}>IA</div>
-        </div>
-        {manche > 0 && (
-          <button onClick={reset} style={{ alignSelf: "center", fontFamily: sans, fontSize: 12, padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: "transparent", color: C.papierSombre, cursor: "pointer" }}>Remettre à 0</button>
-        )}
+      {/* Zone de combat : barres de vie */}
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 14, padding: "14px", borderRadius: 12, background: "linear-gradient(#1A2015, #141810)", border: `1px solid ${C.bordure}` }}>
+        {moi && <BarreVie combattant={moi} aGauche={true} />}
+        <div style={{ alignSelf: "center", fontFamily: serif, fontSize: 16, color: C.papierSombre, flexShrink: 0 }}>VS</div>
+        {adv && <BarreVie combattant={adv} aGauche={false} />}
       </div>
 
-      {etape === "choix" && (
-        <div>
-          <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, textAlign: "center", marginBottom: 14 }}>Choisis ta carte pour cette manche :</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 12 }}>
-            {jouables.map((o) => (
-              <CarteInsecte key={o.id} obs={o} taille="compact" onClick={() => lancerManche(o)} />
-            ))}
-          </div>
+      {/* Indicateur de type */}
+      {phase === "combat" && (
+        <div style={{ textAlign: "center", marginBottom: 12, fontFamily: sans, fontSize: 12 }}>
+          {advantageMoi >= 1.5 && <span style={{ color: "#8AAE6B", fontWeight: 700 }}>✓ Ton type est fort contre l'adversaire</span>}
+          {advantageMoi <= 0.7 && <span style={{ color: "#D96A4E", fontWeight: 700 }}>⚠ Ton type est faible contre l'adversaire</span>}
+          {advantageMoi > 0.7 && advantageMoi < 1.5 && <span style={{ color: C.papierSombre }}>Types neutres</span>}
         </div>
       )}
 
-      {etape === "resultat" && maCarte && carteIA && (
+      {/* Journal de combat */}
+      <div ref={journalRef} style={{ height: 150, overflowY: "auto", padding: "10px 12px", marginBottom: 14, borderRadius: 10, background: "#0F130C", border: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.6 }}>
+        {journal.map((l, i) => (
+          <div key={i} style={{ marginBottom: 5, opacity: i === journal.length - 1 ? 1 : 0.75 }}>{l}</div>
+        ))}
+      </div>
+
+      {/* Actions */}
+      {phase === "combat" && (
         <div>
-          <div style={{ textAlign: "center", fontFamily: serif, fontSize: 20, fontWeight: 700, color: gagne ? C.ambreClair : C.rouge, marginBottom: 4 }}>
-            {gagne ? "Manche gagnée !" : "Manche perdue"}
-          </div>
-          <div style={{ textAlign: "center", fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 16 }}>
-            Critère : {critereInfo.emoji} {critereInfo.label} — {maVal} contre {iaVal}
-          </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "center" }}>
-            <div style={{ flex: 1, maxWidth: 180 }}>
-              <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: C.ambreClair, textAlign: "center", marginBottom: 6 }}>Ta carte</div>
-              <CarteInsecte obs={maCarte} taille="compact" />
+          {aMoi ? (
+            <div style={{ display: "flex", gap: 10 }}>
+              <Bouton variante="primaire" onClick={() => actionJoueur("base")} disabled={anim} style={{ flex: 1 }}>⚔️ Attaquer</Bouton>
+              <Bouton variante="primaire" onClick={() => actionJoueur("capacite")} disabled={anim || (moi && Math.min(moi.energieMax, moi.energie + 2) < 4)} style={{ flex: 1, opacity: (moi && Math.min(moi.energieMax, moi.energie + 2) < 4) ? 0.5 : 1 }}>
+                ✨ {moi ? moi.capacite.nom : "Capacité"} <span style={{ fontSize: 11 }}>(4⚡)</span>
+              </Bouton>
             </div>
-            <div style={{ alignSelf: "center", fontFamily: serif, fontSize: 20, color: C.papierSombre }}>VS</div>
-            <div style={{ flex: 1, maxWidth: 180 }}>
-              <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: C.papierSombre, textAlign: "center", marginBottom: 6 }}>Carte IA</div>
-              <CarteInsecte obs={carteIA} taille="compact" />
-            </div>
+          ) : (
+            <div style={{ textAlign: "center", fontFamily: sans, fontSize: 13, color: C.papierSombre, fontStyle: "italic", padding: "10px" }}>L'adversaire réfléchit…</div>
+          )}
+          {moi && moi.capacite.effet && (
+            <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, textAlign: "center", marginTop: 8, fontStyle: "italic" }}>✨ {moi.capacite.nom} : {moi.capacite.effet}</div>
+          )}
+        </div>
+      )}
+
+      {phase === "fin" && (
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: moi && moi.pv > 0 ? "#8AAE6B" : "#D96A4E", marginBottom: 14 }}>
+            {moi && moi.pv > 0 ? "🏆 Victoire !" : "💀 Défaite…"}
           </div>
-          <Bouton variante="primaire" onClick={rejouer} style={{ width: "100%", marginTop: 18 }}>Manche suivante</Bouton>
+          <Bouton variante="primaire" onClick={rejouer} style={{ width: "100%" }}>Nouveau combat</Bouton>
         </div>
       )}
     </div>
   );
 }
+
 
 function BioDex() {
   const [vue, setVue] = useState("collection");
