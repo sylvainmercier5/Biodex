@@ -96,9 +96,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.54 (PWA) ============
+// ============ BioDex v0.55 (PWA) ============
 
-const VERSION = "v0.54";
+const VERSION = "v0.55";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -624,15 +624,17 @@ function compresserPourMur(blob) {
 // Publie une observation sur le mur commun (upload photo + insertion du post)
 // Floute une position à environ 1 km (2 décimales) pour la carte commune :
 // on partage une zone approximative, jamais le point exact (vie privée).
-function flouterPosition(gps) {
+// Applique le niveau de précision choisi à une position, pour le partage au mur.
+// "exacte" : position précise · "approx" : floutée à ~1 km (2 décimales) · "masquee" : rien.
+function positionSelonPrecision(gps, precision) {
+  if (precision === "masquee") return { lat: null, lon: null };
   if (!gps || typeof gps.lat !== "number" || typeof gps.lon !== "number") return { lat: null, lon: null };
-  return {
-    lat: Math.round(gps.lat * 100) / 100,
-    lon: Math.round(gps.lon * 100) / 100,
-  };
+  if (precision === "exacte") return { lat: gps.lat, lon: gps.lon };
+  // défaut : approximative ~1 km
+  return { lat: Math.round(gps.lat * 100) / 100, lon: Math.round(gps.lon * 100) / 100 };
 }
 
-async function publierAuMur(obs, auteur) {
+async function publierAuMur(obs, auteur, precision) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Mur non configuré");
   // 1) upload de la photo compressée
@@ -645,15 +647,17 @@ async function publierAuMur(obs, auteur) {
     const { data: pub } = sb.storage.from("photos").getPublicUrl(nomFichier);
     photoUrl = pub ? pub.publicUrl : "";
   }
-  // 2) insertion du post — position FLOUTÉE à ~1 km (jamais la position exacte)
-  const pos = flouterPosition(obs.gps);
+  // 2) insertion du post — position selon le niveau de précision choisi par l'auteur
+  const niveau = precision || "approx";
+  const pos = positionSelonPrecision(obs.gps, niveau);
   const post = {
     auteur: (auteur || "Anonyme").slice(0, 40),
     espece: obs.nom || "",
     espece_sci: obs.nomSci || "",
     lieu: obs.biotope ? biotopeOf(obs.biotope).label : "",
-    lat: pos.lat, // position approximative (~1 km) pour la carte de la bande
+    lat: pos.lat,
     lon: pos.lon,
+    precision: niveau,
     photo_url: photoUrl,
     note: (obs.notes || "").slice(0, 500),
   };
@@ -788,6 +792,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.55", date: "2026-07", items: ["📍 Précision de position au choix : au moment de partager une trouvaille, choisis si tu montres l'endroit exact, une zone approximative (~1 km) ou rien du tout. Chacun est libre !"] },
   { v: "0.54", date: "2026-07", items: ["💾 Rappel de sauvegarde : l'appli te propose d'exporter ta collection régulièrement, pour ne jamais rien perdre. Pense à ranger le fichier à l'abri (Drive, PC…) !"] },
   { v: "0.53", date: "2026-07", items: ["⚡ Optimisation interne : moins de requêtes réseau en double, pour une appli plus fluide et plus économe en données et batterie."] },
   { v: "0.52", date: "2026-07", items: ["🧹 En-tête simplifié : les notifications restent visibles, missions/idées/profil sont rangées dans un menu ☰ plus clair."] },
@@ -2497,6 +2502,9 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
   const [murEtat, setMurEtat] = useState(""); // "" | envoi | ok | echec
   const [murErreur, setMurErreur] = useState("");
   const [prenomSaisi, setPrenomSaisi] = useState(prenom || "");
+  const [precisionPos, setPrecisionPos] = useState(() => {
+    try { return localStorage.getItem("biodex_precision_pos") || "approx"; } catch { return "approx"; }
+  });
   const [profilEtat, setProfilEtat] = useState(""); // "" | envoi | ok | echec
   const [profilErreur, setProfilErreur] = useState("");
   const [cadrage, setCadrage] = useState(false);
@@ -2545,7 +2553,8 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
     setMurEtat("envoi");
     setMurErreur("");
     try {
-      await publierAuMur(obs, auteur);
+      await publierAuMur(obs, auteur, precisionPos);
+      try { localStorage.setItem("biodex_precision_pos", precisionPos); } catch {}
       setMurEtat("ok");
     } catch (e) {
       setMurErreur(String(e.message || "Partage impossible") + ".");
@@ -2752,12 +2761,35 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
                 <input value={prenomSaisi} onChange={(e) => setPrenomSaisi(e.target.value)} placeholder="ex : Sylvain" maxLength={40}
                   style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
               </div>
+
+              {obs.gps && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 6 }}>Position partagée sur la carte de la bande :</div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {[["exacte", "📍", "Exacte"], ["approx", "🌫️", "~1 km"], ["masquee", "🚫", "Masquée"]].map(([val, emo, lab]) => (
+                      <button key={val} onClick={() => setPrecisionPos(val)}
+                        style={{ flex: 1, padding: "8px 4px", borderRadius: 8, cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: 700,
+                          border: `1px solid ${precisionPos === val ? "#A8863A" : C.bordure}`,
+                          background: precisionPos === val ? "linear-gradient(#2C3623, #232B1D)" : C.fond,
+                          color: precisionPos === val ? C.ambreClair : C.papierSombre }}>
+                        <span style={{ display: "block", fontSize: 15, marginBottom: 2 }}>{emo}</span>{lab}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 5, fontStyle: "italic", lineHeight: 1.4 }}>
+                    {precisionPos === "exacte" && "L'endroit précis de ta trouvaille sera visible par la bande."}
+                    {precisionPos === "approx" && "Une zone d'environ 1 km sera montrée, pas le point exact."}
+                    {precisionPos === "masquee" && "Aucune position ne sera partagée pour cette trouvaille."}
+                  </div>
+                </div>
+              )}
+
               <Bouton variante="primaire" onClick={partagerAuMur} disabled={murEtat === "envoi"} style={{ width: "100%" }}>
                 {murEtat === "envoi" ? "📤 Partage en cours…" : "📤 Partager au mur"}
               </Bouton>
               {murErreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 8 }}>{murErreur}</div>}
               <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 8, fontStyle: "italic" }}>
-                Ta photo, l'espèce et le biotope seront visibles par toute la bande. La position précise n'est pas affichée sur le mur.
+                Ta photo, l'espèce et le biotope seront visibles par toute la bande.{!obs.gps && " Cette observation n'a pas de position enregistrée."}
               </div>
             </div>
           )}
@@ -3165,13 +3197,16 @@ function Carte({ observations, onOuvrirFiche }) {
         m.bindPopup(conteneur);
       });
     } else {
-      // Carte de la bande (positions approximatives ~1 km, photo distante)
+      // Carte de la bande (photo distante). Chaque point respecte le niveau de précision choisi par son auteur.
       postsAvecPos.forEach((p) => {
         const pt = [p.lat, p.lon];
         points.push(pt);
-        // Cercle de zone (pour montrer que la position est approximative)
-        L.circle(pt, { radius: 900, color: "#8AAE6B", weight: 1, fillColor: "#8AAE6B", fillOpacity: 0.08 }).addTo(carte);
-        const m = L.circleMarker(pt, { radius: 8, color: "#2A2519", weight: 2, fillColor: "#8AAE6B", fillOpacity: 0.95 }).addTo(carte);
+        const exacte = p.precision === "exacte";
+        // Cercle de zone seulement si la position est approximative
+        if (!exacte) {
+          L.circle(pt, { radius: 900, color: "#8AAE6B", weight: 1, fillColor: "#8AAE6B", fillOpacity: 0.08 }).addTo(carte);
+        }
+        const m = L.circleMarker(pt, { radius: 8, color: "#2A2519", weight: 2, fillColor: exacte ? "#C9A24B" : "#8AAE6B", fillOpacity: 0.95 }).addTo(carte);
         const conteneur = document.createElement("div");
         conteneur.style.width = "150px";
         conteneur.innerHTML =
@@ -3179,7 +3214,7 @@ function Carte({ observations, onOuvrirFiche }) {
           '<div style="font-weight:700;font-size:13px;color:#2A2519;">' + (p.espece ? String(p.espece).replace(/</g, "&lt;") : "Spécimen non identifié") + "</div>" +
           '<div style="font-size:11px;color:#8A8065;">' +
           "🐛 " + (p.auteur ? String(p.auteur).replace(/</g, "&lt;") : "Anonyme") + (p.lieu ? " · " + String(p.lieu).replace(/</g, "&lt;") : "") + "</div>" +
-          '<div style="font-size:10px;color:#A89A78;margin-top:4px;">Zone approximative</div>';
+          '<div style="font-size:10px;color:#A89A78;margin-top:4px;">' + (exacte ? "📍 Position exacte" : "🌫️ Zone approximative") + "</div>";
         m.bindPopup(conteneur);
       });
     }
@@ -3215,7 +3250,7 @@ function Carte({ observations, onOuvrirFiche }) {
         <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 10 }}>
           {etatBande === "chargement" && "Chargement des trouvailles de la bande…"}
           {etatBande === "echec" && <span style={{ color: "#E8A88F" }}>Impossible de charger la carte de la bande.</span>}
-          {etatBande === "ok" && <span><span style={{ color: "#8AAE6B", fontWeight: 800 }}>{postsAvecPos.length}</span> trouvaille{postsAvecPos.length > 1 ? "s" : ""} de la bande · positions approximatives (~1 km)</span>}
+          {etatBande === "ok" && <span><span style={{ color: "#8AAE6B", fontWeight: 800 }}>{postsAvecPos.length}</span> trouvaille{postsAvecPos.length > 1 ? "s" : ""} de la bande · chacun choisit sa précision</span>}
         </div>
       )}
 
@@ -3381,7 +3416,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🗺️ La carte</div>
         <p style={p}>
-          L'onglet Carte affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, les positions sont volontairement approximatives (~1 km, matérialisées par une zone verte) pour protéger la vie privée de chacun : on voit le secteur d'une trouvaille, jamais l'endroit exact. La carte nécessite du réseau.
+          L'onglet Carte affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, chaque personne choisit au moment de partager le niveau de précision de sa position : exacte (point ambré), approximative (~1 km, zone verte) ou masquée (pas de point). Chacun est ainsi libre de montrer ou non l'endroit exact de sa trouvaille. La carte nécessite du réseau.
         </p>
         <div style={t}>📝 Brouillon automatique</div>
         <p style={p}>
