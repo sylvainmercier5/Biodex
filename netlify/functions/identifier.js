@@ -80,7 +80,7 @@ exports.handler = async (event) => {
       (nbPoses >= 3 ? "Tu as déjà posé au moins 3 questions : tu DOIS conclure maintenant. " : "") +
       "Réponds UNIQUEMENT par un objet JSON valide, sans texte ni Markdown autour :\n" +
       'soit {"type":"question","question":"...","options":["...","..."],"pourquoi":"ce que ce critère permet de trancher"}\n' +
-      'soit {"type":"final","nom":"nom vernaculaire FR","nomSci":"binôme latin","confiance":"élevée|moyenne|faible","niveau":"espèce|genre|famille|ordre","note":"synthèse de la détermination"}. ' +
+      'soit {"type":"final","nom":"nom vernaculaire FR","nomSci":"binôme latin","confiance":un nombre entier de 0 à 100 exprimant ton pourcentage de certitude réel,"niveau":"espèce|genre|famille|ordre","note":"synthèse de la détermination"}. ' +
       "L'observateur peut répondre \"Je ne sais pas\" : dans ce cas ne réinsiste pas sur le même critère.";
     const contenu = [
       { type: "image", source: { type: "base64", media_type: corps.media_type, data: corps.image } },
@@ -171,7 +171,7 @@ exports.handler = async (event) => {
       "Réponds UNIQUEMENT par un objet JSON valide, sans texte ni Markdown autour, de la forme exacte : " +
       '{"nom":"nom vernaculaire français de l\'hypothèse principale",' +
       '"nomSci":"binôme ou taxon latin de l\'hypothèse principale",' +
-      '"confiance":"élevée|moyenne|faible",' +
+      '"confiance":un nombre entier de 0 à 100 exprimant ton pourcentage de certitude réel dans cette identification (100 = certitude absolue, 50 = hésitation, 20 = très incertain),' +
       '"niveau":"espèce|genre|famille|ordre",' +
       '"note":"justification courte : critères visuels décisifs, ou pourquoi l\'ID reste incertaine",' +
       '"inhabituel":"vide si de présence normale pour la zone ; SINON une phrase expliquant pourquoi cette observation est notable (ex : espèce invasive en expansion, hors de son aire habituelle, échappée...)",' +
@@ -217,7 +217,7 @@ exports.handler = async (event) => {
     } catch {
       if (mode === "fiche") resultat = { description: texte.slice(0, 500), fiabilite: "faible" };
       else if (mode === "carte") resultat = { attaque: 50, defense: 50, vitesse: 50, rarete: 30, element: "Rampant", capacite: { nom: "Instinct", effet: "Aucun effet particulier." }, citation: "" };
-      else resultat = { nom: "", nomSci: "", confiance: "faible", niveau: "", note: texte.slice(0, 300), alternatives: [] };
+      else resultat = { nom: "", nomSci: "", confiance: 0, niveau: "", note: texte.slice(0, 300), alternatives: [] };
     }
 
     return { statusCode: 200, headers: enTetes, body: JSON.stringify({ ok: true, mode, resultat }) };
