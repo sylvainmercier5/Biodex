@@ -115,9 +115,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.64 (PWA) ============
+// ============ BioDex v0.67 (PWA) ============
 
-const VERSION = "v0.64";
+const VERSION = "v0.67";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1021,6 +1021,9 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.67", date: "2026-07", items: ["🏆 Jeu réorganisé : le Combat et la Ligue sont maintenant réunis dans l'onglet 🎴 Cartes (fini le mode caché !), avec un schéma clair des forces et faiblesses de chaque type (🔰) pour savoir qui bat qui d'un coup d'œil."] },
+  { v: "0.66", date: "2026-07", items: ["📷 Recadrage avant identification : un cadre s'affiche désormais sur ta photo avant chaque identification précise. Recadre sur l'insecte pour un résultat bien plus fiable (surtout s'il est petit), ou identifie l'image entière si elle est déjà bien cadrée."] },
+  { v: "0.65", date: "2026-07", items: ["🗂️ Rangement par ordre : ta collection et tes cartes forgées se filtrent maintenant par grand groupe d'insectes (🦋 papillons, 🪲 coléoptères, 🌾 punaises, 🕷️ araignées...). Des onglets en haut de la boîte et de la galerie pour t'y retrouver d'un coup d'œil."] },
   { v: "0.64", date: "2026-07", items: ["🎯 Identification plus précise : le moteur d'identification par photo passe sur un modèle plus performant (nettement moins d'erreurs, d'après un test sur photos réelles). Les fiches et cartes restent sur un modèle rapide et économique."] },
   { v: "0.63", date: "2026-07", items: ["📊 Confiance en pourcentage : l'identification affiche maintenant un pourcentage de certitude avec une couleur qui va du rouge (incertain) au vert (fiable). Ce pourcentage est aussi visible sur les publications du mur !"] },
   { v: "0.62", date: "2026-07", items: ["🔍 Authenticité des cartes : à la forge, l'appli vérifie que la photo ressemble à une vraie photo d'insecte prise sur le terrain. Les images suspectes (captures d'écran, images web, dessins) sont marquées « non vérifiées » — visible dans la ligue pour que le jeu reste fair-play."] },
@@ -1592,10 +1595,84 @@ function moisLisible(cle) {
 }
 
 // Applique les filtres actifs à la liste
+// Retire les accents pour des comparaisons robustes (é -> e, etc.)
+function sansAccents(s) {
+  return (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+// Les grands ordres d'arthropodes, avec mots-clés (noms français) et genres latins pour la déduction.
+const ORDRES = [
+  { id: "lepidopteres", label: "Lépidoptères", court: "Papillons", emoji: "🦋",
+    mots: ["papillon", "chenille", "sphinx", "machaon", "pieride", "vulcain", "paon du jour", "moro", "azure", "cuivre", "noctuelle", "phalene", "zygene", "flambe", "citron", "belle-dame", "belle dame", "tabac d'espagne", "aurore", "myrtil", "tircis", "amaryllis", "souci", "hesperie", "damier", "nacre", "ecaille", "bombyx", "processionnaire", "pyrale", "teigne", "geometre"],
+    genres: ["pieris", "vanessa", "papilio", "inachis", "aglais", "pararge", "maniola", "polyommatus", "lycaena", "gonepteryx", "macroglossum", "zygaena", "sphinx", "saturnia"] },
+  { id: "coleopteres", label: "Coléoptères", court: "Scarabées", emoji: "🪲",
+    mots: ["coleopt", "scarabee", "coccinelle", "carabe", "hanneton", "lucane", "cetoine", "charancon", "doryphore", "bousier", "cerf-volant", "cerf volant", "longicorne", "dytique", "luciole", "ver luisant", "lampyre", "chrysomele", "taupin", "staphylin", "geotrupe", "bupreste", "meloe", "cantharide", "necrophore", "capricorne", "vrillette", "altise", "gribouri"],
+    genres: ["coccinella", "harmonia", "lucanus", "dorcus", "carabus", "melolontha", "cetonia", "oryctes", "timarcha", "lampyris", "meloe", "cerambyx", "rosalia", "geotrupes", "dytiscus"] },
+  { id: "hymenopteres", label: "Hyménoptères", court: "Abeilles, guêpes", emoji: "🐝",
+    mots: ["abeille", "guepe", "frelon", "bourdon", "fourmi", "ichneumon", "xylocope", "osmie", "andrene", "halicte", "cynips", "tenthrede", "sphex", "scolie"],
+    genres: ["apis", "bombus", "vespa", "vespula", "polistes", "formica", "lasius", "xylocopa", "osmia", "andrena"] },
+  { id: "dipteres", label: "Diptères", court: "Mouches", emoji: "🪰",
+    mots: ["mouche", "moustique", "syrphe", "tipule", "taon", "cousin", "eristale", "bombyle", "asile", "stratiome", "drosophile"],
+    genres: ["musca", "culex", "aedes", "eristalis", "syrphus", "tipula", "bombylius", "episyrphus"] },
+  { id: "hemipteres", label: "Hémiptères", court: "Punaises", emoji: "🌾",
+    mots: ["punaise", "puceron", "cigale", "cicadelle", "gendarme", "pentatome", "cochenille", "cercope", "nepe", "notonecte", "gerris", "corise", "aphrophore", "reduve", "miride", "graphosome"],
+    genres: ["pyrrhocoris", "graphosoma", "nezara", "palomena", "cicada", "notonecta", "gerris", "nepa"] },
+  { id: "orthopteres", label: "Orthoptères", court: "Sauterelles", emoji: "🦗",
+    mots: ["sauterelle", "criquet", "grillon", "courtiliere", "dectique", "ephippigere", "oedipode", "tetrix", "phaneroptere"],
+    genres: ["tettigonia", "chorthippus", "gryllus", "acheta", "oedipoda", "decticus"] },
+  { id: "odonates", label: "Odonates", court: "Libellules", emoji: "🜻",
+    mots: ["libellule", "demoiselle", "agrion", "aeschne", "anax", "calopteryx", "sympetrum", "leste", "gomphe", "cordulie", "naiade", "aeshne"],
+    genres: ["anax", "aeshna", "libellula", "sympetrum", "calopteryx", "ischnura", "coenagrion", "orthetrum"] },
+  { id: "arachnides", label: "Arachnides", court: "Araignées", emoji: "🕷️",
+    mots: ["araignee", "epeire", "tegenaire", "faucheux", "opilion", "scorpion", "acarien", "tique", "argiope", "salticide", "thomise", "lycose", "veuve", "pholque", "segestrie", "nephile", "mygale", "saltique"],
+    genres: ["araneus", "argiope", "tegenaria", "salticus", "thomisus", "pardosa", "latrodectus", "lycosa", "misumena", "pholcus"] },
+  { id: "myriapodes", label: "Myriapodes", court: "Mille-pattes", emoji: "🐛",
+    mots: ["mille-patte", "mille patte", "millepatte", "iule", "scolopendre", "geophile", "lithobie", "glomeris", "scutigere", "pauropode", "symphyle"],
+    genres: ["lithobius", "scolopendra", "julus", "glomeris", "scutigera"] },
+];
+
+function ordreInfo(id) {
+  return ORDRES.find((o) => o.id === id) || { id: "autres", label: "Autres", court: "Autres", emoji: "🔎" };
+}
+
+// Déduit l'ordre d'une observation à partir de son nom français et/ou scientifique.
+// Marche sur les observations existantes (aucune donnée serveur requise).
+function deduireOrdre(obs) {
+  if (!obs) return "autres";
+  // 1) champ explicite éventuel (identifications futures)
+  if (obs.ordre) {
+    const direct = ORDRES.find((o) => o.id === obs.ordre || sansAccents(o.label) === sansAccents(obs.ordre));
+    if (direct) return direct.id;
+  }
+  const nom = sansAccents(obs.nom);
+  const sci = sansAccents(obs.nomSci);
+  // 2) mots-clés dans le nom français
+  if (nom) {
+    for (const o of ORDRES) {
+      if (o.mots.some((m) => nom.includes(sansAccents(m)))) return o.id;
+    }
+  }
+  // 3) genre latin (premier mot du nom scientifique)
+  const genre = sci.split(/\s+/)[0];
+  if (genre) {
+    for (const o of ORDRES) {
+      if (o.genres.includes(genre)) return o.id;
+    }
+  }
+  // 4) mots-clés aussi dans le nom scientifique (familles en -idae parfois parlantes)
+  if (sci) {
+    for (const o of ORDRES) {
+      if (o.mots.some((m) => sci.includes(sansAccents(m)))) return o.id;
+    }
+  }
+  return "autres";
+}
+
 function filtrerObservations(liste, f) {
   return liste.filter((o) => {
     if (f.biotope && o.biotope !== f.biotope) return false;
     if (f.mois && moisDe(o.date) !== f.mois) return false;
+    if (f.ordre && deduireOrdre(o) !== f.ordre) return false;
     if (f.texte) {
       const t = f.texte.toLowerCase();
       const cible = `${o.nom || ""} ${o.nomSci || ""}`.toLowerCase();
@@ -2139,14 +2216,14 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
     if (idResultat.confiance !== undefined) setConfiance(idResultat.confiance);
   }
 
-  async function lancerIdentificationCloud() {
+  async function lancerIdentificationCloud(utiliserZone) {
     if (!photoBlob || cloudEtat === "recherche") return;
     setCloudEtat("recherche");
     setCloudResultat(null);
     setCloudErreur("");
     try {
       const contexte = contexteTerrain();
-      const res = await identifierCloud(photoBlob, ciblage ? zone : null, contexte);
+      const res = await identifierCloud(photoBlob, utiliserZone ? zone : null, contexte);
       setCloudResultat(res);
       setCloudEtat("ok");
     } catch (e) {
@@ -2383,28 +2460,33 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
         )}
       </div>
 
-      {/* Identification IA locale */}
+      {/* Identification précise avec recadrage systématique (échappatoire possible) */}
       {photoBlob && (
         <div style={{ marginBottom: 16, padding: "12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}` }}>
-          {ciblage && photoUrl && (
+          {photoUrl && (
             <div style={{ marginBottom: 10 }}>
-              <div style={{ fontFamily: sans, fontSize: 12, color: C.lichen, marginBottom: 6 }}>
-                Déplace le cadre sur l'insecte, ajuste sa taille avec la poignée, puis lance l'analyse.
+              <div style={{ fontFamily: sans, fontSize: 12.5, color: C.ambreClair, fontWeight: 700, marginBottom: 4 }}>
+                📷 Recadre sur l'insecte
+              </div>
+              <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginBottom: 8, lineHeight: 1.45 }}>
+                Place le cadre sur l'insecte et ajuste sa taille avec la poignée — surtout s'il est petit dans la photo. Un cadrage serré améliore beaucoup la précision.
               </div>
               <SelecteurZone photoUrl={photoUrl} zone={zone} onChange={setZone} />
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <Bouton onClick={() => setCiblage((v) => !v)} style={{ flex: 1 }}>
-              {ciblage ? "✕ Zone entière" : "🎯 Cibler la zone"}
-            </Bouton>
-          </div>
-
-          {/* Identification précise (Claude, via le serveur) */}
-          <Bouton variante="primaire" onClick={lancerIdentificationCloud} disabled={cloudEtat === "recherche"} style={{ width: "100%", marginBottom: 8 }}>
-            {cloudEtat === "recherche" ? "✨ Identification en cours…" : (cloudResultat ? "✨ Relancer l'identification précise" : "✨ Identifier (précis)")}
+          {/* Bouton principal : identifier la zone recadrée */}
+          <Bouton variante="primaire" onClick={() => { setCiblage(true); lancerIdentificationCloud(true); }} disabled={cloudEtat === "recherche"} style={{ width: "100%", marginBottom: 6 }}>
+            {cloudEtat === "recherche" ? "✨ Identification en cours…" : (cloudResultat ? "🔍 Relancer sur cette zone" : "🔍 Identifier cette zone")}
           </Bouton>
+
+          {/* Échappatoire : photo déjà bien cadrée → image entière */}
+          {cloudEtat !== "recherche" && (
+            <button onClick={() => { setCiblage(false); lancerIdentificationCloud(false); }}
+              style={{ width: "100%", background: "none", border: "none", color: C.papierSombre, fontFamily: sans, fontSize: 12.5, cursor: "pointer", padding: "2px 0 6px", textDecoration: "underline" }}>
+              La photo est déjà bien cadrée → identifier l'image entière
+            </button>
+          )}
 
           {cloudErreur && (
             <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginBottom: 8 }}>{cloudErreur}</div>
@@ -3269,7 +3351,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
           <button onClick={onFermer} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
         </div>
         {item("🎯", "Missions saisonnières", "Défis d'observation de la bande", () => onAller("missions"), missionsNouv)}
-        {MUR_ACTIF && item("🏆", "La Ligue", "Défie les cartes de la bande", () => onAller("ligue"), 0)}
+        {MUR_ACTIF && item("🏆", "La Ligue", "Dans l'onglet 🎴 Cartes", () => onAller("cartes"), 0)}
         {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Mon profil" : "Se connecter", utilisateur ? "Ta collection d'espèces" : "Connexion facultative par email", () => onAller("connexion"), 0)}
       </div>
@@ -3278,7 +3360,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
 }
 
 // ---------- Vue : Ligue (défis sociaux) ----------
-function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer }) {
+function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, embarque }) {
   const [onglet, setOnglet] = useState("champions"); // champions | mescartes | classement
   const [ligue, setLigue] = useState([]);
   const [scores, setScores] = useState([]);
@@ -3328,8 +3410,8 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer }) {
   const dejaEngagee = (obsId) => mesCartesEngagees.some((c) => c.carte_id === String(obsId));
 
   return (
-    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-      <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Retour</Bouton>
+    <div style={embarque ? {} : { padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      {!embarque && <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Retour</Bouton>}
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
         <span style={{ fontSize: 28 }}>🏆</span>
@@ -3858,7 +3940,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>✨ Identification précise (Claude)</div>
         <p style={p}>
-          Le bouton « Identifier (précis) » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un niveau de confiance. Pour affiner, l'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Combinable avec le ciblage de zone. Nécessite le réseau. Chaque identification coûte une fraction de centime.
+          Le bouton « Identifier cette zone » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un pourcentage de confiance. Avant chaque identification, un cadre s'affiche sur ta photo : place-le sur l'insecte pour que l'IA se concentre dessus — c'est surtout utile quand la bête est petite ou perdue dans le décor, et ça améliore nettement la précision. Si ta photo est déjà bien cadrée, un lien te permet d'identifier l'image entière directement. L'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Nécessite le réseau. Chaque identification coûte une fraction de centime.
         </p>
         <div style={t}>🌿 Pourquoi il compte</div>
         <p style={p}>
@@ -3866,7 +3948,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🔬 Identification (test local)</div>
         <p style={p}>
-          Après avoir ajouté une photo, appuie sur « Identifier (test local) » : une IA tourne directement dans ton navigateur (aucune donnée envoyée, aucun coût). C'est un modèle généraliste qui ne reconnaît qu'une trentaine de grands groupes (coccinelle, abeille, libellule, mante, araignée…) et reste au niveau du groupe, jamais de l'espèce précise. Astuce : avec « 🎯 Cibler la zone », dessine un cadre sur l'insecte pour que l'IA ignore le décor — ça améliore nettement le résultat quand la bête est petite dans l'image. Vois-le comme un jeu : parfois bluffant, souvent approximatif. Premier lancement : téléchargement du modèle (~15 Mo), réseau requis.
+          Après avoir ajouté une photo, appuie sur « Identifier (test local) » : une IA tourne directement dans ton navigateur (aucune donnée envoyée, aucun coût). C'est un modèle généraliste qui ne reconnaît qu'une trentaine de grands groupes (coccinelle, abeille, libellule, mante, araignée…) et reste au niveau du groupe, jamais de l'espèce précise. Astuce : recadrer sur l'insecte (le cadre proposé avant l'identification précise) aide aussi ce test à ignorer le décor quand la bête est petite dans l'image. Vois-le comme un jeu : parfois bluffant, souvent approximatif. Premier lancement : téléchargement du modèle (~15 Mo), réseau requis.
         </p>
         <div style={t}>✍️ Noms & autocomplétion</div>
         <p style={p}>
@@ -3943,7 +4025,7 @@ function Aide({ onFermer, onImportTermine }) {
       <SectionPliable titre="🎴 Jeu & cartes">
         <div style={t}>🎴 Cartes de collection</div>
         <p style={p}>
-          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse, rareté) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Retrouve toutes tes cartes dans l'onglet 🎴, et affronte l'IA en combat tour par tour (onglet ⚔️). Chaque insecte a un type parmi 8 (🦋 Volant, 🪲 Cuirassé, 🐛 Rampant, 🦗 Bondissant, 🕷️ Venimeux, 💧 Aquatique, 🐜 Social, 🌙 Nocturne) avec des forces et faiblesses, des points de vie, de l'énergie qui se recharge, une attaque de base et une capacité spéciale qui coûte de l'énergie. Choisis ton insecte selon le type de l'adversaire ! Chaque forge coûte un appel (~0,8 centime).
+          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse, rareté) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Tout le jeu est regroupé dans l'onglet 🎴 en bas : « Cartes » (ta galerie), « ⚔️ Combat » (affronte l'IA) et « 🏆 Ligue » (défie la bande). En combat, chaque insecte a un type parmi 8 (🦋 Volant, 🪲 Cuirassé, 🐛 Rampant, 🦗 Bondissant, 🕷️ Venimeux, 💧 Aquatique, 🐜 Social, 🌙 Nocturne) avec des forces et faiblesses, des points de vie, de l'énergie qui se recharge, une attaque de base et une capacité spéciale qui coûte de l'énergie. Le bouton « 🔰 Forces & faiblesses des types » affiche le schéma complet de qui bat qui — un coup avec l'avantage de type fait ×1,5 de dégâts. Choisis ton insecte selon le type de l'adversaire ! Chaque forge coûte un appel (~0,8 centime).
         </p>
       </SectionPliable>
 
@@ -4403,14 +4485,20 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues }) {
 }
 
 // ---------- Mode jeu : cartes + combat solo ----------
-function ModeCartes({ cartes, onOuvrir }) {
-  const [sousVue, setSousVue] = useState("galerie"); // galerie | combat
+function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, onDefier }) {
+  const [sousVue, setSousVue] = useState("galerie"); // galerie | combat | ligue
+  const [fOrdreC, setFOrdreC] = useState("");
+  const [montrerTypes, setMontrerTypes] = useState(false);
+  const ordresCartes = ORDRES.map((o) => ({ ...o, n: cartes.filter((c) => deduireOrdre(c) === o.id).length })).filter((o) => o.n > 0);
+  const nbAutresC = cartes.filter((c) => deduireOrdre(c) === "autres").length;
+  const cartesAffichees = fOrdreC ? cartes.filter((c) => deduireOrdre(c) === fOrdreC) : cartes;
+  const sousOnglets = [["galerie", "🎴 Cartes"], ["combat", "⚔️ Combat"], ...(MUR_ACTIF ? [["ligue", "🏆 Ligue"]] : [])];
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {[["galerie", "🎴 Mes cartes"], ["combat", "⚔️ Combat"]].map(([id, label]) => (
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        {sousOnglets.map(([id, label]) => (
           <button key={id} className="bd-press" onClick={() => setSousVue(id)}
-            style={{ flex: 1, fontFamily: sans, fontSize: 14, fontWeight: 700, padding: "9px 0", borderRadius: 9, cursor: "pointer",
+            style={{ flex: 1, fontFamily: sans, fontSize: 13.5, fontWeight: 700, padding: "9px 0", borderRadius: 9, cursor: "pointer",
               border: `1px solid ${sousVue === id ? "#A8863A" : C.bordure}`,
               background: sousVue === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
               color: sousVue === id ? C.ambreClair : C.papierSombre }}>
@@ -4418,6 +4506,39 @@ function ModeCartes({ cartes, onOuvrir }) {
           </button>
         ))}
       </div>
+
+      {/* Bouton schéma des types (combat + ligue) */}
+      {(sousVue === "combat" || sousVue === "ligue") && (
+        <div style={{ marginBottom: 14 }}>
+          <button onClick={() => setMontrerTypes((v) => !v)} style={{ width: "100%", fontFamily: sans, fontSize: 13, fontWeight: 700, padding: "9px 12px", borderRadius: 9, cursor: "pointer", border: `1px solid ${C.bordure}`, background: montrerTypes ? C.panneau : "transparent", color: C.ambreClair, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>🔰 Forces & faiblesses des types</span>
+            <span style={{ color: C.papierSombre }}>{montrerTypes ? "▲" : "▼"}</span>
+          </button>
+          {montrerTypes && (
+            <div style={{ marginTop: 10, padding: "12px", borderRadius: 10, background: "#0F130C", border: `1px solid ${C.bordure}` }}>
+              <SchemaTypes />
+            </div>
+          )}
+        </div>
+      )}
+
+      {sousVue === "galerie" && (ordresCartes.length + (nbAutresC > 0 ? 1 : 0)) > 1 && (
+        <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 6, marginBottom: 14, WebkitOverflowScrolling: "touch" }}>
+          <button onClick={() => setFOrdreC("")} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdreC === "" ? C.ambre : C.bordure}`, background: fOrdreC === "" ? C.ambre : "transparent", color: fOrdreC === "" ? C.encre : C.papier }}>
+            Toutes {cartes.length}
+          </button>
+          {ordresCartes.map((o) => (
+            <button key={o.id} onClick={() => setFOrdreC(fOrdreC === o.id ? "" : o.id)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdreC === o.id ? C.ambre : C.bordure}`, background: fOrdreC === o.id ? C.ambre : "transparent", color: fOrdreC === o.id ? C.encre : C.papier }}>
+              {o.emoji} {o.court} {o.n}
+            </button>
+          ))}
+          {nbAutresC > 0 && (
+            <button onClick={() => setFOrdreC(fOrdreC === "autres" ? "" : "autres")} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdreC === "autres" ? C.ambre : C.bordure}`, background: fOrdreC === "autres" ? C.ambre : "transparent", color: fOrdreC === "autres" ? C.encre : C.papier }}>
+              🔎 Autres {nbAutresC}
+            </button>
+          )}
+        </div>
+      )}
 
       {sousVue === "galerie" && (
         cartes.length === 0 ? (
@@ -4428,7 +4549,7 @@ function ModeCartes({ cartes, onOuvrir }) {
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: 14 }}>
-            {cartes.map((o) => (
+            {cartesAffichees.map((o) => (
               <CarteInsecte key={o.id} obs={o} onClick={() => onOuvrir(o.id)} />
             ))}
           </div>
@@ -4436,6 +4557,10 @@ function ModeCartes({ cartes, onOuvrir }) {
       )}
 
       {sousVue === "combat" && <Combat cartes={cartes} />}
+
+      {sousVue === "ligue" && MUR_ACTIF && (
+        <Ligue embarque observations={observations} prenom={prenom} onDefinirPrenom={onDefinirPrenom} onDefier={onDefier} />
+      )}
     </div>
   );
 }
@@ -4453,6 +4578,42 @@ const TYPES_COMBAT = [
   { id: "nocturne", label: "Nocturne", emoji: "🌙", fort: ["volant", "bondissant"], couleur: "#7A6BA8" },
 ];
 function typeInfo(id) { return TYPES_COMBAT.find((t) => t.id === id) || TYPES_COMBAT[0]; }
+
+// Les types faibles face à un type donné (ceux qui sont "fort" contre lui).
+function faiblessesDe(id) {
+  return TYPES_COMBAT.filter((t) => t.fort.includes(id)).map((t) => t.id);
+}
+
+// Schéma visuel des forces/faiblesses de chaque type de combat.
+function SchemaTypes({ compact }) {
+  return (
+    <div>
+      <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5, marginBottom: 12 }}>
+        Chaque type est <b style={{ color: "#8AAE6B" }}>fort contre 2</b> autres et <b style={{ color: "#E5603E" }}>faible contre 2</b>. Un coup avec l'avantage de type fait <b style={{ color: C.papier }}>×1,5</b> de dégâts, un coup désavantagé <b style={{ color: C.papier }}>×0,66</b>. Choisis ton insecte selon le type de l'adversaire !
+      </div>
+      <div style={{ display: "grid", gap: 7 }}>
+        {TYPES_COMBAT.map((t) => {
+          const faibles = faiblessesDe(t.id);
+          return (
+            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 9, background: C.panneau, borderLeft: `4px solid ${t.couleur}` }}>
+              <div style={{ minWidth: compact ? 92 : 108, flexShrink: 0 }}>
+                <span style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: C.papier }}>{t.emoji} {t.label}</span>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: sans, fontSize: 12, color: "#8AAE6B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  ▸ fort : {t.fort.map((id) => typeInfo(id).emoji).join(" ")} <span style={{ color: C.papierSombre }}>{t.fort.map((id) => typeInfo(id).label).join(", ")}</span>
+                </div>
+                <div style={{ fontFamily: sans, fontSize: 12, color: "#E5603E", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  ▸ faible : {faibles.map((id) => typeInfo(id).emoji).join(" ")} <span style={{ color: C.papierSombre }}>{faibles.map((id) => typeInfo(id).label).join(", ")}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // Multiplicateur d'efficacité d'un type attaquant contre un type défenseur.
 function efficaciteType(typeAtt, typeDef) {
@@ -5092,6 +5253,7 @@ function BioDex() {
   const [fBiotope, setFBiotope] = useState("");
   const [fMois, setFMois] = useState("");
   const [fTexte, setFTexte] = useState("");
+  const [fOrdre, setFOrdre] = useState("");
   const [montrerFiltres, setMontrerFiltres] = useState(false);
 
   function changerTri(t) {
@@ -5213,12 +5375,15 @@ function BioDex() {
 
   const selection = observations.find((o) => o.id === selectionId) || null;
   const nbBiotopes = new Set(triees.map((o) => o.biotope)).size;
-  const filtres = { biotope: fBiotope, mois: fMois, texte: fTexte };
-  const filtresActifs = !!(fBiotope || fMois || fTexte);
+  const filtres = { biotope: fBiotope, mois: fMois, texte: fTexte, ordre: fOrdre };
+  const filtresActifs = !!(fBiotope || fMois || fTexte || fOrdre);
   const listeFiltree = filtrerObservations(triees, filtres);
   const moisDispo = Array.from(new Set(triees.map((o) => moisDe(o.date)))).sort((a, b) => (a < b ? 1 : -1));
   const biotopesDispo = BIOTOPES.filter((b) => triees.some((o) => o.biotope === b.id));
-  function reinitFiltres() { setFBiotope(""); setFMois(""); setFTexte(""); }
+  // Ordres présents dans la collection, avec compte (pour les onglets)
+  const ordresDispo = ORDRES.map((o) => ({ ...o, n: triees.filter((t) => deduireOrdre(t) === o.id).length })).filter((o) => o.n > 0);
+  const nbAutres = triees.filter((t) => deduireOrdre(t) === "autres").length;
+  function reinitFiltres() { setFBiotope(""); setFMois(""); setFTexte(""); setFOrdre(""); }
 
   return (
     <div style={{ minHeight: "100vh", background: C.fond, paddingBottom: "calc(96px + env(safe-area-inset-bottom))" }}>
@@ -5346,7 +5511,7 @@ function BioDex() {
       )}
       {vue === "defi" && carteDefiee && (
         <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-          <Bouton onClick={() => { setVue("ligue"); setCarteDefiee(null); }} style={{ marginBottom: 14 }}>← Retour à la ligue</Bouton>
+          <Bouton onClick={() => { setVue("cartes"); setCarteDefiee(null); }} style={{ marginBottom: 14 }}>← Retour à la ligue</Bouton>
           <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.papier, marginBottom: 4 }}>⚔️ Défi contre {carteDefiee.nom}</div>
           <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 16 }}>Carte de {carteDefiee.proprietaire}. Choisis ton champion !</div>
           <Combat
@@ -5375,7 +5540,14 @@ function BioDex() {
         />
       )}
       {vue === "cartes" && (
-        <ModeCartes cartes={cartes} onOuvrir={(id) => { setSelectionId(id); setVue("detail"); }} />
+        <ModeCartes
+          cartes={cartes}
+          onOuvrir={(id) => { setSelectionId(id); setVue("detail"); }}
+          observations={observations}
+          prenom={prenom}
+          onDefinirPrenom={definirPrenom}
+          onDefier={(carte) => { setCarteDefiee(carte); setVue("defi"); }}
+        />
       )}
       {vue === "stats" && <Stats observations={triees} onFermer={() => setVue("collection")} />}
       {vue === "atrier" && (
@@ -5424,6 +5596,25 @@ function BioDex() {
               {nbBiotopes > 0 && <span> · {nbBiotopes} biotope{nbBiotopes > 1 ? "s" : ""}</span>}
             </span>
           </div>
+
+          {/* Onglets par ordre taxonomique */}
+          {(ordresDispo.length + (nbAutres > 0 ? 1 : 0)) > 1 && (
+            <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 6, marginBottom: 12, WebkitOverflowScrolling: "touch" }}>
+              <button onClick={() => setFOrdre("")} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdre === "" ? C.ambre : C.bordure}`, background: fOrdre === "" ? C.ambre : "transparent", color: fOrdre === "" ? C.encre : C.papier }}>
+                Tous {triees.length}
+              </button>
+              {ordresDispo.map((o) => (
+                <button key={o.id} onClick={() => setFOrdre(fOrdre === o.id ? "" : o.id)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdre === o.id ? C.ambre : C.bordure}`, background: fOrdre === o.id ? C.ambre : "transparent", color: fOrdre === o.id ? C.encre : C.papier }}>
+                  {o.emoji} {o.court} {o.n}
+                </button>
+              ))}
+              {nbAutres > 0 && (
+                <button onClick={() => setFOrdre(fOrdre === "autres" ? "" : "autres")} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdre === "autres" ? C.ambre : C.bordure}`, background: fOrdre === "autres" ? C.ambre : "transparent", color: fOrdre === "autres" ? C.encre : C.papier }}>
+                  🔎 Autres {nbAutres}
+                </button>
+              )}
+            </div>
+          )}
 
           {triees.length > 1 && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
