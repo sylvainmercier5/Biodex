@@ -115,9 +115,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.69 (PWA) ============
+// ============ BioDex v0.70 (PWA) ============
 
-const VERSION = "v0.69";
+const VERSION = "v0.70";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1021,6 +1021,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.70", date: "2026-07", items: ["📊 Stats enrichies : nouvel onglet Stats peaufiné avec la répartition de ta collection par ordre d'insecte (🦋 🪲 🐝...), ta fiabilité moyenne d'identification, de nouveaux badges (ordres, cartes, paliers), et des graphiques rafraîchis."] },
   { v: "0.69", date: "2026-07", items: ["👀 Qui a réagi : sous chaque publication du mur, tu vois maintenant le prénom des personnes qui ont réagi (et non plus juste un compteur). Chacun ne peut mettre qu'une fois chaque réaction — touche à nouveau pour la retirer."] },
   { v: "0.68", date: "2026-07", items: ["🏅 Classement des chasseurs : depuis le menu, découvre le palmarès de la bande (semaine et mois) avec un système de points qui récompense les trouvailles, les nouvelles espèces et les plus rares. La rareté s'appuie sur les données mondiales d'iNaturalist, et les espèces rares affichent un badge coloré sur le mur !"] },
   { v: "0.67", date: "2026-07", items: ["🏆 Jeu réorganisé : le Combat et la Ligue sont maintenant réunis dans l'onglet 🎴 Cartes (fini le mode caché !), avec un schéma clair des forces et faiblesses de chaque type (🔰) pour savoir qui bat qui d'un coup d'œil."] },
@@ -1718,6 +1719,17 @@ function Stats({ observations, onFermer }) {
   const star = especesTri.length ? especesTri[0] : null;
   const nomStar = star ? (observations.find((o) => cleEspece(o) === star[0]) || {}) : {};
 
+  // Répartition par ordre taxonomique (déduit du nom)
+  const parOrdre = {};
+  observations.forEach((o) => { const id = deduireOrdre(o); parOrdre[id] = (parOrdre[id] || 0) + 1; });
+  const ordresTri = Object.entries(parOrdre).sort((a, b) => b[1] - a[1]);
+  const maxOrdre = ordresTri.length ? ordresTri[0][1] : 0;
+  const nbOrdres = Object.keys(parOrdre).filter((id) => id !== "autres").length;
+
+  // Confiance moyenne d'identification (sur les observations qui ont un pourcentage)
+  const confiances = observations.map((o) => pourcentConfiance(o.confiance)).filter((v) => v !== null && v !== undefined);
+  const confianceMoy = confiances.length ? Math.round(confiances.reduce((a, b) => a + b, 0) / confiances.length) : null;
+
   // Autres indicateurs
   const notables = observations.filter((o) => o.notable && String(o.notable).trim().length > 3).length;
   const cartesForgees = observations.filter((o) => o.carte).length;
@@ -1743,8 +1755,12 @@ function Stats({ observations, onFermer }) {
     { seuil: 25, emoji: "🔬", label: "25 observations", atteint: total >= 25 },
     { seuil: 4, emoji: "🌍", label: "4 biotopes explorés", atteint: biotopesSet.size >= 4, valeur: biotopesSet.size },
     { seuil: 1, emoji: "🌟", label: "Une observation notable", atteint: notables >= 1 },
+    { seuil: 3, emoji: "🗂️", label: "3 ordres différents", atteint: nbOrdres >= 3, valeur: nbOrdres },
+    { seuil: 6, emoji: "🧭", label: "6 ordres différents", atteint: nbOrdres >= 6, valeur: nbOrdres },
     { seuil: 50, emoji: "🏆", label: "50 observations", atteint: total >= 50 },
     { seuil: 20, emoji: "💎", label: "20 espèces différentes", atteint: especesUniques >= 20, valeur: especesUniques },
+    { seuil: 5, emoji: "🎴", label: "5 cartes forgées", atteint: cartesForgees >= 5, valeur: cartesForgees },
+    { seuil: 100, emoji: "👑", label: "100 observations", atteint: total >= 100 },
   ];
   const badgesGagnes = badges.filter((b) => b.atteint).length;
 
@@ -1788,6 +1804,47 @@ function Stats({ observations, onFermer }) {
         ))}
       </div>
 
+      {/* Confiance moyenne d'identification */}
+      {confianceMoy !== null && (
+        <div style={{ ...carte, marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <span style={titre}>Fiabilité des identifications</span>
+            <span style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: couleurPourcent(confianceMoy) }}>{confianceMoy}%</span>
+          </div>
+          <div style={{ height: 10, borderRadius: 5, background: "#0F130C", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${confianceMoy}%`, borderRadius: 5, background: couleurPourcent(confianceMoy), transition: "width .5s ease" }} />
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 8, lineHeight: 1.4 }}>
+            Confiance moyenne de l'IA sur tes {confiances.length} identification{confiances.length > 1 ? "s" : ""} avec pourcentage.
+          </div>
+        </div>
+      )}
+
+      {/* Répartition par ordre taxonomique */}
+      {ordresTri.length > 0 && (
+        <div style={{ ...carte, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+            <span style={titre}>Par ordre d'insecte</span>
+            <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{nbOrdres} ordre{nbOrdres > 1 ? "s" : ""}</span>
+          </div>
+          {ordresTri.map(([id, n]) => {
+            const info = ordreInfo(id);
+            const pct = Math.round((n / total) * 100);
+            return (
+              <div key={id} style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 13, color: C.papier, marginBottom: 4 }}>
+                  <span>{info.emoji} {info.label}</span>
+                  <span style={{ color: C.papierSombre }}>{n} · {pct}%</span>
+                </div>
+                <div style={{ height: 8, borderRadius: 4, background: "#0F130C", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${(n / maxOrdre) * 100}%`, borderRadius: 4, background: "linear-gradient(90deg, #6E8B4E, #A8C97E)", transition: "width .5s ease" }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Espèce star */}
       {star && star[1] > 1 && (
         <div style={{ ...carte, marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
@@ -1822,15 +1879,18 @@ function Stats({ observations, onFermer }) {
       {/* Répartition par biotope */}
       {biotopesTri.length > 0 && (
         <div style={{ ...carte, marginBottom: 16 }}>
-          <div style={titre}>Par biotope</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+            <span style={titre}>Par biotope</span>
+            <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{biotopesSet.size} exploré{biotopesSet.size > 1 ? "s" : ""}</span>
+          </div>
           {biotopesTri.map(([id, n]) => (
             <div key={id} style={{ marginBottom: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 13, color: C.papier, marginBottom: 4 }}>
                 <span>{biotopeOf(id).emoji} {biotopeOf(id).label}</span>
-                <span style={{ color: C.papierSombre }}>{n}</span>
+                <span style={{ color: C.papierSombre }}>{n} · {Math.round((n / total) * 100)}%</span>
               </div>
               <div style={{ height: 8, borderRadius: 4, background: "#0F130C", overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${(n / maxBio) * 100}%`, borderRadius: 4, background: `linear-gradient(90deg, ${C.ambre}, ${C.ambreClair})` }} />
+                <div style={{ height: "100%", width: `${(n / maxBio) * 100}%`, borderRadius: 4, background: `linear-gradient(90deg, ${C.ambre}, ${C.ambreClair})`, transition: "width .5s ease" }} />
               </div>
             </div>
           ))}
@@ -1845,7 +1905,7 @@ function Stats({ observations, onFermer }) {
             {moisTri.map(([m, n]) => (
               <div key={m} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                 <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{n}</div>
-                <div style={{ width: "100%", maxWidth: 44, height: `${maxMois ? (n / maxMois) * 84 : 0}px`, minHeight: 4, borderRadius: "5px 5px 0 0", background: `linear-gradient(${C.ambreClair}, ${C.ambre})` }} />
+                <div style={{ width: "100%", maxWidth: 44, height: `${maxMois ? (n / maxMois) * 84 : 0}px`, minHeight: 4, borderRadius: "5px 5px 0 0", background: `linear-gradient(${C.ambreClair}, ${C.ambre})`, transition: "height .5s ease" }} />
                 <div style={{ fontFamily: sans, fontSize: 10, color: C.papierSombre, textAlign: "center", lineHeight: 1.2 }}>{moisLisible(m)}</div>
               </div>
             ))}
