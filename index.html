@@ -115,9 +115,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.67 (PWA) ============
+// ============ BioDex v0.68 (PWA) ============
 
-const VERSION = "v0.67";
+const VERSION = "v0.68";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1021,6 +1021,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.68", date: "2026-07", items: ["🏅 Classement des chasseurs : depuis le menu, découvre le palmarès de la bande (semaine et mois) avec un système de points qui récompense les trouvailles, les nouvelles espèces et les plus rares. La rareté s'appuie sur les données mondiales d'iNaturalist, et les espèces rares affichent un badge coloré sur le mur !"] },
   { v: "0.67", date: "2026-07", items: ["🏆 Jeu réorganisé : le Combat et la Ligue sont maintenant réunis dans l'onglet 🎴 Cartes (fini le mode caché !), avec un schéma clair des forces et faiblesses de chaque type (🔰) pour savoir qui bat qui d'un coup d'œil."] },
   { v: "0.66", date: "2026-07", items: ["📷 Recadrage avant identification : un cadre s'affiche désormais sur ta photo avant chaque identification précise. Recadre sur l'insecte pour un résultat bien plus fiable (surtout s'il est petit), ou identifie l'image entière si elle est déjà bien cadrée."] },
   { v: "0.65", date: "2026-07", items: ["🗂️ Rangement par ordre : ta collection et tes cartes forgées se filtrent maintenant par grand groupe d'insectes (🦋 papillons, 🪲 coléoptères, 🌾 punaises, 🕷️ araignées...). Des onglets en haut de la boîte et de la galerie pour t'y retrouver d'un coup d'œil."] },
@@ -1900,7 +1901,228 @@ async function chercherTaxons(terme, signal) {
     }));
 }
 
-// ---------- Capture rapide (file "à trier") : shoot éclair, GPS/météo figés ----------
+// ---------- Rareté d'une espèce via iNaturalist (nombre d'observations mondiales) ----------
+// Mise en cache dans le navigateur : chaque espèce n'est interrogée qu'une fois.
+// Seuils ajustables selon ce qui te semble juste pour ta faune.
+const SEUILS_RARETE = { tresRare: 2000, rare: 20000, peuCommune: 150000 };
+
+function niveauRarete(count) {
+  if (count == null || typeof count !== "number") return null;
+  if (count < SEUILS_RARETE.tresRare) return { id: "tresrare", label: "Très rare", emoji: "🌟", bonus: 3, couleur: "#E5B84B" };
+  if (count < SEUILS_RARETE.rare) return { id: "rare", label: "Rare", emoji: "✨", bonus: 2, couleur: "#D2A24A" };
+  if (count < SEUILS_RARETE.peuCommune) return { id: "peucommune", label: "Peu commune", emoji: "🍃", bonus: 1, couleur: "#8AAE6B" };
+  return { id: "commune", label: "Commune", emoji: "", bonus: 0, couleur: "#7C8568" };
+}
+
+function BadgeRarete({ count, style }) {
+  const niv = niveauRarete(count);
+  if (!niv || niv.bonus <= 0) return null;
+  return (
+    <span title={`${niv.label} (${count.toLocaleString("fr-FR")} observations mondiales sur iNaturalist)`}
+      style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: sans, fontSize: 10.5, fontWeight: 800, color: "#12160D", background: niv.couleur, borderRadius: 7, padding: "1px 6px", whiteSpace: "nowrap", ...style }}>
+      {niv.emoji} {niv.label}
+    </span>
+  );
+}
+
+function litCacheRarete(sci) {
+  try {
+    const brut = localStorage.getItem("biodex:rarete:" + sci.toLowerCase().trim());
+    if (!brut) return undefined;
+    return JSON.parse(brut);
+  } catch { return undefined; }
+}
+function ecritCacheRarete(sci, count) {
+  try { localStorage.setItem("biodex:rarete:" + sci.toLowerCase().trim(), JSON.stringify({ count, maj: Date.now() })); } catch {}
+}
+
+// Renvoie le nombre d'observations mondiales (number), ou null si inconnu/indispo.
+async function chargerRareteInat(sci) {
+  if (!sci || !sci.trim()) return null;
+  const cle = sci.trim();
+  const cache = litCacheRarete(cle);
+  if (cache && typeof cache.count === "number") return cache.count;
+  try {
+    const url = "https://api.inaturalist.org/v1/taxa/autocomplete?per_page=5&q=" + encodeURIComponent(cle);
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("http");
+    const d = await r.json();
+    const results = d.results || [];
+    const norm = (s) => (s || "").toLowerCase().trim();
+    let match = results.find((t) => norm(t.name) === norm(cle)) || results[0];
+    const count = match && typeof match.observations_count === "number" ? match.observations_count : null;
+    if (count != null) ecritCacheRarete(cle, count);
+    return count;
+  } catch {
+    return null; // réseau/API indispo -> pas de rareté iNat (on retombera sur la rareté "bande")
+  }
+}
+
+// Clé d'espèce normalisée pour regrouper (nom scientifique de préférence, sinon nom commun).
+function cleEspeceMur(p) {
+  return (p.espece_sci || p.espece || "").toLowerCase().trim();
+}
+
+// Points d'un post : +1 base, +2 nouvelle espèce sur le mur, + bonus rareté (iNat ou "bande").
+function pointsDunPost(p, premiereApparition, compteEspece, raretes) {
+  const k = cleEspeceMur(p);
+  let pts = 1;
+  const detail = { base: 1, nouveaute: 0, rarete: 0 };
+  if (k && premiereApparition[k] === p.id) { pts += 2; detail.nouveaute = 2; }
+  const count = k ? raretes[k] : undefined;
+  const niv = (typeof count === "number") ? niveauRarete(count) : null;
+  if (niv && niv.bonus > 0) { pts += niv.bonus; detail.rarete = niv.bonus; }
+  else if ((count === undefined || count === null) && k && compteEspece[k] <= 2) { pts += 1; detail.rarete = 1; }
+  return { pts, detail };
+}
+
+// Classement des chasseurs sur une période ("semaine" = 7 j, "mois" = 30 j glissants).
+function calculerClassement(posts, periode, raretes) {
+  if (!posts || !posts.length) return [];
+  const maintenant = Date.now();
+  const seuil = (periode === "mois" ? 30 : 7) * 864e5;
+  const dansPeriode = (p) => {
+    const t = new Date(p.created_at).getTime();
+    return !isNaN(t) && (maintenant - t) <= seuil;
+  };
+  const premiereApparition = {};
+  [...posts].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).forEach((p) => {
+    const k = cleEspeceMur(p);
+    if (k && !(k in premiereApparition)) premiereApparition[k] = p.id;
+  });
+  const compteEspece = {};
+  posts.forEach((p) => { const k = cleEspeceMur(p); if (k) compteEspece[k] = (compteEspece[k] || 0) + 1; });
+  const parAuteur = {};
+  posts.filter(dansPeriode).forEach((p) => {
+    const a = (p.auteur || "Anonyme").trim() || "Anonyme";
+    if (!parAuteur[a]) parAuteur[a] = { auteur: a, points: 0, trouvailles: 0 };
+    const { pts } = pointsDunPost(p, premiereApparition, compteEspece, raretes);
+    parAuteur[a].points += pts;
+    parAuteur[a].trouvailles += 1;
+  });
+  return Object.values(parAuteur).sort((x, y) => y.points - x.points || y.trouvailles - x.trouvailles);
+}
+
+function Classement({ onFermer }) {
+  const [periode, setPeriode] = useState("semaine");
+  const [posts, setPosts] = useState(null);
+  const [raretes, setRaretes] = useState({});
+  const [etat, setEtat] = useState("chargement");
+  const [montrerRegles, setMontrerRegles] = useState(false);
+
+  useEffect(() => {
+    let annule = false;
+    (async () => {
+      if (!MUR_ACTIF) { setEtat("inactif"); return; }
+      try {
+        const data = await chargerMur(300);
+        if (annule) return;
+        setPosts(data);
+        setEtat("ok");
+        const especesMap = {};
+        data.forEach((p) => { const k = cleEspeceMur(p); if (k && !(k in especesMap)) especesMap[k] = p.espece_sci || p.espece || ""; });
+        const map = {};
+        Object.keys(especesMap).forEach((k) => { const c = litCacheRarete(k); if (c && typeof c.count === "number") map[k] = c.count; });
+        if (!annule) setRaretes({ ...map });
+        for (const k of Object.keys(especesMap)) {
+          if (k in map) continue;
+          const c = await chargerRareteInat(especesMap[k]);
+          if (annule) return;
+          map[k] = c;
+          setRaretes({ ...map });
+        }
+      } catch { if (!annule) setEtat("echec"); }
+    })();
+    return () => { annule = true; };
+  }, []);
+
+  const classement = posts ? calculerClassement(posts, periode, raretes) : [];
+  const chargementRaretes = posts && Object.keys(raretes).length < new Set(posts.map(cleEspeceMur).filter(Boolean)).size;
+  const rangStyle = (i) => i === 0 ? { emoji: "🥇", coul: "#E5B84B" } : i === 1 ? { emoji: "🥈", coul: "#C7C7C7" } : i === 2 ? { emoji: "🥉", coul: "#CD8B4A" } : { emoji: `${i + 1}`, coul: C.papierSombre };
+
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Retour</Bouton>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+        <span style={{ fontSize: 28 }}>🏆</span>
+        <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier }}>Classement des chasseurs</div>
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 14, lineHeight: 1.5 }}>
+        Qui déniche le plus (et le plus rare) ? Les points viennent des trouvailles partagées sur le mur.
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {[["semaine", "📅 Semaine"], ["mois", "🗓️ Mois"]].map(([id, label]) => (
+          <button key={id} onClick={() => setPeriode(id)}
+            style={{ flex: 1, fontFamily: sans, fontSize: 14, fontWeight: 700, padding: "9px 0", borderRadius: 9, cursor: "pointer",
+              border: `1px solid ${periode === id ? "#A8863A" : C.bordure}`,
+              background: periode === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
+              color: periode === id ? C.ambreClair : C.papierSombre }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginBottom: 12, textAlign: "center" }}>
+        {periode === "semaine" ? "7 derniers jours" : "30 derniers jours"}
+      </div>
+
+      {etat === "chargement" && <div style={{ textAlign: "center", padding: 30, fontFamily: sans, color: C.papierSombre }}>Chargement…</div>}
+      {etat === "inactif" && <div style={{ textAlign: "center", padding: 30, fontFamily: sans, color: C.papierSombre }}>Le mur partagé n'est pas configuré.</div>}
+      {etat === "echec" && <div style={{ textAlign: "center", padding: 30, fontFamily: sans, color: "#E5603E" }}>Impossible de charger le classement (réseau ?).</div>}
+
+      {etat === "ok" && classement.length === 0 && (
+        <div style={{ textAlign: "center", padding: "40px 20px", border: `1px solid ${C.bordure}`, borderRadius: 12, background: "linear-gradient(#191F15, #14180F)" }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>🦗</div>
+          <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.5 }}>Aucune trouvaille partagée sur cette période. Postez des observations sur le mur pour lancer le classement !</div>
+        </div>
+      )}
+
+      {etat === "ok" && classement.length > 0 && (
+        <div style={{ display: "grid", gap: 8 }}>
+          {classement.map((c, i) => {
+            const r = rangStyle(i);
+            return (
+              <div key={c.auteur} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 11, background: i < 3 ? "linear-gradient(#20281A, #1A2015)" : C.panneau, border: `1px solid ${i < 3 ? "#3A4A2C" : C.bordure}` }}>
+                <div style={{ minWidth: 30, textAlign: "center", fontFamily: serif, fontSize: i < 3 ? 22 : 16, fontWeight: 700, color: r.coul }}>{r.emoji}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.auteur}</div>
+                  <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre }}>{c.trouvailles} trouvaille{c.trouvailles > 1 ? "s" : ""}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <span style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambre }}>{c.points}</span>
+                  <span style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}> pts</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {chargementRaretes && etat === "ok" && (
+        <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, textAlign: "center", marginTop: 10, fontStyle: "italic" }}>
+          Calcul de la rareté en cours (iNaturalist)… les points peuvent encore s'ajuster.
+        </div>
+      )}
+
+      <button onClick={() => setMontrerRegles((v) => !v)} style={{ width: "100%", marginTop: 16, fontFamily: sans, fontSize: 13, fontWeight: 700, padding: "9px 12px", borderRadius: 9, cursor: "pointer", border: `1px solid ${C.bordure}`, background: montrerRegles ? C.panneau : "transparent", color: C.ambreClair, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>❓ Comment sont calculés les points ?</span>
+        <span style={{ color: C.papierSombre }}>{montrerRegles ? "▲" : "▼"}</span>
+      </button>
+      {montrerRegles && (
+        <div style={{ marginTop: 10, padding: 14, borderRadius: 10, background: "#0F130C", border: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 13, color: C.papierClair, lineHeight: 1.6 }}>
+          <div><b style={{ color: C.papier }}>+1</b> par trouvaille partagée sur le mur</div>
+          <div><b style={{ color: C.papier }}>+2</b> si l'espèce est nouvelle sur le mur (jamais postée avant)</div>
+          <div><b style={{ color: "#8AAE6B" }}>+1</b> espèce peu commune · <b style={{ color: "#D2A24A" }}>+2</b> rare · <b style={{ color: "#E5B84B" }}>+3</b> très rare</div>
+          <div style={{ marginTop: 8, color: C.papierSombre, fontSize: 12 }}>
+            La rareté s'appuie sur le nombre d'observations mondiales dans iNaturalist. C'est un bon indice, pas un statut de conservation officiel — une espèce discrète peut être peu observée sans être menacée. Si iNaturalist ne répond pas pour une espèce, on compte +1 si elle est rare dans la bande (postée ≤ 2 fois).
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
   const [montrerCamera, setMontrerCamera] = useState(false);
   const [flash, setFlash] = useState("");
@@ -3352,6 +3574,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         </div>
         {item("🎯", "Missions saisonnières", "Défis d'observation de la bande", () => onAller("missions"), missionsNouv)}
         {MUR_ACTIF && item("🏆", "La Ligue", "Dans l'onglet 🎴 Cartes", () => onAller("cartes"), 0)}
+        {MUR_ACTIF && item("🏅", "Classement", "Les meilleurs chasseurs de la bande", () => onAller("classement"), 0)}
         {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Mon profil" : "Se connecter", utilisateur ? "Ta collection d'espèces" : "Connexion facultative par email", () => onAller("connexion"), 0)}
       </div>
@@ -4012,6 +4235,10 @@ function Aide({ onFermer, onImportTermine }) {
         <p style={p}>
           Le bouton 🎯 en haut ouvre les missions de la saison : des défis d'observation communs à toute la bande (explorer un biotope, observer plusieurs espèces, repérer une notable…), qui changent à chaque saison. Ils se valident automatiquement quand ta collection remplit les conditions, avec une validation manuelle en secours. Tu vois aussi qui, dans la bande, a réussi chaque défi.
         </p>
+        <div style={t}>🏅 Le classement des chasseurs</div>
+        <p style={p}>
+          Depuis le menu ☰, « Classement » établit le palmarès de la bande sur les 7 derniers jours (Semaine) ou 30 jours (Mois), à partir des trouvailles partagées sur le mur. Le système de points : +1 par trouvaille, +2 si l'espèce est nouvelle sur le mur (personne ne l'avait postée), et un bonus de rareté (+1 peu commune, +2 rare, +3 très rare). La rareté s'appuie sur le nombre d'observations mondiales dans iNaturalist — un bon indice, mais pas un statut de conservation officiel : une espèce discrète peut être peu observée sans être menacée. Les espèces rares affichent aussi un badge coloré (🌟 ✨ 🍃) sur le mur. Nécessite le réseau et le mur configuré.
+        </p>
         <div style={t}>🏆 La Ligue</div>
         <p style={p}>
           Depuis le menu ☰, la Ligue te permet de défier les cartes de la bande. Engage jusqu'à 3 de tes cartes forgées (elles restent dans ta collection), et défie celles des autres : quand tu défies une carte, son propriétaire n'a pas besoin d'être connecté, l'appli la joue pour lui. Chaque défi met à jour le classement des joueurs (victoires/défaites) et les stats de chaque carte. Tu peux jouer le combat en manuel, en auto, ou juste voir le résultat. Pour que le jeu reste fair-play, chaque carte forgée est vérifiée : si la photo ne ressemble pas à une vraie photo d'insecte prise sur le terrain (capture d'écran, image trouvée sur internet, dessin), la carte est marquée « non vérifiée » et porte un badge visible dans la ligue. La carte reste jouable, mais tout le monde voit qu'elle est douteuse.
@@ -4271,6 +4498,7 @@ function DetailPost({ post, reactions, onReagir, onFermer }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier, lineHeight: 1.2 }}>{p.espece || "Spécimen non identifié"}</span>
             <BadgePourcent confiance={p.confiance} style={{ fontSize: 13, padding: "2px 9px" }} />
+            {(() => { const c = litCacheRarete(cleEspeceMur(p)); return c && typeof c.count === "number" ? <BadgeRarete count={c.count} style={{ fontSize: 11.5, padding: "2px 8px" }} /> : null; })()}
           </div>
           {p.espece_sci && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 16, color: C.ambre, marginTop: 2 }}>{p.espece_sci}</div>}
 
@@ -4328,6 +4556,22 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues }) {
   const [supprEnCours, setSupprEnCours] = useState(null); // id du post en cours de suppression
   const [postDetail, setPostDetail] = useState(null); // post ouvert en détail
   const [reactions, setReactions] = useState({}); // { post_id: { type: compteur } }
+  const [raretes, setRaretes] = useState({}); // { cleEspece: count|null }
+
+  // Charge les raretés iNaturalist (cache d'abord, réseau ensuite) pour une liste de posts.
+  async function chargerRaretes(liste) {
+    const especesMap = {};
+    liste.forEach((p) => { const k = cleEspeceMur(p); if (k && !(k in especesMap)) especesMap[k] = p.espece_sci || p.espece || ""; });
+    const map = {};
+    Object.keys(especesMap).forEach((k) => { const c = litCacheRarete(k); if (c && typeof c.count === "number") map[k] = c.count; });
+    setRaretes((prev) => ({ ...prev, ...map }));
+    for (const k of Object.keys(especesMap)) {
+      if (k in map) continue;
+      const c = await chargerRareteInat(especesMap[k]);
+      map[k] = c;
+      setRaretes((prev) => ({ ...prev, [k]: c }));
+    }
+  }
 
   async function lancerSuppression(post) {
     setSupprEnCours(post.id);
@@ -4348,6 +4592,7 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues }) {
     try {
       const p = await chargerMur(50);
       setPosts(p);
+      chargerRaretes(p);
       chargerReactions().then((r) => {
         setReactions(r);
         // Marque les réactions reçues comme vues, à partir des données déjà chargées (pas de requête en plus)
@@ -4437,6 +4682,7 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues }) {
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier }}>{p.espece || "Spécimen non identifié"}</span>
                 <BadgePourcent confiance={p.confiance} />
+                <BadgeRarete count={raretes[cleEspeceMur(p)]} />
               </div>
               {p.espece_sci && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambre }}>{p.espece_sci}</div>}
               {p.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginTop: 6 }}>{p.note}</div>}
@@ -5508,6 +5754,9 @@ function BioDex() {
           onDefier={(carte) => { setCarteDefiee(carte); setVue("defi"); }}
           onFermer={() => setVue("collection")}
         />
+      )}
+      {vue === "classement" && (
+        <Classement onFermer={() => setVue("collection")} />
       )}
       {vue === "defi" && carteDefiee && (
         <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
