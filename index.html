@@ -115,9 +115,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.79 (PWA) ============
+// ============ BioDex v0.80 (PWA) ============
 
-const VERSION = "v0.79";
+const VERSION = "v0.80";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1021,6 +1021,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.80", date: "2026-07", items: ["✨ Écran de bienvenue : à la première ouverture, une jolie présentation accueille les nouveaux venus et explique l'esprit de BioDex. Pratique maintenant que l'appli s'ouvre à plus de monde ! (Re-consultable depuis le menu.)"] },
   { v: "0.79", date: "2026-07", items: ["🎯 Rareté affinée : les seuils ont été ajustés et les banalités notoires (mouche domestique, moustique, puceron…) ne sont plus affichées comme « peu communes » à tort. La rareté colle mieux à la réalité. (Les raretés se recalculent automatiquement au premier affichage.)"] },
   { v: "0.78", date: "2026-07", items: ["🇫🇷 Enquêtes OPIE : quand tu identifies un Lucane cerf-volant ou une Rosalie des Alpes, un encart t'invite à signaler ton observation à l'enquête nationale de l'Office pour les insectes (OPIE). Ces espèces patrimoniales sont suivies au niveau national, et tes signalements sont versés à l'INPN — de la vraie science française !"] },
   { v: "0.77", date: "2026-07", items: ["🔔 Notifications enrichies : le centre de notifs montre maintenant le détail — quelle espèce et par qui sur le mur, qui a réagi à tes trouvailles et avec quoi, quelles nouvelles idées. Et si tu as installé l'appli sur ton écran d'accueil, une pastille apparaît sur son icône !"] },
@@ -2641,6 +2642,66 @@ function PasserelleInat({ obs }) {
   );
 }
 
+function Presentation({ onCommencer }) {
+  const carac = [
+    { emoji: "📷", titre: "Identifie", texte: "Photographie un insecte, l'IA te dit qui c'est — en un instant." },
+    { emoji: "🗃️", titre: "Collectionne", texte: "Chaque trouvaille rejoint ta boîte, ton cabinet de curiosités numérique." },
+    { emoji: "🎴", titre: "Joue & partage", texte: "Mur commun, réactions, classement, cartes à forger, combats et quiz du jour." },
+    { emoji: "🔬", titre: "Contribue", texte: "Tes observations peuvent servir la vraie science : iNaturalist, enquêtes OPIE…" },
+  ];
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, overflowY: "auto", background: `radial-gradient(120% 60% at 50% 0%, #24301B 0%, ${C.fond} 60%)` }}>
+      <div style={{ maxWidth: 480, margin: "0 auto", padding: "40px 24px 32px", minHeight: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
+
+        {/* Emblème */}
+        <div style={{ textAlign: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 52, lineHeight: 1, filter: "drop-shadow(0 2px 6px rgba(0,0,0,.4))" }}>🔍</div>
+        </div>
+        <div style={{ textAlign: "center", fontFamily: serif, fontSize: 40, fontWeight: 700, color: C.papier, letterSpacing: 0.5, lineHeight: 1.05 }}>BioDex</div>
+        <div style={{ textAlign: "center", fontFamily: serif, fontStyle: "italic", fontSize: 16, color: C.ambreClair, marginTop: 6 }}>Ton carnet d'insectes, en vrai</div>
+
+        {/* Filet décoratif */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "22px auto 20px", width: "70%" }}>
+          <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, transparent, ${C.ambre})` }} />
+          <span style={{ fontSize: 13, color: C.ambre }}>✦</span>
+          <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${C.ambre}, transparent)` }} />
+        </div>
+
+        <div style={{ fontFamily: sans, fontSize: 14.5, color: C.papierClair, lineHeight: 1.6, textAlign: "center", marginBottom: 24 }}>
+          Une bestiole intrigante croise ton chemin ? Capture-la en photo et découvre qui elle est. Monte ta collection, partage tes trouvailles avec la bande… et participe pour de vrai au recensement de la biodiversité.
+        </div>
+
+        {/* Caractéristiques */}
+        <div style={{ display: "grid", gap: 12, marginBottom: 26 }}>
+          {carac.map((c, i) => (
+            <div key={i} style={{ display: "flex", gap: 13, alignItems: "flex-start", padding: "13px 15px", borderRadius: 12, background: "linear-gradient(135deg, #1E2617, #171D12)", border: `1px solid ${C.bordure}` }}>
+              <div style={{ fontSize: 24, flexShrink: 0, width: 34, textAlign: "center" }}>{c.emoji}</div>
+              <div>
+                <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, marginBottom: 2 }}>{c.titre}</div>
+                <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, lineHeight: 1.5 }}>{c.texte}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Devise */}
+        <div style={{ textAlign: "center", fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.ambreClair, letterSpacing: 1, marginBottom: 26 }}>
+          Observe · Partage · Protège
+        </div>
+
+        <div style={{ marginTop: "auto" }}>
+          <button onClick={onCommencer} className="bd-press" style={{ width: "100%", fontFamily: sans, fontSize: 16, fontWeight: 800, padding: "15px 0", borderRadius: 12, cursor: "pointer", border: "none", color: C.encre, background: `linear-gradient(#E4C878, #C9A24B)`, boxShadow: "0 4px 14px rgba(201,162,75,.3)" }}>
+            Commencer l'aventure →
+          </button>
+          <div style={{ textAlign: "center", fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 14, lineHeight: 1.5 }}>
+            🐞 Chaque photo compte pour mieux connaître — et protéger — ces petites bêtes qui font tourner le monde.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
   const [montrerCamera, setMontrerCamera] = useState(false);
   const [flash, setFlash] = useState("");
@@ -4089,7 +4150,7 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
 }
 
 // ---------- Menu principal (regroupe missions, idées, profil) ----------
-function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller }) {
+function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller, onRevoirPresentation }) {
   const item = (emoji, titre, sousTitre, action, pastille) => (
     <button onClick={() => { onFermer(); action(); }}
       style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: "none", border: "none", borderBottom: `1px solid ${C.bordure}`, cursor: "pointer", textAlign: "left" }}>
@@ -4117,6 +4178,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {MUR_ACTIF && item("🏅", "Classement", "Les meilleurs chasseurs de la bande", () => onAller("classement"), 0)}
         {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Mon profil" : "Se connecter", utilisateur ? "Ta collection d'espèces" : "Connexion facultative par email", () => onAller("connexion"), 0)}
+        {onRevoirPresentation && item("✨", "Revoir la présentation", "L'écran de bienvenue de BioDex", () => { onFermer(); onRevoirPresentation(); }, 0)}
       </div>
     </div>
   );
@@ -6119,6 +6181,7 @@ function BioDex() {
   const [notifs, setNotifs] = useState({ total: 0 });
   const [centreOuvert, setCentreOuvert] = useState(false);
   const [menuOuvert, setMenuOuvert] = useState(false);
+  const [montrerPresentation, setMontrerPresentation] = useState(() => { try { return !localStorage.getItem("biodex_presentation_vue"); } catch { return false; } });
 
   // Pastille sur l'icône de l'appli installée (API Badging, si supportée)
   useEffect(() => {
@@ -6460,6 +6523,9 @@ function BioDex() {
           />
         </div>
       )}
+      {montrerPresentation && (
+        <Presentation onCommencer={() => { try { localStorage.setItem("biodex_presentation_vue", "1"); } catch {} setMontrerPresentation(false); }} />
+      )}
       {centreOuvert && (
         <CentreNotifs
           notifs={notifs}
@@ -6475,6 +6541,7 @@ function BioDex() {
           ideesNouv={notifs.ideesNouvelles || 0}
           onFermer={() => setMenuOuvert(false)}
           onAller={(v) => setVue(v)}
+          onRevoirPresentation={() => setMontrerPresentation(true)}
         />
       )}
       {vue === "cartes" && (
