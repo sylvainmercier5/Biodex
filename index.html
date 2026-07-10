@@ -115,9 +115,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.71 (PWA) ============
+// ============ BioDex v0.79 (PWA) ============
 
-const VERSION = "v0.71";
+const VERSION = "v0.79";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1021,6 +1021,14 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.79", date: "2026-07", items: ["🎯 Rareté affinée : les seuils ont été ajustés et les banalités notoires (mouche domestique, moustique, puceron…) ne sont plus affichées comme « peu communes » à tort. La rareté colle mieux à la réalité. (Les raretés se recalculent automatiquement au premier affichage.)"] },
+  { v: "0.78", date: "2026-07", items: ["🇫🇷 Enquêtes OPIE : quand tu identifies un Lucane cerf-volant ou une Rosalie des Alpes, un encart t'invite à signaler ton observation à l'enquête nationale de l'Office pour les insectes (OPIE). Ces espèces patrimoniales sont suivies au niveau national, et tes signalements sont versés à l'INPN — de la vraie science française !"] },
+  { v: "0.77", date: "2026-07", items: ["🔔 Notifications enrichies : le centre de notifs montre maintenant le détail — quelle espèce et par qui sur le mur, qui a réagi à tes trouvailles et avec quoi, quelles nouvelles idées. Et si tu as installé l'appli sur ton écran d'accueil, une pastille apparaît sur son icône !"] },
+  { v: "0.76", date: "2026-07", items: ["💡 Boîte à idées enrichie : réagis aux idées (👍 ❤️ 🚀) pour montrer lesquelles t'emballent, et coche « ✅ Réalisée » celles qui sont faites. Plus facile de voir ce qui suscite l'intérêt et de suivre l'avancement !"] },
+  { v: "0.75", date: "2026-07", items: ["🔬 Passerelle iNaturalist : sur chaque fiche identifiée, une section « Science participative » te permet de contribuer à la vraie recherche. « Contribuer sur iNaturalist » ouvre une observation pré-remplie (espèce, lieu, date), et tu peux explorer l'espèce ou voir les observations près de chez toi. Tes trouvailles peuvent désormais servir la science !"] },
+  { v: "0.74", date: "2026-07", items: ["🧠 Quiz du jour : l'onglet du jeu (renommé 🎮 Jeu) accueille un quiz quotidien de 5 questions sur les insectes ! Gagne des points, vise le sans-faute pour le bonus, et reviens chaque jour pour de nouvelles questions. Cartes, Combat, Ligue et Quiz sont maintenant réunis dans l'onglet 🎮 Jeu."] },
+  { v: "0.73", date: "2026-07", items: ["💡 Le savais-tu ? : à l'ouverture de l'appli, une carte t'accueille avec une anecdote fascinante sur les insectes (une nouvelle chaque jour, ou pioche-en une autre). 30 faits fiables pour apprendre en s'amusant !"] },
+  { v: "0.72", date: "2026-07", items: ["✨ Cartes plus justes : la rareté des cartes forgées s'appuie maintenant sur les vraies données iNaturalist (et non plus une estimation). Les espèces vraiment rares donnent des cartes holographiques ou légendaires scintillantes ! (Les cartes déjà forgées ne changent pas.)"] },
   { v: "0.71", date: "2026-07", items: ["🌟 Rareté partout : les libellés de rareté (très rare / rare / peu commune) s'affichent maintenant dans toute l'appli — collection, fiche détaillée, mur — plus un compteur d'espèces rares dans les stats et un filtre « espèces rares » dans ta collection. La rareté se charge instantanément depuis le cache, et se complète en arrière-plan."] },
   { v: "0.70", date: "2026-07", items: ["📊 Stats enrichies : nouvel onglet Stats peaufiné avec la répartition de ta collection par ordre d'insecte (🦋 🪲 🐝...), ta fiabilité moyenne d'identification, de nouveaux badges (ordres, cartes, paliers), et des graphiques rafraîchis."] },
   { v: "0.69", date: "2026-07", items: ["👀 Qui a réagi : sous chaque publication du mur, tu vois maintenant le prénom des personnes qui ont réagi (et non plus juste un compteur). Chacun ne peut mettre qu'une fois chaque réaction — touche à nouveau pour la retirer."] },
@@ -1059,6 +1067,15 @@ const REACTIONS = [
   { type: "waouh", emoji: "🤯", titre: "Incroyable / rare" },
   { type: "oeil", emoji: "🔍", titre: "Bien observé" },
 ];
+
+// Réactions d'enthousiasme pour la boîte à idées (jauger l'intérêt de la bande).
+const IDEE_REACTIONS = [
+  { type: "pouce", emoji: "👍", titre: "Bonne idée" },
+  { type: "coeur", emoji: "❤️", titre: "Coup de cœur" },
+  { type: "fusee", emoji: "🚀", titre: "Vivement !" },
+];
+// Les réactions d'idées sont stockées dans reactions_detail avec un post_id préfixé.
+function cleReactionIdee(id) { return "idee:" + id; }
 
 // Somme le nombre de réactions d'un objet { type: [auteurs] } OU { type: compteur } (rétro-compat).
 function nbReacts(parType) {
@@ -1101,32 +1118,48 @@ async function reagir(postId, type, auteur, dejaReagi) {
 
 // Calcule les notifications du centre : nouveautés mur, réactions reçues, nouvelles idées.
 // S'appuie sur des repères "vu" stockés en local (dates ISO / totaux).
+// Charge les réactions brutes (avec date) pour détecter les nouvelles.
+async function chargerReactionsRaw() {
+  const sb = clientSupabase();
+  if (!sb) return [];
+  try {
+    const { data, error } = await sb.from("reactions_detail").select("post_id, type, auteur, created_at");
+    if (error || !data) return [];
+    return data;
+  } catch { return []; }
+}
+
 async function calculerNotifications(prenom) {
   const sb = clientSupabase();
-  if (!sb) return { total: 0, murNouveaux: 0, ideesNouvelles: 0, reactionsRecues: 0 };
+  const vide = { total: 0, murNouveaux: 0, ideesNouvelles: 0, reactionsRecues: 0, murDetail: [], ideesDetail: [], reactionsDetail: [] };
+  if (!sb) return vide;
 
   const lire = (cle) => { try { return localStorage.getItem(cle); } catch { return null; } };
+  const ecrire = (cle, v) => { try { localStorage.setItem(cle, v); } catch {} };
   let murNouveaux = 0, ideesNouvelles = 0, reactionsRecues = 0;
+  let murDetail = [], ideesDetail = [], reactionsDetail = [];
 
   try {
     const posts = await chargerMur(200);
     // 1) Nouveaux posts depuis la dernière visite du mur
     const vuMur = lire("biodex_mur_vu");
-    if (vuMur) murNouveaux = posts.filter((p) => p.created_at && new Date(p.created_at) > new Date(vuMur)).length;
-    else murNouveaux = posts.length;
+    const nouveauxPosts = vuMur ? posts.filter((p) => p.created_at && new Date(p.created_at) > new Date(vuMur)) : posts.slice(0, 20);
+    murNouveaux = nouveauxPosts.length;
+    murDetail = nouveauxPosts.slice(0, 6).map((p) => ({ espece: p.espece || "Spécimen", auteur: p.auteur || "Anonyme" }));
 
-    // 2) Réactions reçues sur MES posts (identifiés par mon prénom)
+    // 2) Réactions reçues sur MES posts (nouvelles, d'après leur date)
     if (prenom) {
-      const mesPosts = posts.filter((p) => (p.auteur || "").trim().toLowerCase() === prenom.trim().toLowerCase());
-      const idsMoi = mesPosts.map((p) => p.id);
-      if (idsMoi.length > 0) {
-        const reacts = await chargerReactions();
-        let totalReacts = 0;
-        for (const id of idsMoi) {
-          totalReacts += nbReacts(reacts[id]);
-        }
-        const vuReacts = parseInt(lire("biodex_reactions_vues") || "0", 10);
-        reactionsRecues = Math.max(0, totalReacts - vuReacts);
+      const moi = prenom.trim().toLowerCase();
+      const mesPosts = posts.filter((p) => (p.auteur || "").trim().toLowerCase() === moi);
+      const mapEspece = {}; mesPosts.forEach((p) => { mapEspece[p.id] = p.espece || "ta trouvaille"; });
+      const idsMoi = new Set(mesPosts.map((p) => p.id));
+      if (idsMoi.size > 0) {
+        const raw = await chargerReactionsRaw();
+        let vuDate = lire("biodex_reactions_vu_date");
+        if (!vuDate) { vuDate = new Date().toISOString(); ecrire("biodex_reactions_vu_date", vuDate); }
+        const nouvelles = raw.filter((r) => idsMoi.has(r.post_id) && (r.auteur || "").trim().toLowerCase() !== moi && r.created_at && new Date(r.created_at) > new Date(vuDate));
+        reactionsRecues = nouvelles.length;
+        reactionsDetail = nouvelles.slice(0, 6).map((r) => ({ qui: r.auteur || "Quelqu'un", emoji: (REACTIONS.find((x) => x.type === r.type) || {}).emoji || "❤️", espece: mapEspece[r.post_id] || "ta trouvaille" }));
       }
     }
   } catch {}
@@ -1135,17 +1168,18 @@ async function calculerNotifications(prenom) {
     // 3) Nouvelles idées depuis la dernière visite
     const idees = await chargerIdees();
     const vuIdees = lire("biodex_idees_vu");
-    if (vuIdees) ideesNouvelles = idees.filter((i) => i.created_at && new Date(i.created_at) > new Date(vuIdees)).length;
-    else ideesNouvelles = idees.length;
+    const nouvelles = vuIdees ? idees.filter((i) => i.created_at && new Date(i.created_at) > new Date(vuIdees)) : idees.slice(0, 20);
+    ideesNouvelles = nouvelles.length;
+    ideesDetail = nouvelles.slice(0, 6).map((i) => ({ auteur: i.auteur || "Anonyme", idee: (i.idee || "").slice(0, 70) }));
   } catch {}
 
-  // 4) Nouveauté d'appli : y a-t-il une version non "vue" ?
+  // 4) Nouveauté d'appli
   const vuVersion = lire("biodex_nouveautes_vu");
   const versionRecente = NOUVEAUTES.length ? NOUVEAUTES[0].v : "";
   const nouvelleVersion = versionRecente && vuVersion !== versionRecente ? 1 : 0;
 
   const total = murNouveaux + ideesNouvelles + reactionsRecues + nouvelleVersion;
-  return { total, murNouveaux, ideesNouvelles, reactionsRecues, nouvelleVersion, versionRecente };
+  return { total, murNouveaux, ideesNouvelles, reactionsRecues, nouvelleVersion, versionRecente, murDetail, ideesDetail, reactionsDetail };
 }
 
 // Récupère la date de création du post le plus récent (léger, pour la pastille "nouveau")
@@ -1181,6 +1215,15 @@ async function supprimerIdee(id) {
   if (!sb) throw new Error("Service non configuré");
   const { error } = await sb.from("idees").delete().eq("id", id);
   if (error) throw new Error("Suppression impossible");
+  return true;
+}
+
+// Marque une idée comme réalisée (ou non). Partagé avec toute la bande.
+async function marquerIdeeRealisee(id, realisee) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { error } = await sb.from("idees").update({ realisee: !!realisee }).eq("id", id);
+  if (error) throw new Error("Mise à jour impossible");
   return true;
 }
 
@@ -2003,7 +2046,44 @@ async function chercherTaxons(terme, signal) {
 // ---------- Rareté d'une espèce via iNaturalist (nombre d'observations mondiales) ----------
 // Mise en cache dans le navigateur : chaque espèce n'est interrogée qu'une fois.
 // Seuils ajustables selon ce qui te semble juste pour ta faune.
-const SEUILS_RARETE = { tresRare: 2000, rare: 20000, peuCommune: 150000 };
+// "peuCommune" abaissé à 80000 : une espèce vue 80 000+ fois dans le monde est vraiment commune.
+const SEUILS_RARETE = { tresRare: 2000, rare: 20000, peuCommune: 80000 };
+
+// Valeur "forcée" pour les banalités notoires (voir ESPECES_COMMUNES) : garantit "commune".
+const COMMUNE_SENTINELLE = 999999;
+
+// Espèces ultra-communes mais peu photographiées sur iNaturalist (donc faussement "rares").
+// On les force à "commune". Liste facile à compléter (mots-clés, nom scientifique ou français).
+const ESPECES_COMMUNES = [
+  "musca domestica", "mouche domestique",
+  "culex", "aedes", "anopheles", "moustique",
+  "aphidoidea", "aphididae", "puceron",
+  "drosophila", "drosophile",
+  "calliphora", "lucilia",
+  "blattella germanica", "blatta orientalis",
+  "fannia canicularis",
+];
+function estEspeceCommune(nom) {
+  const n = sansAccents(nom || "");
+  if (!n) return false;
+  return ESPECES_COMMUNES.some((k) => n.includes(sansAccents(k)));
+}
+
+// Convertit un nombre d'observations mondiales iNaturalist en rareté de carte (1-100).
+// Aligné sur les paliers du jeu : holographique >= 65 (rare), légendaire >= 85 (très rare).
+function rareteDepuisCount(count) {
+  if (count == null || typeof count !== "number") return null;
+  const lc = Math.log10(Math.max(1, count));
+  const seg = (loMin, loMax, rMin, rMax) => {
+    const t = Math.min(1, Math.max(0, (lc - loMin) / (loMax - loMin)));
+    return Math.round(rMax - t * (rMax - rMin));
+  };
+  const S = SEUILS_RARETE;
+  if (count < S.tresRare) return seg(1, Math.log10(S.tresRare), 85, 100);
+  if (count < S.rare) return seg(Math.log10(S.tresRare), Math.log10(S.rare), 65, 84);
+  if (count < S.peuCommune) return seg(Math.log10(S.rare), Math.log10(S.peuCommune), 45, 64);
+  return seg(Math.log10(S.peuCommune), 7, 15, 44);
+}
 
 function niveauRarete(count) {
   if (count == null || typeof count !== "number") return null;
@@ -2026,19 +2106,21 @@ function BadgeRarete({ count, style }) {
 
 function litCacheRarete(sci) {
   try {
-    const brut = localStorage.getItem("biodex:rarete:" + sci.toLowerCase().trim());
+    const brut = localStorage.getItem("biodex:rarete:v2:" + sci.toLowerCase().trim());
     if (!brut) return undefined;
     return JSON.parse(brut);
   } catch { return undefined; }
 }
 function ecritCacheRarete(sci, count) {
-  try { localStorage.setItem("biodex:rarete:" + sci.toLowerCase().trim(), JSON.stringify({ count, maj: Date.now() })); } catch {}
+  try { localStorage.setItem("biodex:rarete:v2:" + sci.toLowerCase().trim(), JSON.stringify({ count, maj: Date.now() })); } catch {}
 }
 
 // Renvoie le nombre d'observations mondiales (number), ou null si inconnu/indispo.
 async function chargerRareteInat(sci) {
   if (!sci || !sci.trim()) return null;
   const cle = sci.trim();
+  // Banalités notoires : forcées à "commune" sans même interroger le réseau.
+  if (estEspeceCommune(cle)) { ecritCacheRarete(cle, COMMUNE_SENTINELLE); return COMMUNE_SENTINELLE; }
   const cache = litCacheRarete(cle);
   if (cache && typeof cache.count === "number") return cache.count;
   try {
@@ -2245,6 +2327,316 @@ function Classement({ onFermer }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Anecdotes entomologiques fiables (faits bien établis) pour la carte "Le savais-tu ?".
+const ANECDOTES = [
+  "Les fourmis n'ont pas de poumons : elles respirent par de minuscules orifices appelés stigmates, répartis le long de leur corps.",
+  "Une abeille doit butiner environ 4 millions de fleurs pour produire 1 kg de miel.",
+  "Au cours de sa vie, une seule coccinelle peut dévorer plusieurs milliers de pucerons.",
+  "Les libellules volaient déjà il y a 300 millions d'années, avant les dinosaures — certaines espèces fossiles atteignaient 70 cm d'envergure.",
+  "Le grillon « chante » en frottant ses ailes l'une contre l'autre : c'est la stridulation.",
+  "Les papillons goûtent avec leurs pattes : ils y possèdent des récepteurs du goût.",
+  "Une puce peut sauter environ 100 à 150 fois la hauteur de son corps.",
+  "Les bousiers peuvent s'orienter la nuit grâce à la lumière de la Voie lactée — un cas unique dans le monde animal.",
+  "Les insectes représentent plus de la moitié de toutes les espèces animales connues sur Terre.",
+  "Le bourdonnement du moustique vient de ses ailes, qui battent plusieurs centaines de fois par seconde.",
+  "Une fourmi peut porter plusieurs dizaines de fois son propre poids.",
+  "Le ver luisant n'est pas un ver mais un coléoptère : c'est souvent la femelle qui émet de la lumière pour attirer les mâles.",
+  "Les abeilles s'indiquent la direction des fleurs par une « danse frétillante » — une découverte qui a valu un prix Nobel à Karl von Frisch.",
+  "Dérangée, la chenille du machaon déploie un organe orange en forme de Y (l'osmétérium) qui dégage une odeur repoussante.",
+  "Certaines cigales d'Amérique du Nord passent jusqu'à 17 ans sous terre avant d'émerger tous ensemble.",
+  "La mante religieuse peut pivoter la tête à près de 180°, ce qui est rare chez les insectes.",
+  "Les termitières sont ventilées naturellement : leur architecture a inspiré des bâtiments à climatisation passive.",
+  "Le papillon monarque peut parcourir jusqu'à 4 000 km lors de sa migration en Amérique du Nord.",
+  "Chez les pucerons, les femelles naissent parfois déjà porteuses de la génération suivante, ce qui accélère énormément leur multiplication.",
+  "Le « sang » des insectes, l'hémolymphe, n'est pas rouge : il ne transporte pas l'oxygène, assuré par les stigmates.",
+  "Une ruche en pleine saison peut abriter jusqu'à 60 000 abeilles.",
+  "Les gerris marchent sur l'eau grâce à de fins poils hydrophobes sous leurs pattes — ce sont en fait des punaises.",
+  "Le bourdon peut voler par temps plus frais que l'abeille : il réchauffe ses muscles en les faisant vibrer.",
+  "Les phasmes sont des maîtres du camouflage : certains imitent à s'y méprendre une brindille ou une feuille.",
+  "La coccinelle asiatique, introduite pour lutter contre les pucerons, est devenue invasive et concurrence nos coccinelles locales.",
+  "Un essaim de criquets pèlerins peut compter des milliards d'individus et parcourir plus de 100 km en une journée.",
+  "Les lucioles produisent une lumière « froide », presque sans chaleur, au rendement remarquable.",
+  "Certaines fourmis « élèvent » des pucerons pour récolter leur miellat sucré, comme un éleveur avec son troupeau.",
+  "Le dytique, coléoptère aquatique, emporte une réserve d'air sous ses élytres pour respirer en plongée.",
+  "Les mâles de certains papillons de nuit détectent les phéromones d'une femelle à plusieurs kilomètres grâce à leurs antennes plumeuses.",
+];
+
+function LeSaviasTu() {
+  const [i, setI] = useState(() => Math.floor(Date.now() / 864e5) % ANECDOTES.length);
+  const [ferme, setFerme] = useState(false);
+  if (ferme) return null;
+  const autre = () => setI((v) => (v + 1 + Math.floor(Math.random() * (ANECDOTES.length - 1))) % ANECDOTES.length);
+  return (
+    <div style={{ position: "relative", marginBottom: 16, padding: "14px 16px", borderRadius: 12, background: "linear-gradient(135deg, #26301C, #1C2415)", border: "1px solid #3E4E2A", boxShadow: "0 2px 10px rgba(0,0,0,.25)" }}>
+      <button onClick={() => setFerme(true)} title="Masquer" style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", color: C.papierSombre, fontSize: 16, cursor: "pointer", lineHeight: 1, padding: 2 }}>×</button>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
+        <span style={{ fontSize: 17 }}>💡</span>
+        <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#A8C97E" }}>Le savais-tu ?</span>
+      </div>
+      <div style={{ fontFamily: serif, fontSize: 15, color: C.papier, lineHeight: 1.5, marginBottom: 10 }}>{ANECDOTES[i]}</div>
+      <button onClick={autre} className="bd-press" style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair, background: "transparent", border: `1px solid ${C.bordure}`, borderRadius: 16, padding: "5px 12px", cursor: "pointer" }}>
+        🔀 Une autre
+      </button>
+    </div>
+  );
+}
+
+// ---------- Quiz entomo : banque de questions fiables + tirage quotidien ----------
+// Chaque question : { q, options:[...], reponse: index de la bonne réponse, indice? }
+const QUIZ_QUESTIONS = [
+  { q: "Combien de pattes possède un insecte adulte ?", options: ["4", "6", "8"], reponse: 1 },
+  { q: "En combien de parties le corps d'un insecte est-il divisé ?", options: ["2", "3", "4"], reponse: 1, indice: "Tête, thorax, abdomen." },
+  { q: "Les araignées sont-elles des insectes ?", options: ["Oui", "Non, ce sont des arachnides"], reponse: 1 },
+  { q: "Combien d'ailes a une mouche ?", options: ["2", "4", "6"], reponse: 0, indice: "Les diptères n'ont qu'une paire d'ailes." },
+  { q: "Sur quelle partie du corps se trouvent les pattes et les ailes d'un insecte ?", options: ["La tête", "Le thorax", "L'abdomen"], reponse: 1 },
+  { q: "Comment appelle-t-on la transformation de la chenille en papillon ?", options: ["La mue", "La métamorphose", "La diapause"], reponse: 1 },
+  { q: "Que mange principalement la coccinelle ?", options: ["Du nectar", "Des pucerons", "Des feuilles"], reponse: 1 },
+  { q: "Comment un insecte respire-t-il ?", options: ["Avec des poumons", "Par des stigmates", "Par la peau"], reponse: 1, indice: "De petits orifices sur les côtés du corps." },
+  { q: "À quel ordre appartiennent les papillons ?", options: ["Coléoptères", "Lépidoptères", "Diptères"], reponse: 1 },
+  { q: "À quel ordre appartiennent les scarabées et coccinelles ?", options: ["Coléoptères", "Hyménoptères", "Odonates"], reponse: 0 },
+  { q: "À quel ordre appartiennent les abeilles, guêpes et fourmis ?", options: ["Diptères", "Hyménoptères", "Hémiptères"], reponse: 1 },
+  { q: "Comment le grillon produit-il son chant ?", options: ["Avec sa voix", "En frottant ses ailes", "En tapant du pied"], reponse: 1, indice: "C'est la stridulation." },
+  { q: "Dans une ruche, quelle abeille pond les œufs ?", options: ["La reine", "Les ouvrières", "Les faux-bourdons"], reponse: 0 },
+  { q: "Le « ver luisant » est en réalité…", options: ["Un ver", "Un coléoptère", "une chenille"], reponse: 1 },
+  { q: "Qu'est-ce que l'hémolymphe ?", options: ["Le « sang » des insectes", "Une glande", "Une antenne"], reponse: 0 },
+  { q: "Quel insecte peut passer de nombreuses années sous terre avant d'émerger ?", options: ["La cigale", "La mouche", "Le papillon"], reponse: 0 },
+  { q: "Quel insecte pollinise en faisant vibrer les fleurs ?", options: ["Le bourdon", "La fourmi", "Le moustique"], reponse: 0 },
+  { q: "Les mouches et moustiques appartiennent à l'ordre des…", options: ["Diptères", "Lépidoptères", "Coléoptères"], reponse: 0 },
+  { q: "La métamorphose complète passe par un stade de…", options: ["Nymphe (chrysalide)", "Cocon de soie uniquement", "Aucun stade intermédiaire"], reponse: 0 },
+  { q: "Quel est le régime alimentaire de la mante religieuse ?", options: ["Herbivore", "Carnivore", "Nectarivore"], reponse: 1 },
+  { q: "Environ combien de fleurs une abeille butine-t-elle pour produire 1 kg de miel ?", options: ["4 000", "40 000", "4 millions"], reponse: 2 },
+  { q: "Que transporte un insecte pollinisateur d'une fleur à l'autre ?", options: ["Du pollen", "De l'eau", "De la sève"], reponse: 0 },
+  { q: "Pourquoi un insecte doit-il muer pour grandir ?", options: ["Son squelette est externe et rigide", "Il change de couleur", "Pour se reproduire"], reponse: 0, indice: "Son exosquelette ne s'étire pas." },
+  { q: "Les libellules se nourrissent surtout…", options: ["De plantes aquatiques", "D'autres insectes qu'elles chassent en vol", "de pollen"], reponse: 1 },
+  // Reconnaissance par indices
+  { q: "Rouge à points noirs, je dévore les pucerons. Qui suis-je ?", options: ["La coccinelle", "Le gendarme", "La punaise"], reponse: 0 },
+  { q: "Grandes mâchoires en bois de cerf chez le mâle, je vis dans le bois mort. Qui suis-je ?", options: ["Le hanneton", "Le lucane cerf-volant", "Le carabe"], reponse: 1 },
+  { q: "Je ressemble à une brindille, maître du camouflage. Qui suis-je ?", options: ["Le phasme", "La sauterelle", "La mante"], reponse: 0 },
+  { q: "Grandes ailes transparentes, j'chasse en vol acrobatique au bord de l'eau. Qui suis-je ?", options: ["La libellule", "Le papillon", "La guêpe"], reponse: 0 },
+  { q: "Pattes avant repliées comme pour prier, redoutable prédateur à l'affût. Qui suis-je ?", options: ["Le criquet", "La mante religieuse", "Le grillon"], reponse: 1 },
+  { q: "Je marche sur l'eau grâce à mes longues pattes. Qui suis-je ?", options: ["Le gerris", "Le dytique", "La notonecte"], reponse: 0 },
+  { q: "Pattes arrière puissantes, je saute loin et stridule dans les prés. Qui suis-je ?", options: ["La sauterelle", "La fourmi", "L'abeille"], reponse: 0 },
+  { q: "J'émets une lumière froide la nuit pour attirer un partenaire. Qui suis-je ?", options: ["Le ver luisant", "Le moustique", "La cigale"], reponse: 0 },
+];
+
+// PRNG déterministe (mulberry32) pour un tirage stable par jour.
+function grainePRNG(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function jourActuel() { return Math.floor(Date.now() / 864e5); }
+
+// Sélectionne n questions de façon déterministe pour un jour donné (même quiz pour tous ce jour-là).
+function questionsDuJour(jour, n = 5) {
+  const rng = grainePRNG((jour * 2654435761) >>> 0);
+  const idx = QUIZ_QUESTIONS.map((_, i) => i);
+  for (let i = idx.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
+  }
+  return idx.slice(0, n).map((i) => QUIZ_QUESTIONS[i]);
+}
+
+const QUIZ_BONUS = 3; // points bonus si sans faute
+
+function Quiz() {
+  const jour = jourActuel();
+  const [questions] = useState(() => questionsDuJour(jour, 5));
+  const [fait, setFait] = useState(() => { try { const b = localStorage.getItem("biodex:quiz:" + jour); return b ? JSON.parse(b) : null; } catch { return null; } });
+  const [etape, setEtape] = useState(0);
+  const [choix, setChoix] = useState(null);
+  const [bonnes, setBonnes] = useState(0);
+  const [total, setTotal] = useState(() => { try { return parseInt(localStorage.getItem("biodex:quiz:total") || "0", 10) || 0; } catch { return 0; } });
+
+  function repondre(i) {
+    if (choix !== null) return;
+    setChoix(i);
+    if (i === questions[etape].reponse) setBonnes((b) => b + 1);
+  }
+  function suivante() {
+    if (etape + 1 < questions.length) { setEtape(etape + 1); setChoix(null); }
+    else {
+      const sansFaute = bonnes === questions.length;
+      const points = bonnes + (sansFaute ? QUIZ_BONUS : 0);
+      const res = { score: bonnes, sur: questions.length, sansFaute, points };
+      try {
+        localStorage.setItem("biodex:quiz:" + jour, JSON.stringify(res));
+        const nt = total + points;
+        localStorage.setItem("biodex:quiz:total", String(nt));
+        setTotal(nt);
+      } catch {}
+      setFait(res);
+    }
+  }
+
+  // Écran résultat (quiz terminé ou déjà fait aujourd'hui)
+  if (fait) {
+    return (
+      <div style={{ padding: "8px 4px", textAlign: "center" }}>
+        <div style={{ fontSize: 44, marginBottom: 8 }}>{fait.sansFaute ? "🏆" : fait.score >= 3 ? "🎉" : "🧠"}</div>
+        <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier, marginBottom: 4 }}>Quiz du jour terminé !</div>
+        <div style={{ fontFamily: sans, fontSize: 15, color: C.papierSombre, marginBottom: 16 }}>
+          {fait.score} / {fait.sur} bonne{fait.score > 1 ? "s" : ""} réponse{fait.score > 1 ? "s" : ""}
+        </div>
+        <div style={{ display: "inline-block", padding: "14px 22px", borderRadius: 12, background: "linear-gradient(#26301C, #1C2415)", border: "1px solid #3E4E2A", marginBottom: 16 }}>
+          <div style={{ fontFamily: serif, fontSize: 30, fontWeight: 700, color: C.ambre }}>+{fait.points} pts</div>
+          {fait.sansFaute && <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: "#A8C97E", marginTop: 2 }}>✨ Sans faute ! (+{QUIZ_BONUS} bonus)</div>}
+        </div>
+        <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 6 }}>Total accumulé : <b style={{ color: C.ambreClair }}>{total} pts</b></div>
+        <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, fontStyle: "italic" }}>Reviens demain pour un nouveau quiz ! 🐞</div>
+      </div>
+    );
+  }
+
+  // Écran de jeu
+  const q = questions[etape];
+  const repondu = choix !== null;
+  return (
+    <div style={{ padding: "4px 2px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.papierSombre, letterSpacing: 0.5 }}>QUESTION {etape + 1} / {questions.length}</span>
+        <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>🧠 {bonnes} ✓</span>
+      </div>
+      {/* barre de progression */}
+      <div style={{ height: 5, borderRadius: 3, background: "#0F130C", marginBottom: 18, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${((etape + (repondu ? 1 : 0)) / questions.length) * 100}%`, background: `linear-gradient(90deg, ${C.ambre}, ${C.ambreClair})`, borderRadius: 3, transition: "width .3s ease" }} />
+      </div>
+
+      <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.papier, lineHeight: 1.4, marginBottom: 16 }}>{q.q}</div>
+
+      <div style={{ display: "grid", gap: 9, marginBottom: 14 }}>
+        {q.options.map((opt, i) => {
+          const estBonne = i === q.reponse;
+          const estChoix = i === choix;
+          let bg = C.panneau, bord = C.bordure, coul = C.papier;
+          if (repondu) {
+            if (estBonne) { bg = "linear-gradient(#25361F, #1E2A18)"; bord = "#5C8A3C"; coul = "#B7DA8E"; }
+            else if (estChoix) { bg = "linear-gradient(#3A241F, #2C1B18)"; bord = "#9A4A3C"; coul = "#E39A8E"; }
+          }
+          return (
+            <button key={i} onClick={() => repondre(i)} disabled={repondu} className={repondu ? "" : "bd-press"}
+              style={{ textAlign: "left", padding: "13px 15px", borderRadius: 10, border: `1px solid ${bord}`, background: bg, color: coul, fontFamily: sans, fontSize: 15, fontWeight: 600, cursor: repondu ? "default" : "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <span>{opt}</span>
+              {repondu && estBonne && <span>✓</span>}
+              {repondu && estChoix && !estBonne && <span>✕</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {repondu && q.indice && (
+        <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, fontStyle: "italic", marginBottom: 14, padding: "8px 12px", background: C.panneau, borderRadius: 8, borderLeft: `3px solid ${C.ambre}` }}>
+          💡 {q.indice}
+        </div>
+      )}
+
+      {repondu && (
+        <Bouton variante="primaire" onClick={suivante} style={{ width: "100%" }}>
+          {etape + 1 < questions.length ? "Question suivante →" : "Voir mon résultat 🏁"}
+        </Bouton>
+      )}
+    </div>
+  );
+}
+
+// Construit les liens iNaturalist (contribution pré-remplie + exploration) pour une observation.
+// Enquêtes nationales de sciences participatives de l'OPIE (espèces suivies).
+// Facile à compléter si l'OPIE lance de nouvelles enquêtes.
+const ENQUETES_OPIE = [
+  { cles: ["lucanus cervus", "lucane cerf-volant", "lucane cerf volant", "lucane"], nom: "Lucane cerf-volant", url: "https://enquetes.insectes.org/#list-investigations" },
+  { cles: ["rosalia alpina", "rosalie des alpes", "rosalie"], nom: "Rosalie des Alpes", url: "https://enquetes.insectes.org/#list-investigations" },
+];
+function enqueteOpiePour(obs) {
+  if (!obs) return null;
+  const n = sansAccents(obs.nom);
+  const s = sansAccents(obs.nomSci);
+  for (const e of ENQUETES_OPIE) {
+    if (e.cles.some((c) => { const cc = sansAccents(c); return (n && n.includes(cc)) || (s && s.includes(cc)); })) return e;
+  }
+  return null;
+}
+
+function urlsInaturalist(obs) {
+  const sci = (obs.nomSci || "").trim();
+  const nom = (obs.nom || "").trim();
+  const q = encodeURIComponent(sci || nom);
+  const g = obs.gps && typeof obs.gps.lat === "number" && typeof obs.gps.lon === "number" ? obs.gps : null;
+  let dateStr = "";
+  try { if (obs.date) dateStr = new Date(obs.date).toISOString().slice(0, 10); } catch {}
+  // Niveau 1 : contribuer (nouvelle observation pré-remplie)
+  const p = [];
+  if (sci) p.push("taxon_name=" + encodeURIComponent(sci));
+  else if (nom) p.push("species_guess=" + encodeURIComponent(nom));
+  if (g) { p.push("latitude=" + g.lat); p.push("longitude=" + g.lon); }
+  if (dateStr) p.push("observed_on_string=" + dateStr);
+  const contrib = "https://www.inaturalist.org/observations/new?" + p.join("&");
+  // Niveau 3 : explorer l'espèce + observations à proximité
+  const explore = "https://www.inaturalist.org/search?q=" + q;
+  const proximite = g ? ("https://www.inaturalist.org/observations?taxon_name=" + encodeURIComponent(sci || nom) + "&lat=" + g.lat + "&lng=" + g.lon + "&radius=50&subview=map") : null;
+  return { contrib, explore, proximite, aGps: !!g };
+}
+
+function PasserelleInat({ obs }) {
+  if (!obs || (!obs.nom && !obs.nomSci)) return null;
+  const u = urlsInaturalist(obs);
+  const opie = enqueteOpiePour(obs);
+  const lien = { display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 9, textDecoration: "none", fontFamily: sans, fontSize: 13.5, fontWeight: 600 };
+  return (
+    <div>
+      {/* Enquête nationale OPIE (espèces suivies) */}
+      {opie && (
+        <div style={{ marginTop: 16, padding: "14px 15px", borderRadius: 12, background: "linear-gradient(135deg, #2A2417, #201B12)", border: "1px solid #6B5A2E" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 18 }}>🇫🇷</span>
+            <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: "#E0B341" }}>Enquête nationale OPIE</span>
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierClair, lineHeight: 1.5, marginBottom: 12 }}>
+            Le <b style={{ color: C.papier }}>{opie.nom}</b> fait l'objet d'un suivi participatif national par l'Office pour les insectes et leur environnement. Signale ton observation : validée par des experts, elle sera versée à l'INPN (Inventaire National du Patrimoine Naturel) !
+          </div>
+          <a href={opie.url} target="_blank" rel="noopener noreferrer" style={{ ...lien, background: "linear-gradient(#B8862E, #9A6E24)", color: "#1A1408", justifyContent: "center", fontWeight: 800 }}>
+            🔎 Signaler à l'enquête OPIE
+          </a>
+          <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 8, lineHeight: 1.45, fontStyle: "italic" }}>
+            Le formulaire OPIE s'ouvre sur leur site (tu y saisis lieu, date et photo). Une espèce patrimoniale à valoriser !
+          </div>
+        </div>
+      )}
+
+      {/* Passerelle iNaturalist */}
+      <div style={{ marginTop: 16, padding: "14px 15px", borderRadius: 12, background: "linear-gradient(135deg, #1A2820, #14201A)", border: "1px solid #2E4A3A" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <span style={{ fontSize: 18 }}>🔬</span>
+        <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: "#7FC79B" }}>Science participative</span>
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5, marginBottom: 12 }}>
+        Partage ta trouvaille sur iNaturalist : validée par la communauté, elle rejoint une base mondiale utilisée par de vrais chercheurs (répartition des espèces, suivi des populations…).
+      </div>
+      <div style={{ display: "grid", gap: 8 }}>
+        <a href={u.contrib} target="_blank" rel="noopener noreferrer" style={{ ...lien, background: "linear-gradient(#2E7D4F, #276B44)", color: "#EAF6EE", justifyContent: "center", fontWeight: 700 }}>
+          🔬 Contribuer sur iNaturalist
+        </a>
+        <a href={u.explore} target="_blank" rel="noopener noreferrer" style={{ ...lien, background: C.panneau, color: C.papier, border: `1px solid ${C.bordure}` }}>
+          🌍 Explorer cette espèce
+        </a>
+        {u.proximite && (
+          <a href={u.proximite} target="_blank" rel="noopener noreferrer" style={{ ...lien, background: C.panneau, color: C.papier, border: `1px solid ${C.bordure}` }}>
+            📍 Observations près d'ici
+          </a>
+        )}
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 10, lineHeight: 1.45, fontStyle: "italic" }}>
+        L'espèce, le lieu et la date sont pré-remplis. Tu ajoutes ta photo et tu valides directement sur iNaturalist (compte gratuit requis).
+      </div>
+      </div>
     </div>
   );
 }
@@ -3232,6 +3624,12 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
     setAvertAuth("");
     try {
       const c = await genererCarte(obs.nom, obs.nomSci, obs.photo);
+      // Rareté de carte basée sur les vraies données iNaturalist (IA en secours si indispo).
+      try {
+        const count = await chargerRareteInat(obs.nomSci || obs.nom);
+        const rData = rareteDepuisCount(count);
+        if (rData != null && c) c.rarete = rData;
+      } catch {}
       await onMajCarte(obs.id, c);
       setCarteEtat("");
       if (c && c.authentique === false) {
@@ -3328,6 +3726,9 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
           {obs.notes}
         </div>
       )}
+
+      {/* Passerelle science participative (iNaturalist) */}
+      <PasserelleInat obs={obs} />
 
       {/* Fiche naturaliste */}
       <div style={{ marginTop: 18 }}>
@@ -3600,9 +4001,10 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
   const n = notifs || {};
   const [voirNouveautes, setVoirNouveautes] = useState((n.nouvelleVersion || 0) > 0);
 
-  // Marque les nouveautés d'appli comme vues dès qu'on ouvre le centre
+  // Marque les nouveautés d'appli + les réactions comme vues dès qu'on ouvre le centre
   useEffect(() => {
     try { if (NOUVEAUTES.length) localStorage.setItem("biodex_nouveautes_vu", NOUVEAUTES[0].v); } catch {}
+    try { localStorage.setItem("biodex_reactions_vu_date", new Date().toISOString()); } catch {}
   }, []);
 
   const rien = (n.murNouveaux || 0) === 0 && (n.ideesNouvelles || 0) === 0 && (n.reactionsRecues || 0) === 0;
@@ -3623,31 +4025,40 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
           )}
 
           {(n.murNouveaux || 0) > 0 && (
-            <button onClick={onAllerMur} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", marginBottom: 8, borderRadius: 10, border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", textAlign: "left" }}>
+            <button onClick={onAllerMur} style={{ width: "100%", display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", marginBottom: 8, borderRadius: 10, border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", textAlign: "left" }}>
               <span style={{ fontSize: 22 }}>🆕</span>
               <span style={{ flex: 1 }}>
-                <span style={{ display: "block", fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.papier }}>{n.murNouveaux} nouvelle{n.murNouveaux > 1 ? "s" : ""} trouvaille{n.murNouveaux > 1 ? "s" : ""} sur le mur</span>
-                <span style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>Touche pour voir le mur commun →</span>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.papier, marginBottom: 4 }}>{n.murNouveaux} nouvelle{n.murNouveaux > 1 ? "s" : ""} trouvaille{n.murNouveaux > 1 ? "s" : ""} sur le mur</span>
+                {(n.murDetail || []).map((d, i) => (
+                  <span key={i} style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5 }}>• <b style={{ color: C.papier, fontWeight: 600 }}>{d.espece}</b> par {d.auteur}</span>
+                ))}
+                {n.murNouveaux > (n.murDetail || []).length && <span style={{ display: "block", fontFamily: sans, fontSize: 12, color: C.papierSombre, fontStyle: "italic", marginTop: 2 }}>…et {n.murNouveaux - (n.murDetail || []).length} autre{n.murNouveaux - (n.murDetail || []).length > 1 ? "s" : ""}</span>}
               </span>
             </button>
           )}
 
           {(n.reactionsRecues || 0) > 0 && (
-            <button onClick={onAllerMur} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", marginBottom: 8, borderRadius: 10, border: "1px solid #A8863A", background: "linear-gradient(#2C3623, #232B1D)", cursor: "pointer", textAlign: "left" }}>
+            <button onClick={onAllerMur} style={{ width: "100%", display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", marginBottom: 8, borderRadius: 10, border: "1px solid #A8863A", background: "linear-gradient(#2C3623, #232B1D)", cursor: "pointer", textAlign: "left" }}>
               <span style={{ fontSize: 22 }}>🔥</span>
               <span style={{ flex: 1 }}>
-                <span style={{ display: "block", fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.ambreClair }}>{n.reactionsRecues} réaction{n.reactionsRecues > 1 ? "s" : ""} sur tes photos</span>
-                <span style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>La bande a aimé tes trouvailles !</span>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.ambreClair, marginBottom: 4 }}>{n.reactionsRecues} réaction{n.reactionsRecues > 1 ? "s" : ""} sur tes trouvailles</span>
+                {(n.reactionsDetail || []).map((d, i) => (
+                  <span key={i} style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5 }}><b style={{ color: C.papier, fontWeight: 600 }}>{d.qui}</b> {d.emoji} sur {d.espece}</span>
+                ))}
+                {n.reactionsRecues > (n.reactionsDetail || []).length && <span style={{ display: "block", fontFamily: sans, fontSize: 12, color: C.papierSombre, fontStyle: "italic", marginTop: 2 }}>…et {n.reactionsRecues - (n.reactionsDetail || []).length} autre{n.reactionsRecues - (n.reactionsDetail || []).length > 1 ? "s" : ""}</span>}
               </span>
             </button>
           )}
 
           {(n.ideesNouvelles || 0) > 0 && (
-            <button onClick={onAllerIdees} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", marginBottom: 8, borderRadius: 10, border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", textAlign: "left" }}>
+            <button onClick={onAllerIdees} style={{ width: "100%", display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", marginBottom: 8, borderRadius: 10, border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", textAlign: "left" }}>
               <span style={{ fontSize: 22 }}>💡</span>
               <span style={{ flex: 1 }}>
-                <span style={{ display: "block", fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.papier }}>{n.ideesNouvelles} nouvelle{n.ideesNouvelles > 1 ? "s" : ""} idée{n.ideesNouvelles > 1 ? "s" : ""}</span>
-                <span style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>Touche pour voir la boîte à idées →</span>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.papier, marginBottom: 4 }}>{n.ideesNouvelles} nouvelle{n.ideesNouvelles > 1 ? "s" : ""} idée{n.ideesNouvelles > 1 ? "s" : ""}</span>
+                {(n.ideesDetail || []).map((d, i) => (
+                  <span key={i} style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5 }}><b style={{ color: C.papier, fontWeight: 600 }}>{d.auteur}</b> : « {d.idee}{d.idee.length >= 70 ? "…" : ""} »</span>
+                ))}
+                {n.ideesNouvelles > (n.ideesDetail || []).length && <span style={{ display: "block", fontFamily: sans, fontSize: 12, color: C.papierSombre, fontStyle: "italic", marginTop: 2 }}>…et {n.ideesNouvelles - (n.ideesDetail || []).length} autre{n.ideesNouvelles - (n.ideesDetail || []).length > 1 ? "s" : ""}</span>}
               </span>
             </button>
           )}
@@ -3702,7 +4113,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
           <button onClick={onFermer} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
         </div>
         {item("🎯", "Missions saisonnières", "Défis d'observation de la bande", () => onAller("missions"), missionsNouv)}
-        {MUR_ACTIF && item("🏆", "La Ligue", "Dans l'onglet 🎴 Cartes", () => onAller("cartes"), 0)}
+        {MUR_ACTIF && item("🏆", "La Ligue", "Dans l'onglet 🎮 Jeu", () => onAller("cartes"), 0)}
         {MUR_ACTIF && item("🏅", "Classement", "Les meilleurs chasseurs de la bande", () => onAller("classement"), 0)}
         {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Mon profil" : "Se connecter", utilisateur ? "Ta collection d'espèces" : "Connexion facultative par email", () => onAller("connexion"), 0)}
@@ -4286,6 +4697,10 @@ function Aide({ onFermer, onImportTermine }) {
         <p style={p}>
           Si tu importes une photo depuis ta galerie (sans coordonnées) ou si le GPS n'a rien capté, tu peux placer le lieu à la main : dans le bloc position, touche « Placer sur la carte » et pointe l'endroit de l'observation. Pratique pour situer une trouvaille faite sans réseau ou importée après coup.
         </p>
+        <div style={t}>💡 Le savais-tu ?</div>
+        <p style={p}>
+          En haut de ta collection, une carte affiche une anecdote fascinante sur les insectes — une nouvelle chaque jour, et le bouton « 🔀 Une autre » pour en piocher d'autres. Toutes les anecdotes sont des faits fiables. Tu peux masquer la carte avec la croix (elle réapparaîtra à la prochaine ouverture).
+        </p>
         <div style={t}>📥 À trier (capture rapide)</div>
         <p style={p}>
           Sur le terrain, l'onglet « À trier » te laisse photographier à la chaîne sans rien remplir : la position GPS et la météo sont figées au moment de la prise. Plus tard, au calme, touche une photo en attente pour compléter l'identification et la classer dans ta collection. Si tu shootes hors réseau, la position est quand même figée et la météo est rattrapée (au bon endroit) au moment du tri.
@@ -4338,7 +4753,7 @@ function Aide({ onFermer, onImportTermine }) {
       <SectionPliable titre="🌐 La communauté">
         <div style={t}>🔔 Centre de notifications</div>
         <p style={p}>
-          La cloche 🔔 en haut regroupe tout ce qui s'est passé depuis ta dernière visite : nouvelles trouvailles sur le mur, réactions reçues sur tes photos, nouvelles idées de la bande, et un « Quoi de neuf » qui liste les dernières nouveautés de l'appli. Une pastille rouge indique le nombre d'éléments non vus.
+          La cloche 🔔 en haut regroupe tout ce qui s'est passé depuis ta dernière visite, avec le détail : quelles nouvelles trouvailles (espèce + auteur) sur le mur, qui a réagi à tes photos et avec quelle réaction, quelles nouvelles idées et de qui, et un « Quoi de neuf » qui liste les nouveautés de l'appli. Une pastille rouge indique le nombre d'éléments non vus. Si tu as installé BioDex sur ton écran d'accueil, une pastille apparaît aussi sur l'icône de l'appli (selon ton téléphone). Note : cette pastille se met à jour quand l'appli tourne, pas en temps réel quand elle est fermée (ce ne sont pas des notifications push).
         </p>
         <div style={t}>👤 Connexion (facultative)</div>
         <p style={p}>
@@ -4374,14 +4789,22 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>💡 Boîte à idées</div>
         <p style={p}>
-          Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Les meilleures finiront peut-être dans une prochaine version !
+          Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Réagis aux idées (👍 bonne idée, ❤️ coup de cœur, 🚀 vivement !) pour montrer lesquelles t'emballent — ça aide à voir ce qui suscite le plus d'intérêt. Une idée réalisée peut être cochée « ✅ Réalisée » (visible par tous). Les meilleures finiront peut-être dans une prochaine version !
         </p>
       </SectionPliable>
 
       <SectionPliable titre="🎴 Jeu & cartes">
         <div style={t}>🎴 Cartes de collection</div>
         <p style={p}>
-          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse, rareté) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Tout le jeu est regroupé dans l'onglet 🎴 en bas : « Cartes » (ta galerie), « ⚔️ Combat » (affronte l'IA) et « 🏆 Ligue » (défie la bande). En combat, chaque insecte a un type parmi 8 (🦋 Volant, 🪲 Cuirassé, 🐛 Rampant, 🦗 Bondissant, 🕷️ Venimeux, 💧 Aquatique, 🐜 Social, 🌙 Nocturne) avec des forces et faiblesses, des points de vie, de l'énergie qui se recharge, une attaque de base et une capacité spéciale qui coûte de l'énergie. Le bouton « 🔰 Forces & faiblesses des types » affiche le schéma complet de qui bat qui — un coup avec l'avantage de type fait ×1,5 de dégâts. Choisis ton insecte selon le type de l'adversaire ! Chaque forge coûte un appel (~0,8 centime).
+          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. La rareté de la carte (qui déclenche les cartes holographiques et légendaires scintillantes) s'appuie désormais sur les vraies données d'observation d'iNaturalist : plus une espèce est rare dans le monde, plus sa carte brille. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Tout le jeu est regroupé dans l'onglet 🎮 Jeu en bas : « 🎴 Cartes » (ta galerie), « ⚔️ Combat » (affronte l'IA), « 🏆 Ligue » (défie la bande) et « 🧠 Quiz » (5 questions par jour). En combat, chaque insecte a un type parmi 8 (🦋 Volant, 🪲 Cuirassé, 🐛 Rampant, 🦗 Bondissant, 🕷️ Venimeux, 💧 Aquatique, 🐜 Social, 🌙 Nocturne) avec des forces et faiblesses, des points de vie, de l'énergie qui se recharge, une attaque de base et une capacité spéciale qui coûte de l'énergie. Le bouton « 🔰 Forces & faiblesses des types » affiche le schéma complet de qui bat qui — un coup avec l'avantage de type fait ×1,5 de dégâts. Choisis ton insecte selon le type de l'adversaire ! Chaque forge coûte un appel (~0,8 centime).
+        </p>
+        <div style={t}>🔬 Science participative (iNaturalist)</div>
+        <p style={p}>
+          Sur la fiche d'un spécimen identifié, une section « Science participative » te permet de contribuer à la recherche : le bouton « 🔬 Contribuer sur iNaturalist » ouvre une nouvelle observation pré-remplie (espèce, lieu, date) — tu ajoutes ta photo et tu valides sur iNaturalist (compte gratuit). Une fois validée par la communauté, ton observation rejoint une base mondiale utilisée par de vrais chercheurs. Tu peux aussi « 🌍 Explorer cette espèce » ou voir les « 📍 Observations près d'ici ». La contribution reste manuelle (tu finalises sur iNaturalist) : c'est simple et sans configuration. De plus, si tu identifies une espèce suivie par une enquête nationale de l'OPIE (Lucane cerf-volant, Rosalie des Alpes), un encart 🇫🇷 spécial t'invite à la signaler directement à l'Office pour les insectes — ces observations sont validées par des experts et versées à l'INPN.
+        </p>
+        <div style={t}>🧠 Quiz du jour</div>
+        <p style={p}>
+          Dans l'onglet 🎮 Jeu, le sous-onglet « Quiz » propose chaque jour 5 questions sur les insectes (connaissances et reconnaissance par indices) — le même quiz pour toute la bande ce jour-là. Tu gagnes 1 point par bonne réponse, plus un bonus si tu fais un sans-faute. Un seul quiz par jour : reviens le lendemain pour de nouvelles questions ! Toutes les questions reposent sur des faits fiables.
         </p>
       </SectionPliable>
 
@@ -4511,6 +4934,8 @@ function Connexion({ onFermer, utilisateur, onDeconnexion }) {
 // ---------- Boîte à idées (vue) ----------
 function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
   const [idees, setIdees] = useState([]);
+  const [reactions, setReactions] = useState({}); // toutes les réactions (reactions_detail groupées)
+  const [besoinPrenom, setBesoinPrenom] = useState(false);
   const [etat, setEtat] = useState("chargement"); // chargement | ok | echec | inactif
   const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
   const [texte, setTexte] = useState("");
@@ -4521,8 +4946,38 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
   async function rafraichir() {
     if (!MUR_ACTIF) { setEtat("inactif"); return; }
     setEtat("chargement");
-    try { setIdees(await chargerIdees()); setEtat("ok"); }
-    catch { setEtat("echec"); }
+    try {
+      const [lst, rx] = await Promise.all([chargerIdees(), chargerReactions().catch(() => ({}))]);
+      setIdees(lst);
+      setReactions(rx || {});
+      setEtat("ok");
+    } catch { setEtat("echec"); }
+  }
+
+  // Réagir à une idée (toggle) : maj locale immédiate puis serveur.
+  async function surReactionIdee(ideeId, type) {
+    const moi = (prenom || saisiePrenom || "").trim();
+    if (!moi) { setBesoinPrenom(true); return; }
+    const cle = cleReactionIdee(ideeId);
+    const liste = (reactions[cle] && reactions[cle][type]) || [];
+    const dejaReagi = liste.map((n) => n.toLowerCase()).includes(moi.toLowerCase());
+    setReactions((prev) => {
+      const copie = { ...prev };
+      copie[cle] = { ...(copie[cle] || {}) };
+      const l = [...(copie[cle][type] || [])];
+      copie[cle][type] = dejaReagi ? l.filter((n) => n.toLowerCase() !== moi.toLowerCase()) : [...l, moi];
+      return copie;
+    });
+    try { await reagir(cle, type, moi, dejaReagi); }
+    catch { chargerReactions().then(setReactions).catch(() => {}); }
+  }
+
+  // Marquer une idée réalisée / à faire (partagé).
+  async function basculerRealisee(it) {
+    const nouveau = !it.realisee;
+    setIdees((prev) => prev.map((x) => x.id === it.id ? { ...x, realisee: nouveau } : x));
+    try { await marquerIdeeRealisee(it.id, nouveau); }
+    catch { rafraichir(); }
   }
 
   useEffect(() => { rafraichir(); }, []);
@@ -4574,11 +5029,14 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
 
       {/* Formulaire */}
       <div style={{ padding: "12px 14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10, marginBottom: 18 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: besoinPrenom ? 6 : 8 }}>
           <span style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, whiteSpace: "nowrap" }}>Ton prénom :</span>
-          <input value={saisiePrenom} onChange={(e) => setSaisiePrenom(e.target.value)} placeholder="ex : Sylvain" maxLength={40}
-            style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
+          <input value={saisiePrenom} onChange={(e) => { setSaisiePrenom(e.target.value); if (e.target.value.trim()) setBesoinPrenom(false); }} placeholder="ex : Sylvain" maxLength={40}
+            style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${besoinPrenom ? C.ambre : C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
         </div>
+        {besoinPrenom && (
+          <div style={{ fontFamily: sans, fontSize: 12, color: C.ambreClair, marginBottom: 8 }}>👆 Indique ton prénom pour réagir aux idées.</div>
+        )}
         <textarea value={texte} onChange={(e) => setTexte(e.target.value)} placeholder="Ton idée…" maxLength={500} rows={3}
           style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "10px 12px", fontFamily: sans, fontSize: 14, outline: "none", resize: "vertical", marginBottom: 8 }} />
         <Bouton variante="primaire" onClick={envoyer} disabled={envoiEtat === "envoi"} style={{ width: "100%" }}>
@@ -4595,22 +5053,51 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
           Aucune idée pour l'instant.<br />Sois le premier à en proposer une !
         </div>
       )}
-      {etat === "ok" && idees.map((it) => (
-        <div key={it.id} style={{ marginBottom: 10, padding: "12px 14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
+      {etat === "ok" && idees.map((it) => {
+        const rx = reactions[cleReactionIdee(it.id)] || {};
+        const moi = (prenom || saisiePrenom || "").trim().toLowerCase();
+        return (
+        <div key={it.id} style={{ marginBottom: 10, padding: "12px 14px", background: it.realisee ? "linear-gradient(#1A2216, #161C12)" : C.panneau, border: `1px solid ${it.realisee ? "#3E5A2E" : C.bordure}`, borderRadius: 10, opacity: it.realisee ? 0.85 : 1 }}>
+          {it.realisee && (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#8AAE6B", marginBottom: 6 }}>✅ Réalisée</div>
+          )}
           <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{it.idee}</div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
+
+          {/* Réactions d'intérêt */}
+          <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+            {IDEE_REACTIONS.map((r) => {
+              const liste = rx[r.type] || [];
+              const n = liste.length;
+              const jaiReagi = moi && liste.map((x) => x.toLowerCase()).includes(moi);
+              return (
+                <button key={r.type} onClick={() => surReactionIdee(it.id, r.type)} title={n > 0 ? liste.join(", ") : r.titre}
+                  style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 16, border: `1px solid ${jaiReagi ? C.ambre : (n > 0 ? "#A8863A" : C.bordure)}`, background: jaiReagi ? "linear-gradient(#3A4A2C, #2C3623)" : (n > 0 ? "linear-gradient(#2C3623, #232B1D)" : C.panneauClair), cursor: "pointer", fontFamily: sans, fontSize: 12.5 }}>
+                  <span style={{ fontSize: 14 }}>{r.emoji}</span>
+                  {n > 0 && <span style={{ fontWeight: 700, color: C.ambreClair, fontSize: 11.5 }}>{n}</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
             <span>💡 {it.auteur || "Anonyme"} · {it.created_at ? new Date(it.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
-            {confirmSuppr === it.id ? (
-              <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <button onClick={() => setConfirmSuppr(null)} style={{ fontFamily: sans, fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>Non</button>
-                <button onClick={() => supprimer(it.id)} style={{ fontFamily: sans, fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, cursor: "pointer" }}>Supprimer</button>
-              </span>
-            ) : (
-              <button onClick={() => setConfirmSuppr(it.id)} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 14, cursor: "pointer", padding: "0 4px" }} title="Supprimer">🗑️</button>
-            )}
+            <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <button onClick={() => basculerRealisee(it)} style={{ background: "none", border: `1px solid ${it.realisee ? "#5C8A3C" : C.bordure}`, color: it.realisee ? "#8AAE6B" : C.papierSombre, fontFamily: sans, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 14, cursor: "pointer" }}>
+                {it.realisee ? "↩︎ À refaire" : "✅ Réalisée"}
+              </button>
+              {confirmSuppr === it.id ? (
+                <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <button onClick={() => setConfirmSuppr(null)} style={{ fontFamily: sans, fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>Non</button>
+                  <button onClick={() => supprimer(it.id)} style={{ fontFamily: sans, fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, cursor: "pointer" }}>Supprimer</button>
+                </span>
+              ) : (
+                <button onClick={() => setConfirmSuppr(it.id)} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 14, cursor: "pointer", padding: "0 4px" }} title="Supprimer">🗑️</button>
+              )}
+            </span>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -4911,13 +5398,13 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
   const ordresCartes = ORDRES.map((o) => ({ ...o, n: cartes.filter((c) => deduireOrdre(c) === o.id).length })).filter((o) => o.n > 0);
   const nbAutresC = cartes.filter((c) => deduireOrdre(c) === "autres").length;
   const cartesAffichees = fOrdreC ? cartes.filter((c) => deduireOrdre(c) === fOrdreC) : cartes;
-  const sousOnglets = [["galerie", "🎴 Cartes"], ["combat", "⚔️ Combat"], ...(MUR_ACTIF ? [["ligue", "🏆 Ligue"]] : [])];
+  const sousOnglets = [["galerie", "🎴 Cartes"], ["combat", "⚔️ Combat"], ...(MUR_ACTIF ? [["ligue", "🏆 Ligue"]] : []), ["quiz", "🧠 Quiz"]];
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
         {sousOnglets.map(([id, label]) => (
           <button key={id} className="bd-press" onClick={() => setSousVue(id)}
-            style={{ flex: 1, fontFamily: sans, fontSize: 13.5, fontWeight: 700, padding: "9px 0", borderRadius: 9, cursor: "pointer",
+            style={{ flex: 1, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "9px 2px", borderRadius: 9, cursor: "pointer",
               border: `1px solid ${sousVue === id ? "#A8863A" : C.bordure}`,
               background: sousVue === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
               color: sousVue === id ? C.ambreClair : C.papierSombre }}>
@@ -4979,6 +5466,19 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
 
       {sousVue === "ligue" && MUR_ACTIF && (
         <Ligue embarque observations={observations} prenom={prenom} onDefinirPrenom={onDefinirPrenom} onDefier={onDefier} />
+      )}
+
+      {sousVue === "quiz" && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 22 }}>🧠</span>
+            <span style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier }}>Quiz du jour</span>
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 16, lineHeight: 1.5 }}>
+            5 questions sur les insectes, un nouveau quiz chaque jour. Gagne des points, et vise le sans-faute !
+          </div>
+          <Quiz />
+        </div>
       )}
     </div>
   );
@@ -5619,6 +6119,17 @@ function BioDex() {
   const [notifs, setNotifs] = useState({ total: 0 });
   const [centreOuvert, setCentreOuvert] = useState(false);
   const [menuOuvert, setMenuOuvert] = useState(false);
+
+  // Pastille sur l'icône de l'appli installée (API Badging, si supportée)
+  useEffect(() => {
+    try {
+      const t = notifs.total || 0;
+      if (typeof navigator !== "undefined" && navigator.setAppBadge) {
+        if (t > 0) navigator.setAppBadge(t).catch(() => {});
+        else if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
+      }
+    } catch {}
+  }, [notifs.total]);
   const [carteDefiee, setCarteDefiee] = useState(null);
 
   // La pastille "nouveau sur le mur" dérive directement des notifications (pas de requête séparée).
@@ -5645,7 +6156,7 @@ function BioDex() {
     const surVisible = () => { if (!document.hidden) verifier(); };
     document.addEventListener("visibilitychange", surVisible);
     return () => { actif = false; clearInterval(intervalle); document.removeEventListener("visibilitychange", surVisible); };
-  }, [prenom, vue]);
+  }, [prenom, vue, centreOuvert]);
 
   // Le marquage des réactions vues est fait par MurCommun (qui a déjà les données), via onMarquerReactionsVues.
 
@@ -5892,7 +6403,7 @@ function BioDex() {
       {(() => {
         const navVisible = (vue === "collection" || vue === "carte" || vue === "stats" || vue === "atrier" || vue === "cartes" || vue === "mur");
         if (!navVisible) return null;
-        const items = [["collection", "🗃️", "Boîte"], ["atrier", "📥", "Trier"], ["cartes", "🎴", "Cartes"], ...(MUR_ACTIF ? [["mur", "🌐", "Mur"]] : []), ["carte", "🗺️", "Carte"], ["stats", "📊", "Stats"]];
+        const items = [["collection", "🗃️", "Boîte"], ["atrier", "📥", "Trier"], ["cartes", "🎮", "Jeu"], ...(MUR_ACTIF ? [["mur", "🌐", "Mur"]] : []), ["carte", "🗺️", "Carte"], ["stats", "📊", "Stats"]];
         return (
           <React.Fragment>
             <nav className="bd-nav" aria-label="Navigation principale">
@@ -6016,6 +6527,7 @@ function BioDex() {
 
       {vue === "collection" && (
         <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+          <LeSaviasTu />
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
             <span style={{ fontFamily: serif, color: C.ambre, fontWeight: 700, fontSize: 26 }}>{triees.length}</span>
             <span style={{ fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>
