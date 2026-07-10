@@ -115,9 +115,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.70 (PWA) ============
+// ============ BioDex v0.71 (PWA) ============
 
-const VERSION = "v0.70";
+const VERSION = "v0.71";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1021,6 +1021,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.71", date: "2026-07", items: ["🌟 Rareté partout : les libellés de rareté (très rare / rare / peu commune) s'affichent maintenant dans toute l'appli — collection, fiche détaillée, mur — plus un compteur d'espèces rares dans les stats et un filtre « espèces rares » dans ta collection. La rareté se charge instantanément depuis le cache, et se complète en arrière-plan."] },
   { v: "0.70", date: "2026-07", items: ["📊 Stats enrichies : nouvel onglet Stats peaufiné avec la répartition de ta collection par ordre d'insecte (🦋 🪲 🐝...), ta fiabilité moyenne d'identification, de nouveaux badges (ordres, cartes, paliers), et des graphiques rafraîchis."] },
   { v: "0.69", date: "2026-07", items: ["👀 Qui a réagi : sous chaque publication du mur, tu vois maintenant le prénom des personnes qui ont réagi (et non plus juste un compteur). Chacun ne peut mettre qu'une fois chaque réaction — touche à nouveau pour la retirer."] },
   { v: "0.68", date: "2026-07", items: ["🏅 Classement des chasseurs : depuis le menu, découvre le palmarès de la bande (semaine et mois) avec un système de points qui récompense les trouvailles, les nouvelles espèces et les plus rares. La rareté s'appuie sur les données mondiales d'iNaturalist, et les espèces rares affichent un badge coloré sur le mur !"] },
@@ -1699,7 +1700,7 @@ function filtrerObservations(liste, f) {
 }
 
 // ---------- Vue : statistiques ----------
-function Stats({ observations, onFermer }) {
+function Stats({ observations, raretes, onFermer }) {
   const total = observations.length;
   const identifies = observations.filter((o) => o.nom || o.nomSci).length;
   const positionnees = observations.filter((o) => o.gps).length;
@@ -1729,6 +1730,16 @@ function Stats({ observations, onFermer }) {
   // Confiance moyenne d'identification (sur les observations qui ont un pourcentage)
   const confiances = observations.map((o) => pourcentConfiance(o.confiance)).filter((v) => v !== null && v !== undefined);
   const confianceMoy = confiances.length ? Math.round(confiances.reduce((a, b) => a + b, 0) / confiances.length) : null;
+
+  // Espèces rares (via la rareté iNaturalist chargée en amont) — comptées une fois par espèce.
+  const rar = raretes || {};
+  const especesRaresSet = new Set();
+  observations.forEach((o) => {
+    const k = cleEspeceMur(o);
+    const niv = niveauRarete(rar[k]);
+    if (k && niv && niv.bonus > 0) especesRaresSet.add(k);
+  });
+  const nbEspecesRares = especesRaresSet.size;
 
   // Autres indicateurs
   const notables = observations.filter((o) => o.notable && String(o.notable).trim().length > 3).length;
@@ -1760,6 +1771,8 @@ function Stats({ observations, onFermer }) {
     { seuil: 50, emoji: "🏆", label: "50 observations", atteint: total >= 50 },
     { seuil: 20, emoji: "💎", label: "20 espèces différentes", atteint: especesUniques >= 20, valeur: especesUniques },
     { seuil: 5, emoji: "🎴", label: "5 cartes forgées", atteint: cartesForgees >= 5, valeur: cartesForgees },
+    { seuil: 1, emoji: "🌟", label: "Une espèce rare", atteint: nbEspecesRares >= 1, valeur: nbEspecesRares },
+    { seuil: 5, emoji: "💠", label: "5 espèces rares", atteint: nbEspecesRares >= 5, valeur: nbEspecesRares },
     { seuil: 100, emoji: "👑", label: "100 observations", atteint: total >= 100 },
   ];
   const badgesGagnes = badges.filter((b) => b.atteint).length;
@@ -1842,6 +1855,18 @@ function Stats({ observations, onFermer }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Espèces rares */}
+      {nbEspecesRares > 0 && (
+        <div style={{ ...carte, marginBottom: 16, display: "flex", alignItems: "center", gap: 12, background: "linear-gradient(#2A2417, #201B12)", border: "1px solid #4A3E22" }}>
+          <span style={{ fontSize: 30 }}>🌟</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: "#D2A24A" }}>Espèces rares dénichées</div>
+            <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 2 }}>peu communes à très rares (données iNaturalist)</div>
+          </div>
+          <div style={{ fontFamily: serif, fontSize: 26, fontWeight: 700, color: "#E5B84B", lineHeight: 1 }}>{nbEspecesRares}</div>
         </div>
       )}
 
@@ -2032,9 +2057,36 @@ async function chargerRareteInat(sci) {
   }
 }
 
-// Clé d'espèce normalisée pour regrouper (nom scientifique de préférence, sinon nom commun).
+// Clé d'espèce normalisée : nom scientifique de préférence, sinon nom commun.
+// Marche pour les observations (nomSci/nom) comme pour les posts du mur (espece_sci/espece).
 function cleEspeceMur(p) {
-  return (p.espece_sci || p.espece || "").toLowerCase().trim();
+  return (p.nomSci || p.espece_sci || p.nom || p.espece || "").toLowerCase().trim();
+}
+
+// Hook : charge la rareté iNaturalist d'une liste d'items (cache d'abord, réseau en arrière-plan).
+function useRaretes(items) {
+  const [raretes, setRaretes] = useState({});
+  const cles = Array.from(new Set((items || []).map(cleEspeceMur).filter(Boolean))).sort();
+  const signature = cles.join("|");
+  useEffect(() => {
+    let annule = false;
+    (async () => {
+      const especesMap = {};
+      (items || []).forEach((o) => { const k = cleEspeceMur(o); if (k && !(k in especesMap)) especesMap[k] = o.nomSci || o.espece_sci || o.nom || o.espece || ""; });
+      const map = {};
+      Object.keys(especesMap).forEach((k) => { const c = litCacheRarete(k); if (c && typeof c.count === "number") map[k] = c.count; });
+      if (!annule) setRaretes((prev) => ({ ...prev, ...map }));
+      for (const k of Object.keys(especesMap)) {
+        if (k in map) continue;
+        const c = await chargerRareteInat(especesMap[k]);
+        if (annule) return;
+        map[k] = c;
+        setRaretes((prev) => ({ ...prev, [k]: c }));
+      }
+    })();
+    return () => { annule = true; };
+  }, [signature]);
+  return raretes;
 }
 
 // Points d'un post : +1 base, +2 nouvelle espèce sur le mur, + bonus rareté (iNat ou "bande").
@@ -3236,8 +3288,11 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
       <h2 style={{ fontFamily: serif, color: C.papier, fontSize: 25, fontWeight: 600, margin: "18px 0 2px", letterSpacing: 0.2 }}>
         {obs.nom || "Spécimen non identifié"}
       </h2>
-      <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 17, color: C.ambre, marginBottom: 16 }}>
-        {obs.nomSci || "Identification à préciser"}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        <span style={{ fontFamily: serif, fontStyle: "italic", fontSize: 17, color: C.ambre }}>
+          {obs.nomSci || "Identification à préciser"}
+        </span>
+        {(() => { const c = litCacheRarete(cleEspeceMur(obs)); return c && typeof c.count === "number" ? <BadgeRarete count={c.count} /> : null; })()}
       </div>
 
       {obs.notable && String(obs.notable).trim().length > 3 && (
@@ -4311,7 +4366,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🏅 Le classement des chasseurs</div>
         <p style={p}>
-          Depuis le menu ☰, « Classement » établit le palmarès de la bande sur les 7 derniers jours (Semaine) ou 30 jours (Mois), à partir des trouvailles partagées sur le mur. Le système de points : +1 par trouvaille, +2 si l'espèce est nouvelle sur le mur (personne ne l'avait postée), et un bonus de rareté (+1 peu commune, +2 rare, +3 très rare). La rareté s'appuie sur le nombre d'observations mondiales dans iNaturalist — un bon indice, mais pas un statut de conservation officiel : une espèce discrète peut être peu observée sans être menacée. Les espèces rares affichent aussi un badge coloré (🌟 ✨ 🍃) sur le mur. Nécessite le réseau et le mur configuré.
+          Depuis le menu ☰, « Classement » établit le palmarès de la bande sur les 7 derniers jours (Semaine) ou 30 jours (Mois), à partir des trouvailles partagées sur le mur. Le système de points : +1 par trouvaille, +2 si l'espèce est nouvelle sur le mur (personne ne l'avait postée), et un bonus de rareté (+1 peu commune, +2 rare, +3 très rare). La rareté s'appuie sur le nombre d'observations mondiales dans iNaturalist — un bon indice, mais pas un statut de conservation officiel : une espèce discrète peut être peu observée sans être menacée. Les espèces rares affichent aussi un badge coloré (🌟 ✨ 🍃) partout dans l'appli : sur le mur, dans ta collection, sur la fiche détaillée, et un compteur dans les stats. Tu peux même filtrer ta collection sur « 🌟 Espèces rares ». Nécessite le réseau et le mur configuré.
         </p>
         <div style={t}>🏆 La Ligue</div>
         <p style={p}>
@@ -5618,7 +5673,9 @@ function BioDex() {
   const [fMois, setFMois] = useState("");
   const [fTexte, setFTexte] = useState("");
   const [fOrdre, setFOrdre] = useState("");
+  const [fRare, setFRare] = useState(false); // filtre "espèces rares seulement"
   const [montrerFiltres, setMontrerFiltres] = useState(false);
+  const raretesGlobal = useRaretes(observations); // rareté iNaturalist globale (cache + arrière-plan)
 
   function changerTri(t) {
     setTri(t);
@@ -5740,14 +5797,17 @@ function BioDex() {
   const selection = observations.find((o) => o.id === selectionId) || null;
   const nbBiotopes = new Set(triees.map((o) => o.biotope)).size;
   const filtres = { biotope: fBiotope, mois: fMois, texte: fTexte, ordre: fOrdre };
-  const filtresActifs = !!(fBiotope || fMois || fTexte || fOrdre);
-  const listeFiltree = filtrerObservations(triees, filtres);
+  const filtresActifs = !!(fBiotope || fMois || fTexte || fOrdre || fRare);
+  const estRare = (o) => { const niv = niveauRarete(raretesGlobal[cleEspeceMur(o)]); return !!(niv && niv.bonus > 0); };
+  let listeFiltree = filtrerObservations(triees, filtres);
+  if (fRare) listeFiltree = listeFiltree.filter(estRare);
+  const nbRares = triees.filter(estRare).length;
   const moisDispo = Array.from(new Set(triees.map((o) => moisDe(o.date)))).sort((a, b) => (a < b ? 1 : -1));
   const biotopesDispo = BIOTOPES.filter((b) => triees.some((o) => o.biotope === b.id));
   // Ordres présents dans la collection, avec compte (pour les onglets)
   const ordresDispo = ORDRES.map((o) => ({ ...o, n: triees.filter((t) => deduireOrdre(t) === o.id).length })).filter((o) => o.n > 0);
   const nbAutres = triees.filter((t) => deduireOrdre(t) === "autres").length;
-  function reinitFiltres() { setFBiotope(""); setFMois(""); setFTexte(""); setFOrdre(""); }
+  function reinitFiltres() { setFBiotope(""); setFMois(""); setFTexte(""); setFOrdre(""); setFRare(false); }
 
   return (
     <div style={{ minHeight: "100vh", background: C.fond, paddingBottom: "calc(96px + env(safe-area-inset-bottom))" }}>
@@ -5916,7 +5976,7 @@ function BioDex() {
           onDefier={(carte) => { setCarteDefiee(carte); setVue("defi"); }}
         />
       )}
-      {vue === "stats" && <Stats observations={triees} onFermer={() => setVue("collection")} />}
+      {vue === "stats" && <Stats observations={triees} raretes={raretesGlobal} onFermer={() => setVue("collection")} />}
       {vue === "atrier" && (
         <CaptureRapide aTrier={aTrier} onAjout={ajouterATrier}
           onOuvrir={(id) => { setSelectionId(id); setVue("completer"); }}
@@ -5980,6 +6040,15 @@ function BioDex() {
                   🔎 Autres {nbAutres}
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Filtre espèces rares */}
+          {nbRares > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <button onClick={() => setFRare((v) => !v)} style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fRare ? "#E5B84B" : C.bordure}`, background: fRare ? "#E5B84B" : "transparent", color: fRare ? C.encre : C.papier }}>
+                🌟 Espèces rares {nbRares}
+              </button>
             </div>
           )}
 
@@ -6079,6 +6148,9 @@ function BioDex() {
                 style={{ background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid ${C.bordure}`, borderRadius: 11, overflow: "hidden", cursor: "pointer", position: "relative", paddingTop: 16, boxShadow: "0 3px 10px rgba(0,0,0,.3), 0 1px 0 rgba(255,255,255,.03) inset", animationDelay: `${Math.min(i * 40, 400)}ms` }}>
                 <div className="bd-pin-shaft" />
                 <div className="bd-pin-head" />
+                {(() => { const niv = niveauRarete(raretesGlobal[cleEspeceMur(o)]); return niv && niv.bonus > 0 ? (
+                  <div style={{ position: "absolute", top: 6, right: 6, zIndex: 2, fontSize: 15, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.6))" }} title={niv.label}>{niv.emoji}</div>
+                ) : null; })()}
                 <div style={{ margin: "0 6px", borderRadius: 7, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,.4)" }}>
                   <PhotoBlob blob={o.photo} alt={o.nom} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }} />
                 </div>
