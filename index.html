@@ -115,9 +115,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.80 (PWA) ============
+// ============ BioDex v0.81 (PWA) ============
 
-const VERSION = "v0.80";
+const VERSION = "v0.81";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1021,6 +1021,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.81", date: "2026-07", items: ["📣 Partager l'appli : un bouton dans le menu permet d'inviter facilement des amis à rejoindre BioDex (partage natif du téléphone, ou copie du lien sur ordinateur). Fais grandir la communauté !"] },
   { v: "0.80", date: "2026-07", items: ["✨ Écran de bienvenue : à la première ouverture, une jolie présentation accueille les nouveaux venus et explique l'esprit de BioDex. Pratique maintenant que l'appli s'ouvre à plus de monde ! (Re-consultable depuis le menu.)"] },
   { v: "0.79", date: "2026-07", items: ["🎯 Rareté affinée : les seuils ont été ajustés et les banalités notoires (mouche domestique, moustique, puceron…) ne sont plus affichées comme « peu communes » à tort. La rareté colle mieux à la réalité. (Les raretés se recalculent automatiquement au premier affichage.)"] },
   { v: "0.78", date: "2026-07", items: ["🇫🇷 Enquêtes OPIE : quand tu identifies un Lucane cerf-volant ou une Rosalie des Alpes, un encart t'invite à signaler ton observation à l'enquête nationale de l'Office pour les insectes (OPIE). Ces espèces patrimoniales sont suivies au niveau national, et tes signalements sont versés à l'INPN — de la vraie science française !"] },
@@ -4151,6 +4152,17 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
 
 // ---------- Menu principal (regroupe missions, idées, profil) ----------
 function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller, onRevoirPresentation }) {
+  const partagerAppli = async () => {
+    const url = "https://lucanus.netlify.app";
+    const data = { title: "BioDex", text: "🔍 BioDex : photographie les insectes que tu croises, monte ta collection, défie la bande et participe au recensement de la biodiversité !", url };
+    if (navigator.share) {
+      try { await navigator.share(data); } catch (e) { /* annulé : on ne fait rien */ }
+      return;
+    }
+    // Pas de partage natif (souvent sur ordinateur) -> on copie le lien
+    try { await navigator.clipboard.writeText(url); alert("Lien copié !\n" + url); }
+    catch { alert("Partage ce lien : " + url); }
+  };
   const item = (emoji, titre, sousTitre, action, pastille) => (
     <button onClick={() => { onFermer(); action(); }}
       style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: "none", border: "none", borderBottom: `1px solid ${C.bordure}`, cursor: "pointer", textAlign: "left" }}>
@@ -4178,6 +4190,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {MUR_ACTIF && item("🏅", "Classement", "Les meilleurs chasseurs de la bande", () => onAller("classement"), 0)}
         {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Mon profil" : "Se connecter", utilisateur ? "Ta collection d'espèces" : "Connexion facultative par email", () => onAller("connexion"), 0)}
+        {item("📣", "Partager l'appli", "Inviter des amis à rejoindre BioDex", () => partagerAppli(), 0)}
         {onRevoirPresentation && item("✨", "Revoir la présentation", "L'écran de bienvenue de BioDex", () => { onFermer(); onRevoirPresentation(); }, 0)}
       </div>
     </div>
