@@ -123,9 +123,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.88 (PWA) ============
+// ============ BioDex v0.89 (PWA) ============
 
-const VERSION = "v0.88";
+const VERSION = "v0.89";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -171,6 +171,7 @@ const C = {
   ambreClair: "#E4C878",
   lichen: "#94A97B",
   papier: "#ECE4D0",
+  papierClair: "#DAD3C0",
   papierSombre: "#A8A48F",
   etiquette: "#ECE4D0",
   encre: "#2A2416",
@@ -1036,6 +1037,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.89", date: "2026-07", items: ["🔧 Correctif lisibilité : certains textes (écran d'accueil, écran Soutenir, encart science, règles du quiz) s'affichaient en couleur sombre, presque illisibles. C'est corrigé — tout est maintenant bien lisible."] },
   { v: "0.88", date: "2026-07", items: ["💛 Écran « Soutenir » : le bouton de soutien ouvre désormais un petit mot qui explique l'esprit du projet et à quoi servent les dons, avant de proposer de contribuer. Plus chaleureux qu'un simple lien !"] },
   { v: "0.87", date: "2026-07", items: ["☕ Le bouton de soutien est désormais actif : depuis le menu, « Soutenir BioDex » ouvre la page de don. Merci à ceux qui donneront un coup de pouce ! 💛"] },
   { v: "0.86", date: "2026-07", items: ["☕ Soutenir l'appli : un petit bouton discret dans le menu permet à ceux qui le souhaitent de faire un don pour soutenir BioDex (les identifications ont un coût). Rien d'imposé, juste une possibilité pour les cœurs généreux."] },
