@@ -123,9 +123,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.82 (PWA) ============
+// ============ BioDex v0.84 (PWA) ============
 
-const VERSION = "v0.82";
+const VERSION = "v0.84";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1029,6 +1029,8 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.84", date: "2026-07", items: ["🧹 Interface aérée : l'écran d'identification et la fiche d'un spécimen sont désormais plus légers. Le test local hors-ligne et les liens de science participative (iNaturalist, OPIE) se déplient à la demande, et le menu a été nettoyé des doublons."] },
+  { v: "0.83", date: "2026-07", items: ["📷 Identification améliorée : l'appareil photo ouvre maintenant directement la caméra de ton téléphone (meilleure qualité), la photo ne s'affiche plus en double, et un bouton « 🔍 Zoomer » permet d'inspecter la photo de près avant d'identifier."] },
   { v: "0.82", date: "2026-07", items: ["🛡️ Paternité : BioDex affiche désormais sa mention d'auteur (Sylvain Mercier © 2026) sur l'écran de bienvenue et dans le menu. Une création originale, protégée par le droit d'auteur."] },
   { v: "0.81", date: "2026-07", items: ["📣 Partager l'appli : un bouton dans le menu permet d'inviter facilement des amis à rejoindre BioDex (partage natif du téléphone, ou copie du lien sur ordinateur). Fais grandir la communauté !"] },
   { v: "0.80", date: "2026-07", items: ["✨ Écran de bienvenue : à la première ouverture, une jolie présentation accueille les nouveaux venus et explique l'esprit de BioDex. Pratique maintenant que l'appli s'ouvre à plus de monde ! (Re-consultable depuis le menu.)"] },
@@ -1261,6 +1263,35 @@ async function supprimerPost(post) {
 }
 
 // ---------- Sélecteur de zone (cadre tactile sur la photo) ----------
+// Visionneuse plein écran avec zoom (boutons +/− et déplacement au doigt).
+function VisionneuseZoom({ url, onFermer }) {
+  const [z, setZ] = useState(1);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const drag = useRef(null);
+  const zoomer = (d) => setZ((v) => { const nv = Math.min(5, Math.max(1, +(v + d).toFixed(2))); if (nv === 1) setPos({ x: 0, y: 0 }); return nv; });
+  const onDown = (e) => { if (z > 1) { drag.current = { x: e.clientX - pos.x, y: e.clientY - pos.y }; } };
+  const onMove = (e) => { if (!drag.current || z <= 1) return; setPos({ x: e.clientX - drag.current.x, y: e.clientY - drag.current.y }); };
+  const onUp = () => { drag.current = null; };
+  const btn = { width: 46, height: 46, borderRadius: 23, border: `1px solid ${C.bordure}`, background: C.panneau, color: C.papier, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" };
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 10001, background: "rgba(8,10,6,.97)", display: "flex", flexDirection: "column" }} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
+        <span style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: C.papier }}>🔍 Zoom · double-tape le − pour réinitialiser</span>
+        <button onClick={onFermer} style={{ background: "none", border: "none", color: C.papier, fontSize: 26, cursor: "pointer", lineHeight: 1 }}>✕</button>
+      </div>
+      <div style={{ flex: 1, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none" }}>
+        <img src={url} alt="zoom" draggable={false} onPointerDown={onDown}
+          style={{ maxWidth: "100%", maxHeight: "100%", transform: `translate(${pos.x}px, ${pos.y}px) scale(${z})`, transition: drag.current ? "none" : "transform .12s ease", cursor: z > 1 ? "grab" : "default", userSelect: "none", touchAction: "none" }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 16, padding: "16px 0 24px" }}>
+        <button onClick={() => zoomer(-0.5)} style={btn}>−</button>
+        <span style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: C.papierSombre, minWidth: 48, textAlign: "center" }}>{Math.round(z * 100)}%</span>
+        <button onClick={() => zoomer(0.5)} style={btn}>＋</button>
+      </div>
+    </div>
+  );
+}
+
 function SelecteurZone({ photoUrl, zone, onChange }) {
   const boxRef = useRef(null);
   const dragRef = useRef(null); // { mode, startX, startY, zone0 }
@@ -2869,6 +2900,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
   const [affinageLibre, setAffinageLibre] = useState("");
   const [ciblage, setCiblage] = useState(false);
   const [zone, setZone] = useState({ x: 0.2, y: 0.2, w: 0.6, h: 0.6 });
+  const [montrerZoom, setMontrerZoom] = useState(false);
   const [choixPoint, setChoixPoint] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [sugEtat, setSugEtat] = useState(""); // "" | recherche | ok | echec
@@ -3220,22 +3252,23 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
       )}
       <div style={{ marginBottom: 16 }}>
         {photoUrl ? (
-          <div style={{ position: "relative" }}>
-            <img src={photoUrl} alt="spécimen" style={{ width: "100%", borderRadius: 10, display: "block", border: `1px solid ${C.bordure}` }} />
-            <div style={{ position: "absolute", bottom: 10, right: 10, display: "flex", gap: 8 }}>
-              <Bouton onClick={() => setMontrerCamera(true)}>📷</Bouton>
-              <div style={{ position: "relative" }}>
-                <Bouton onClick={() => {}}>🖼️</Bouton>
-                <input type="file" accept="image/*" onChange={choisirPhoto} style={inputOverlay} />
-              </div>
+          // Photo choisie : barre d'actions compacte (l'aperçu est géré par l'outil de recadrage ci-dessous)
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <Bouton onClick={() => {}} style={{ width: "100%" }}>📷 Reprendre</Bouton>
+              <input type="file" accept="image/*" capture="environment" onChange={choisirPhoto} style={inputOverlay} />
+            </div>
+            <div style={{ position: "relative", flex: 1 }}>
+              <Bouton onClick={() => {}} style={{ width: "100%" }}>🖼️ Galerie</Bouton>
+              <input type="file" accept="image/*" onChange={choisirPhoto} style={inputOverlay} />
             </div>
           </div>
         ) : (
           <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => setMontrerCamera(true)}
-              style={{ flex: 1, boxSizing: "border-box", padding: "30px 12px", textAlign: "center", background: C.panneau, border: `2px dashed ${C.bordure}`, borderRadius: 10, color: C.papierSombre, fontFamily: sans, fontSize: 15, cursor: "pointer" }}>
+            <div style={{ position: "relative", flex: 1, boxSizing: "border-box", padding: "30px 12px", textAlign: "center", background: C.panneau, border: `2px dashed ${C.bordure}`, borderRadius: 10, color: C.papierSombre, fontFamily: sans, fontSize: 15 }}>
               📷<br />Appareil photo
-            </button>
+              <input type="file" accept="image/*" capture="environment" onChange={choisirPhoto} style={inputOverlay} />
+            </div>
             <div style={{ position: "relative", flex: 1, boxSizing: "border-box", padding: "30px 12px", textAlign: "center", background: C.panneau, border: `2px dashed ${C.bordure}`, borderRadius: 10, color: C.papierSombre, fontFamily: sans, fontSize: 15 }}>
               🖼️<br />Galerie
               <input type="file" accept="image/*" onChange={choisirPhoto} style={inputOverlay} />
@@ -3277,6 +3310,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
         )}
       </div>
 
+      {montrerZoom && photoUrl && <VisionneuseZoom url={photoUrl} onFermer={() => setMontrerZoom(false)} />}
+
       {/* Identification précise avec recadrage systématique (échappatoire possible) */}
       {photoBlob && (
         <div style={{ marginBottom: 16, padding: "12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}` }}>
@@ -3289,6 +3324,9 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
                 Place le cadre sur l'insecte et ajuste sa taille avec la poignée — surtout s'il est petit dans la photo. Un cadrage serré améliore beaucoup la précision.
               </div>
               <SelecteurZone photoUrl={photoUrl} zone={zone} onChange={setZone} />
+              <button onClick={() => setMontrerZoom(true)} style={{ width: "100%", marginTop: 8, background: C.panneauClair, border: `1px solid ${C.bordure}`, color: C.papier, fontFamily: sans, fontSize: 13, fontWeight: 600, padding: "8px 0", borderRadius: 8, cursor: "pointer" }}>
+                🔍 Zoomer sur la photo
+              </button>
             </div>
           )}
 
@@ -3422,7 +3460,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
             </div>
           )}
 
-          <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, margin: "4px 0 8px", textAlign: "center" }}>ou, sans réseau ni compte :</div>
+          <SectionPliable titre="🔬 Test local hors-ligne (sans réseau ni compte)">
 
           <Bouton onClick={lancerIdentification} disabled={idEtat === "recherche"} style={{ width: "100%" }}>
             {idEtat === "recherche" ? "🔬 Analyse en cours…" : (idResultat || idEtat === "rien" || idEtat === "echec" ? "🔬 Relancer le test local" : "🔬 Identifier (test local)")}
@@ -3469,6 +3507,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
               </div>
             </div>
           )}
+          </SectionPliable>
         </div>
       )}
 
@@ -3804,8 +3843,14 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
         </div>
       )}
 
-      {/* Passerelle science participative (iNaturalist) */}
-      <PasserelleInat obs={obs} />
+      {/* Passerelle science participative (OPIE + iNaturalist), repliable */}
+      {identifie && (
+        <div style={{ marginTop: 16 }}>
+          <SectionPliable titre="🔬 Contribuer à la science" ouvertParDefaut={!!enqueteOpiePour(obs)}>
+            <PasserelleInat obs={obs} />
+          </SectionPliable>
+        </div>
+      )}
 
       {/* Fiche naturaliste */}
       <div style={{ marginTop: 18 }}>
@@ -4201,7 +4246,6 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
           <button onClick={onFermer} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
         </div>
         {item("🎯", "Missions saisonnières", "Défis d'observation de la bande", () => onAller("missions"), missionsNouv)}
-        {MUR_ACTIF && item("🏆", "La Ligue", "Dans l'onglet 🎮 Jeu", () => onAller("cartes"), 0)}
         {MUR_ACTIF && item("🏅", "Classement", "Les meilleurs chasseurs de la bande", () => onAller("classement"), 0)}
         {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Mon profil" : "Se connecter", utilisateur ? "Ta collection d'espèces" : "Connexion facultative par email", () => onAller("connexion"), 0)}
@@ -4801,7 +4845,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>✨ Identification précise (Claude)</div>
         <p style={p}>
-          Le bouton « Identifier cette zone » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un pourcentage de confiance. Avant chaque identification, un cadre s'affiche sur ta photo : place-le sur l'insecte pour que l'IA se concentre dessus — c'est surtout utile quand la bête est petite ou perdue dans le décor, et ça améliore nettement la précision. Si ta photo est déjà bien cadrée, un lien te permet d'identifier l'image entière directement. L'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Nécessite le réseau. Chaque identification coûte une fraction de centime.
+          Le bouton « Identifier cette zone » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un pourcentage de confiance. Avant chaque identification, un cadre s'affiche sur ta photo : place-le sur l'insecte pour que l'IA se concentre dessus — c'est surtout utile quand la bête est petite ou perdue dans le décor, et ça améliore nettement la précision. Si ta photo est déjà bien cadrée, un lien te permet d'identifier l'image entière directement. Le bouton « 🔍 Zoomer sur la photo » ouvre l'image en plein écran pour l'inspecter de près. Et « 📷 Appareil photo » ouvre directement l'appareil photo de ton téléphone, pour une meilleure qualité. L'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Nécessite le réseau. Chaque identification coûte une fraction de centime.
         </p>
         <div style={t}>🌿 Pourquoi il compte</div>
         <p style={p}>
