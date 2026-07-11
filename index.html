@@ -123,9 +123,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.84 (PWA) ============
+// ============ BioDex v0.85 (PWA) ============
 
-const VERSION = "v0.84";
+const VERSION = "v0.85";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1029,6 +1029,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.85", date: "2026-07", items: ["🌟 Nouvelle espèce ou déjà vue : au moment d'identifier, l'appli te dit si c'est une nouvelle espèce pour ta collection (🌟) ou si tu l'as déjà photographiée (📸 avec le numéro de l'observation). L'info apparaît aussi sur la fiche. De quoi pimenter la chasse aux espèces !"] },
   { v: "0.84", date: "2026-07", items: ["🧹 Interface aérée : l'écran d'identification et la fiche d'un spécimen sont désormais plus légers. Le test local hors-ligne et les liens de science participative (iNaturalist, OPIE) se déplient à la demande, et le menu a été nettoyé des doublons."] },
   { v: "0.83", date: "2026-07", items: ["📷 Identification améliorée : l'appareil photo ouvre maintenant directement la caméra de ton téléphone (meilleure qualité), la photo ne s'affiche plus en double, et un bouton « 🔍 Zoomer » permet d'inspecter la photo de près avant d'identifier."] },
   { v: "0.82", date: "2026-07", items: ["🛡️ Paternité : BioDex affiche désormais sa mention d'auteur (Sylvain Mercier © 2026) sur l'écran de bienvenue et dans le menu. Une création originale, protégée par le droit d'auteur."] },
@@ -2187,6 +2188,12 @@ function cleEspeceMur(p) {
   return (p.nomSci || p.espece_sci || p.nom || p.espece || "").toLowerCase().trim();
 }
 
+// Compte combien d'observations de la collection correspondent à une espèce donnée (par clé).
+function compteEspeceCollection(cle, observations, exclureId) {
+  if (!cle || !observations) return 0;
+  return observations.filter((o) => (exclureId ? o.id !== exclureId : true) && cleEspeceMur(o) === cle).length;
+}
+
 // Hook : charge la rareté iNaturalist d'une liste d'items (cache d'abord, réseau en arrière-plan).
 function useRaretes(items) {
   const [raretes, setRaretes] = useState({});
@@ -2866,7 +2873,7 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
 }
 
 // ---------- Vue : formulaire ----------
-function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
+function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) {
   const modeTri = !!base && mode !== "edition";
   const modeEdition = mode === "edition";
   const [photoBlob, setPhotoBlob] = useState(base ? base.photo : null);
@@ -3541,6 +3548,26 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode }) {
         <input style={{ ...champ, fontFamily: serif, fontStyle: "italic" }} value={nomSci} onChange={(e) => setNomSci(e.target.value)} placeholder="ex : Lucanus cervus" />
       </div>
 
+      {/* Indicateur : nouvelle espèce ou déjà photographiée */}
+      {(() => {
+        const cle = cleEspeceMur({ nom, nomSci });
+        if (!cle) return null;
+        const n = compteEspeceCollection(cle, observations, base ? base.id : null);
+        const nouvelle = n === 0;
+        return (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, padding: "11px 14px", borderRadius: 10,
+            background: nouvelle ? "linear-gradient(135deg,#2A2417,#201B12)" : "linear-gradient(#1E2617,#171D12)",
+            border: `1px solid ${nouvelle ? "#6B5A2E" : C.bordure}` }}>
+            <span style={{ fontSize: 20 }}>{nouvelle ? "🌟" : "📸"}</span>
+            <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.45 }}>
+              {nouvelle
+                ? <b style={{ color: "#E4C878" }}>Nouvelle espèce pour ta collection !</b>
+                : <span>Déjà dans ta collection — ce sera ta <b style={{ color: C.ambreClair }}>{n + 1}<sup>e</sup></b> observation de cette espèce.</span>}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Biotope */}
       <div style={{ marginBottom: 14 }}>
         <label style={libelle}>Biotope</label>
@@ -3694,7 +3721,7 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
   );
 }
 
-function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte, onMajCadre, prenom, onDefinirPrenom, utilisateur, onAllerConnexion }) {
+function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte, onMajCadre, prenom, onDefinirPrenom, utilisateur, onAllerConnexion }) {
   const [confirme, setConfirme] = useState(false);
   const [ficheEtat, setFicheEtat] = useState(""); // "" | recherche | echec
   const [ficheErreur, setFicheErreur] = useState("");
@@ -3808,6 +3835,18 @@ function Detail({ obs, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte
         </span>
         {(() => { const c = litCacheRarete(cleEspeceMur(obs)); return c && typeof c.count === "number" ? <BadgeRarete count={c.count} /> : null; })()}
       </div>
+
+      {(() => {
+        const cle = cleEspeceMur(obs);
+        if (!cle) return null;
+        const n = compteEspeceCollection(cle, observations, null);
+        if (n <= 1) return null;
+        return (
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 16, padding: "5px 11px", borderRadius: 16, background: C.panneau, border: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>
+            📸 Ta <b style={{ color: C.papier }}>{n}</b>ᵉ observation de cette espèce
+          </div>
+        );
+      })()}
 
       {obs.notable && String(obs.notable).trim().length > 3 && (
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "11px 13px", marginBottom: 16, borderRadius: 10, background: "linear-gradient(#2E2410, #241C0C)", border: "1px solid #B8862E", boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
@@ -6637,16 +6676,17 @@ function BioDex() {
           onFermer={() => setVue("collection")} />
       )}
       {vue === "completer" && selection && (
-        <NouvelleObservation base={selection} onSauver={completerObservation} onAnnuler={() => { setSelectionId(null); setVue("atrier"); }} />
+        <NouvelleObservation base={selection} observations={observations} onSauver={completerObservation} onAnnuler={() => { setSelectionId(null); setVue("atrier"); }} />
       )}
 
       {vue === "aide" && <Aide onFermer={() => setVue("collection")} onImportTermine={chargerObservations} />}
       {vue === "connexion" && <Connexion onFermer={() => setVue("collection")} utilisateur={utilisateur} onDeconnexion={deconnexion} />}
-      {vue === "nouvelle" && <NouvelleObservation onSauver={sauverObservation} onAnnuler={() => setVue("collection")} />}
+      {vue === "nouvelle" && <NouvelleObservation observations={observations} onSauver={sauverObservation} onAnnuler={() => setVue("collection")} />}
       {vue === "edition" && selection && (
         <NouvelleObservation
           key={"edit-" + selection.id}
           base={selection}
+          observations={observations}
           mode="edition"
           onSauver={enregistrerEdition}
           onAnnuler={() => setVue("detail")} />
@@ -6655,7 +6695,7 @@ function BioDex() {
         <Carte observations={triees} onOuvrirFiche={(id) => { setSelectionId(id); setVue("detail"); }} />
       )}
       {vue === "detail" && selection && (
-        <Detail obs={selection}
+        <Detail obs={selection} observations={observations}
           onFermer={() => { setSelectionId(null); setVue("collection"); }}
           onMajFiche={majFiche}
           onMajCarte={majCarte}
