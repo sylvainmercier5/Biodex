@@ -123,9 +123,16 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.85 (PWA) ============
+// ============ BioDex v0.88 (PWA) ============
 
-const VERSION = "v0.85";
+const VERSION = "v0.88";
+
+// ============================================================
+// Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
+// Tant que c'est vide, le bouton "Soutenir" n'apparaît pas.
+// Exemple : "https://paypal.me/SylvainMercier"
+const LIEN_DON = "https://paypal.me/BioDex";
+// ============================================================
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1029,6 +1036,9 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.88", date: "2026-07", items: ["💛 Écran « Soutenir » : le bouton de soutien ouvre désormais un petit mot qui explique l'esprit du projet et à quoi servent les dons, avant de proposer de contribuer. Plus chaleureux qu'un simple lien !"] },
+  { v: "0.87", date: "2026-07", items: ["☕ Le bouton de soutien est désormais actif : depuis le menu, « Soutenir BioDex » ouvre la page de don. Merci à ceux qui donneront un coup de pouce ! 💛"] },
+  { v: "0.86", date: "2026-07", items: ["☕ Soutenir l'appli : un petit bouton discret dans le menu permet à ceux qui le souhaitent de faire un don pour soutenir BioDex (les identifications ont un coût). Rien d'imposé, juste une possibilité pour les cœurs généreux."] },
   { v: "0.85", date: "2026-07", items: ["🌟 Nouvelle espèce ou déjà vue : au moment d'identifier, l'appli te dit si c'est une nouvelle espèce pour ta collection (🌟) ou si tu l'as déjà photographiée (📸 avec le numéro de l'observation). L'info apparaît aussi sur la fiche. De quoi pimenter la chasse aux espèces !"] },
   { v: "0.84", date: "2026-07", items: ["🧹 Interface aérée : l'écran d'identification et la fiche d'un spécimen sont désormais plus légers. Le test local hors-ligne et les liens de science participative (iNaturalist, OPIE) se déplient à la demande, et le menu a été nettoyé des doublons."] },
   { v: "0.83", date: "2026-07", items: ["📷 Identification améliorée : l'appareil photo ouvre maintenant directement la caméra de ton téléphone (meilleure qualité), la photo ne s'affiche plus en double, et un bouton « 🔍 Zoomer » permet d'inspecter la photo de près avant d'identifier."] },
@@ -2258,6 +2268,40 @@ function calculerClassement(posts, periode, raretes) {
     parAuteur[a].trouvailles += 1;
   });
   return Object.values(parAuteur).sort((x, y) => y.points - x.points || y.trouvailles - x.trouvailles);
+}
+
+function Soutenir({ onFermer }) {
+  return (
+    <div style={{ padding: 16, maxWidth: 520, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 18 }}>← Retour</Bouton>
+
+      <div style={{ textAlign: "center", marginBottom: 8 }}>
+        <div style={{ fontSize: 44, filter: "drop-shadow(0 2px 6px rgba(0,0,0,.4))" }}>💛</div>
+      </div>
+      <h2 style={{ fontFamily: serif, fontSize: 25, fontWeight: 700, color: C.papier, textAlign: "center", marginBottom: 4 }}>Soutenir l'aventure BioDex</h2>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px auto", width: "60%" }}>
+        <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, transparent, ${C.ambre})` }} />
+        <span style={{ color: C.ambre, fontSize: 12 }}>✦</span>
+        <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${C.ambre}, transparent)` }} />
+      </div>
+
+      <div style={{ fontFamily: sans, fontSize: 14.5, color: C.papierClair, lineHeight: 1.65 }}>
+        <p style={{ marginBottom: 14 }}>Derrière BioDex, il y a une envie simple : donner le goût des insectes et contribuer à mieux les connaître. 🦋</p>
+        <p style={{ marginBottom: 14 }}>L'appli grandit sans cesse — de nouvelles fonctions, des espèces mieux identifiées, des passerelles vers la science... Et j'ai encore plein d'idées !</p>
+        <p style={{ marginBottom: 14 }}>Chaque identification a un coût que j'assume, et ton soutien, même minime, m'aide à <b style={{ color: C.papier }}>maintenir l'appli et à la faire évoluer</b>. Aucune obligation, bien sûr : le simple fait que tu l'utilises me fait déjà plaisir. Merci d'être là. 🐞</p>
+      </div>
+
+      {LIEN_DON && (
+        <a href={LIEN_DON} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", marginTop: 22, boxSizing: "border-box", fontFamily: sans, fontSize: 16, fontWeight: 800, padding: "15px 0", borderRadius: 12, textDecoration: "none", color: C.encre, background: "linear-gradient(#E4C878, #C9A24B)", boxShadow: "0 4px 14px rgba(201,162,75,.3)" }}>
+          ☕ Faire un don
+        </a>
+      )}
+      <div style={{ textAlign: "center", fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 12, lineHeight: 1.5 }}>
+        Le don s'ouvre sur PayPal, dans une page sécurisée. BioDex restera toujours gratuite. 💛
+      </div>
+    </div>
+  );
 }
 
 function Classement({ onFermer }) {
@@ -4289,6 +4333,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Mon profil" : "Se connecter", utilisateur ? "Ta collection d'espèces" : "Connexion facultative par email", () => onAller("connexion"), 0)}
         {item("📣", "Partager l'appli", "Inviter des amis à rejoindre BioDex", () => partagerAppli(), 0)}
+        {LIEN_DON && item("☕", "Soutenir BioDex", "Un petit don, si le cœur t'en dit", () => onAller("soutenir"), 0)}
         {onRevoirPresentation && item("✨", "Revoir la présentation", "L'écran de bienvenue de BioDex", () => { onFermer(); onRevoirPresentation(); }, 0)}
         <div style={{ padding: "14px 16px 16px", textAlign: "center" }}>
           <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 12, color: C.ambre }}>Une création de Sylvain Mercier</div>
@@ -6624,6 +6669,9 @@ function BioDex() {
       )}
       {vue === "classement" && (
         <Classement onFermer={() => setVue("collection")} />
+      )}
+      {vue === "soutenir" && (
+        <Soutenir onFermer={() => setVue("collection")} />
       )}
       {vue === "defi" && carteDefiee && (
         <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
