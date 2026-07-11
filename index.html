@@ -1,4 +1,12 @@
 <!DOCTYPE html>
+<!--
+  ============================================================
+  BioDex — Carnet entomologique participatif (PWA)
+  © 2026 Sylvain Mercier. Tous droits réservés.
+  Création originale. Toute reproduction ou réutilisation
+  non autorisée du code ou du concept est interdite.
+  ============================================================
+-->
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
@@ -115,9 +123,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.81 (PWA) ============
+// ============ BioDex v0.82 (PWA) ============
 
-const VERSION = "v0.81";
+const VERSION = "v0.82";
 
 // ============================================================
 //   CONFIGURATION DU MUR COMMUN (Supabase)
@@ -1021,6 +1029,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "0.82", date: "2026-07", items: ["🛡️ Paternité : BioDex affiche désormais sa mention d'auteur (Sylvain Mercier © 2026) sur l'écran de bienvenue et dans le menu. Une création originale, protégée par le droit d'auteur."] },
   { v: "0.81", date: "2026-07", items: ["📣 Partager l'appli : un bouton dans le menu permet d'inviter facilement des amis à rejoindre BioDex (partage natif du téléphone, ou copie du lien sur ordinateur). Fais grandir la communauté !"] },
   { v: "0.80", date: "2026-07", items: ["✨ Écran de bienvenue : à la première ouverture, une jolie présentation accueille les nouveaux venus et explique l'esprit de BioDex. Pratique maintenant que l'appli s'ouvre à plus de monde ! (Re-consultable depuis le menu.)"] },
   { v: "0.79", date: "2026-07", items: ["🎯 Rareté affinée : les seuils ont été ajustés et les banalités notoires (mouche domestique, moustique, puceron…) ne sont plus affichées comme « peu communes » à tort. La rareté colle mieux à la réalité. (Les raretés se recalculent automatiquement au premier affichage.)"] },
@@ -2697,6 +2706,12 @@ function Presentation({ onCommencer }) {
           <div style={{ textAlign: "center", fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 14, lineHeight: 1.5 }}>
             🐞 Chaque photo compte pour mieux connaître — et protéger — ces petites bêtes qui font tourner le monde.
           </div>
+          <div style={{ textAlign: "center", fontFamily: serif, fontStyle: "italic", fontSize: 12.5, color: C.ambre, marginTop: 16 }}>
+            Une création de Sylvain Mercier
+          </div>
+          <div style={{ textAlign: "center", fontFamily: sans, fontSize: 10.5, color: C.papierSombre, marginTop: 3 }}>
+            © 2026 · Tous droits réservés
+          </div>
         </div>
       </div>
     </div>
@@ -4192,6 +4207,10 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Mon profil" : "Se connecter", utilisateur ? "Ta collection d'espèces" : "Connexion facultative par email", () => onAller("connexion"), 0)}
         {item("📣", "Partager l'appli", "Inviter des amis à rejoindre BioDex", () => partagerAppli(), 0)}
         {onRevoirPresentation && item("✨", "Revoir la présentation", "L'écran de bienvenue de BioDex", () => { onFermer(); onRevoirPresentation(); }, 0)}
+        <div style={{ padding: "14px 16px 16px", textAlign: "center" }}>
+          <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 12, color: C.ambre }}>Une création de Sylvain Mercier</div>
+          <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, marginTop: 2 }}>BioDex © 2026 · Tous droits réservés</div>
+        </div>
       </div>
     </div>
   );

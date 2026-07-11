@@ -1,5 +1,6 @@
-// BioDex v0.81 — Service Worker
-const CACHE = "biodex-v0-81";
+// BioDex v0.82 — Service Worker
+// © 2026 Sylvain Mercier. Tous droits réservés.
+const CACHE = "biodex-v0-82";
 const SHELL = [
   "./",
   "./index.html",
