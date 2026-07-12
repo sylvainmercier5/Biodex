@@ -129,9 +129,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.04 (PWA) ============
+// ============ BioDex v1.06 (PWA) ============
 
-const VERSION = "v1.04";
+const VERSION = "v1.06";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -191,6 +191,53 @@ const C = {
 
 const serif = "'Fraunces', Georgia, 'Times New Roman', serif";
 const sans = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+
+// Moments de la journée (donnée naturaliste utile : la faune diffère selon l'heure).
+const MOMENTS = [
+  { id: "matin", label: "Matin", emoji: "🌅", plage: [5, 11] },
+  { id: "midi", label: "Midi", emoji: "☀️", plage: [11, 14] },
+  { id: "apresmidi", label: "Après-midi", emoji: "🌤️", plage: [14, 18] },
+  { id: "soir", label: "Soir", emoji: "🌆", plage: [18, 22] },
+  { id: "nuit", label: "Nuit", emoji: "🌙", plage: [22, 5] },
+];
+const momentOf = (id) => MOMENTS.find((m) => m.id === id) || null;
+// Déduit le moment à partir d'une date (pré-remplissage automatique).
+function momentDepuisDate(d) {
+  const h = (d instanceof Date ? d : new Date(d)).getHours();
+  if (h >= 5 && h < 11) return "matin";
+  if (h >= 11 && h < 14) return "midi";
+  if (h >= 14 && h < 18) return "apresmidi";
+  if (h >= 18 && h < 22) return "soir";
+  return "nuit";
+}
+
+// Spots : lieux d'observation favoris, créés par l'utilisateur et réutilisables.
+// Stockés en local (localStorage), rien n'est envoyé au serveur.
+function lireSpots() {
+  try {
+    const brut = localStorage.getItem("biodex_spots");
+    const l = brut ? JSON.parse(brut) : [];
+    return Array.isArray(l) ? l : [];
+  } catch { return []; }
+}
+function ecrireSpots(spots) {
+  try { localStorage.setItem("biodex_spots", JSON.stringify(spots.slice(0, 40))); } catch {}
+}
+function ajouterSpot(nom, gps) {
+  const propre = (nom || "").trim().slice(0, 40);
+  if (!propre) return lireSpots();
+  const spots = lireSpots();
+  if (spots.some((s) => s.nom.toLowerCase() === propre.toLowerCase())) return spots;
+  const nouveau = { id: "sp_" + Date.now().toString(36), nom: propre, gps: gps || null };
+  const maj = [nouveau, ...spots];
+  ecrireSpots(maj);
+  return maj;
+}
+function supprimerSpot(id) {
+  const maj = lireSpots().filter((s) => s.id !== id);
+  ecrireSpots(maj);
+  return maj;
+}
 
 const BIOTOPES = [
   { id: "foret", label: "Forêt", emoji: "🌲" },
@@ -1059,6 +1106,8 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.06", date: "2026-07", items: ["📊 Statistiques enrichies : découvre ton rythme d'observation (à quel moment de la journée tu trouves le plus), le classement de tes lieux favoris (quel spot est le plus riche en espèces) et tes conditions fétiches (température moyenne et ciel dominant de tes trouvailles)."] },
+  { v: "1.05", date: "2026-07", items: ["🌅 Moment & lieu : tu peux désormais préciser le moment de la journée (matin, midi, après-midi, soir, nuit — pré-rempli automatiquement selon l'heure) et enregistrer tes lieux d'observation favoris pour les réutiliser d'un simple tap. De vraies données de naturaliste !"] },
   { v: "1.04", date: "2026-07", items: ["🔧 Correctif menu : le menu débordait de l'écran (la dernière entrée était coupée) et le défilement faisait bouger la page derrière au lieu du menu. C'est corrigé : le menu défile désormais correctement, tout en gardant son en-tête visible."] },
   { v: "1.03", date: "2026-07", items: ["💛 Petite retouche : l'icône « Soutenir BioDex » passe de la tasse de café au cœur — plus dans l'esprit de l'appli !"] },
   { v: "1.02", date: "2026-07", items: ["📧 Contact : une adresse (biodex@outlook.fr) est désormais indiquée dans l'écran Confidentialité, pour toute question ou demande concernant tes données."] },
@@ -1881,6 +1930,37 @@ function Stats({ observations, raretes, onFermer }) {
   const cartesForgees = observations.filter((o) => o.carte).length;
   const fichesGenerees = observations.filter((o) => o.fiche).length;
 
+  // --- Rythme : répartition par moment de la journée ---
+  const parMoment = {};
+  observations.forEach((o) => { if (o.moment) parMoment[o.moment] = (parMoment[o.moment] || 0) + 1; });
+  const momentsTri = MOMENTS.map((m) => ({ ...m, n: parMoment[m.id] || 0 })).filter((m) => m.n > 0).sort((a, b) => b.n - a.n);
+  const maxMoment = momentsTri.length ? momentsTri[0].n : 0;
+  const totalMoments = momentsTri.reduce((s, m) => s + m.n, 0);
+
+  // --- Spots : lieux d'observation, classés par richesse (nb d'espèces) ---
+  const parSpot = {};
+  observations.forEach((o) => {
+    if (!o.spot) return;
+    if (!parSpot[o.spot]) parSpot[o.spot] = { obs: 0, especes: new Set() };
+    parSpot[o.spot].obs += 1;
+    const c = cleEspece(o);
+    if (c) parSpot[o.spot].especes.add(c);
+  });
+  const spotsTri = Object.entries(parSpot)
+    .map(([nom, d]) => ({ nom, obs: d.obs, especes: d.especes.size }))
+    .sort((a, b) => b.especes - a.especes || b.obs - a.obs);
+
+  // --- Conditions : température moyenne et ciel dominant ---
+  const temps = observations
+    .map((o) => parseFloat(String(o.temp || "").replace(",", ".").replace(/[^0-9.\-]/g, "")))
+    .filter((v) => !isNaN(v) && v > -30 && v < 55);
+  const tempMoy = temps.length ? Math.round(temps.reduce((a, b) => a + b, 0) / temps.length) : null;
+  const parCiel = {};
+  observations.forEach((o) => { if (o.ciel) parCiel[o.ciel] = (parCiel[o.ciel] || 0) + 1; });
+  const cielsTri = Object.entries(parCiel).sort((a, b) => b[1] - a[1]);
+  const cielTop = cielsTri.length ? cielOf(cielsTri[0][0]) : null;
+
+
   // Répartition par biotope
   const parBiotope = {};
   observations.forEach((o) => { parBiotope[o.biotope] = (parBiotope[o.biotope] || 0) + 1; });
@@ -1993,6 +2073,74 @@ function Stats({ observations, raretes, onFermer }) {
         </div>
       )}
 
+      {/* Rythme : moments de la journée */}
+      {totalMoments > 0 && (
+        <div style={{ ...carte, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+            <span style={titre}>Ton rythme d'observation</span>
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5 }}>
+            Tu observes surtout <b style={{ color: C.ambreClair }}>{momentsTri[0].emoji} {momentsTri[0].label.toLowerCase()}</b> ({Math.round((momentsTri[0].n / totalMoments) * 100)}% de tes trouvailles).
+          </div>
+          {momentsTri.map((m) => (
+            <div key={m.id} style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 13, color: C.papier, marginBottom: 4 }}>
+                <span>{m.emoji} {m.label}</span>
+                <span style={{ color: C.papierSombre }}>{m.n} · {Math.round((m.n / totalMoments) * 100)}%</span>
+              </div>
+              <div style={{ height: 8, borderRadius: 4, background: "#0F130C", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${(m.n / maxMoment) * 100}%`, borderRadius: 4, background: "linear-gradient(90deg, #8A6E3A, #E4C878)", transition: "width .5s ease" }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Spots : lieux d'observation */}
+      {spotsTri.length > 0 && (
+        <div style={{ ...carte, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+            <span style={titre}>Tes lieux d'observation</span>
+            <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{spotsTri.length} lieu{spotsTri.length > 1 ? "x" : ""}</span>
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5 }}>
+            Ton spot le plus riche : <b style={{ color: C.ambreClair }}>📍 {spotsTri[0].nom}</b> ({spotsTri[0].especes} espèce{spotsTri[0].especes > 1 ? "s" : ""}).
+          </div>
+          {spotsTri.slice(0, 6).map((s) => (
+            <div key={s.nom} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 11px", borderRadius: 9, background: C.fond, border: `1px solid ${C.bordure}`, marginBottom: 7 }}>
+              <span style={{ fontFamily: sans, fontSize: 13.5, color: C.papier }}>📍 {s.nom}</span>
+              <span style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
+                <b style={{ color: C.lichen }}>{s.especes}</b> espèce{s.especes > 1 ? "s" : ""} · {s.obs} obs.
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Conditions fétiches */}
+      {(tempMoy !== null || cielTop) && (
+        <div style={{ ...carte, marginBottom: 16 }}>
+          <div style={{ marginBottom: 12 }}><span style={titre}>Tes conditions fétiches</span></div>
+          <div style={{ display: "flex", gap: 10 }}>
+            {tempMoy !== null && (
+              <div style={{ flex: 1, textAlign: "center", padding: "12px 8px", borderRadius: 10, background: C.fond, border: `1px solid ${C.bordure}` }}>
+                <div style={{ fontSize: 22, marginBottom: 3 }}>🌡️</div>
+                <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{tempMoy}°C</div>
+                <div style={{ fontFamily: sans, fontSize: 10, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Température moyenne</div>
+              </div>
+            )}
+            {cielTop && (
+              <div style={{ flex: 1, textAlign: "center", padding: "12px 8px", borderRadius: 10, background: C.fond, border: `1px solid ${C.bordure}` }}>
+                <div style={{ fontSize: 22, marginBottom: 3 }}>{cielTop.emoji}</div>
+                <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 700, color: C.ambreClair, lineHeight: 1.2 }}>{cielTop.label}</div>
+                <div style={{ fontFamily: sans, fontSize: 10, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Ciel le plus fréquent</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Activité par mois */}
       {/* Espèces rares */}
       {nbEspecesRares > 0 && (
         <div style={{ ...carte, marginBottom: 16, display: "flex", alignItems: "center", gap: 12, background: "linear-gradient(#2A2417, #201B12)", border: "1px solid #4A3E22" }}>
@@ -3114,6 +3262,11 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
   const [confiance, setConfiance] = useState(base ? (base.confiance !== undefined ? base.confiance : null) : null);
   const [notable, setNotable] = useState(base ? base.notable || "" : "");
   const [biotope, setBiotope] = useState(base ? base.biotope || "" : "");
+  const [moment, setMoment] = useState(base ? (base.moment || momentDepuisDate(base.date || Date.now())) : momentDepuisDate(new Date()));
+  const [spots, setSpots] = useState(() => lireSpots());
+  const [spot, setSpot] = useState(base ? base.spot || "" : "");
+  const [nouveauSpot, setNouveauSpot] = useState("");
+  const [ajoutSpot, setAjoutSpot] = useState(false);
   const [ciel, setCiel] = useState(base ? base.ciel || "" : "");
   const [temp, setTemp] = useState(base ? base.temp || "" : "");
   const [meteoAuto, setMeteoAuto] = useState(base ? !!base.meteoAuto : false);
@@ -3409,6 +3562,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           nomSci: nomSci.trim(),
           confiance: confiance,
           biotope: biotope || "autre",
+          moment: moment || "",
+          spot: spot || "",
           ciel: ciel || "",
           temp: temp.trim(),
           meteoAuto,
@@ -3425,6 +3580,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           nomSci: nomSci.trim(),
           confiance: confiance,
           biotope: biotope || "autre",
+          moment: moment || "",
+          spot: spot || "",
           ciel: ciel || "",
           temp: temp.trim(),
           meteoAuto,
@@ -3440,6 +3597,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           nomSci: nomSci.trim(),
           confiance: confiance,
           biotope: biotope || "autre",
+          moment: moment || "",
+          spot: spot || "",
           ciel: ciel || "",
           temp: temp.trim(),
           meteoAuto,
@@ -3819,6 +3978,74 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
         </div>
       </div>
 
+      {/* Moment de la journée */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={libelle}>Moment de la journée</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {MOMENTS.map((m) => (
+            <button key={m.id} onClick={() => setMoment(m.id === moment ? "" : m.id)}
+              style={{
+                fontFamily: sans, fontSize: 13, padding: "7px 12px", borderRadius: 20, cursor: "pointer",
+                border: `1px solid ${moment === m.id ? C.ambre : C.bordure}`,
+                background: moment === m.id ? C.ambre : C.panneau,
+                color: moment === m.id ? C.encre : C.papier,
+                fontWeight: moment === m.id ? 700 : 400,
+              }}>
+              {m.emoji} {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Lieu d'observation (spot favori) */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={libelle}>Lieu d'observation <span style={{ fontWeight: 400, color: C.papierSombre }}>(optionnel)</span></label>
+        {spots.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+            {spots.map((s) => (
+              <span key={s.id} style={{ display: "inline-flex", alignItems: "center", borderRadius: 20, border: `1px solid ${spot === s.nom ? C.ambre : C.bordure}`, background: spot === s.nom ? C.ambre : C.panneau, overflow: "hidden" }}>
+                <button onClick={() => setSpot(s.nom === spot ? "" : s.nom)}
+                  style={{ fontFamily: sans, fontSize: 13, padding: "7px 4px 7px 12px", cursor: "pointer", border: "none", background: "transparent", color: spot === s.nom ? C.encre : C.papier, fontWeight: spot === s.nom ? 700 : 400 }}>
+                  📍 {s.nom}
+                </button>
+                <button onClick={() => { const maj = supprimerSpot(s.id); setSpots(maj); if (spot === s.nom) setSpot(""); }}
+                  title="Supprimer ce lieu"
+                  style={{ fontFamily: sans, fontSize: 13, padding: "7px 10px 7px 4px", cursor: "pointer", border: "none", background: "transparent", color: spot === s.nom ? C.encre : C.papierSombre, opacity: 0.75 }}>
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {!ajoutSpot ? (
+          <button onClick={() => setAjoutSpot(true)}
+            style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 600, padding: "7px 12px", borderRadius: 20, cursor: "pointer", border: `1px dashed ${C.bordure}`, background: "transparent", color: C.lichen }}>
+            ＋ Nouveau lieu
+          </button>
+        ) : (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input value={nouveauSpot} onChange={(e) => setNouveauSpot(e.target.value)} maxLength={40}
+              placeholder="ex : Bois de chez moi"
+              style={{ ...champ, flex: 1, minWidth: 160, marginBottom: 0 }} />
+            <Bouton onClick={() => {
+              const n = nouveauSpot.trim();
+              if (!n) { setAjoutSpot(false); return; }
+              const maj = ajouterSpot(n, gpsEtat === "ok" ? gps : null);
+              setSpots(maj);
+              setSpot(n);
+              setNouveauSpot("");
+              setAjoutSpot(false);
+            }}>✓ Ajouter</Bouton>
+            <Bouton onClick={() => { setNouveauSpot(""); setAjoutSpot(false); }}>✕</Bouton>
+          </div>
+        )}
+        {spot && !ajoutSpot && (
+          <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 6, fontStyle: "italic" }}>
+            Tes lieux sont enregistrés sur ton téléphone et réutilisables. Retape sur un lieu pour le désélectionner.
+          </div>
+        )}
+      </div>
+
       {/* Météo */}
       <div style={{ marginBottom: 14 }}>
         <label style={libelle}>
@@ -4094,6 +4321,12 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
 
       <div style={ligne}><span style={cle}>Date</span><span style={val}>{formatDate(obs.date)}</span></div>
       <div style={ligne}><span style={cle}>Biotope</span><span style={val}>{biotopeOf(obs.biotope).emoji} {biotopeOf(obs.biotope).label}</span></div>
+      {obs.moment && momentOf(obs.moment) && (
+        <div style={ligne}><span style={cle}>Moment</span><span style={val}>{momentOf(obs.moment).emoji} {momentOf(obs.moment).label}</span></div>
+      )}
+      {obs.spot && (
+        <div style={ligne}><span style={cle}>Lieu</span><span style={val}>📍 {obs.spot}</span></div>
+      )}
       <div style={ligne}>
         <span style={cle}>Météo{obs.meteoAuto ? " (auto)" : ""}</span>
         <span style={val}>{meteo ? `${meteo.emoji} ${meteo.label}` : "—"}{obs.temp ? ` · ${obs.temp}°C` : ""}</span>
