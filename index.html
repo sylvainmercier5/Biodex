@@ -129,15 +129,20 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v0.97 (PWA) ============
+// ============ BioDex v1.00 (PWA) ============
 
-const VERSION = "v0.97";
+const VERSION = "v1.00";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
 // Tant que c'est vide, le bouton "Soutenir" n'apparaît pas.
 // Exemple : "https://paypal.me/SylvainMercier"
 const LIEN_DON = "https://paypal.me/BioDex";
+
+// Adresse de contact affichée dans la politique de confidentialité (RGPD).
+// Mets ici l'email où l'on peut te joindre pour une demande de suppression de données.
+// Exemple : "biodex.contact@gmail.com"
+const EMAIL_CONTACT = "";
 // ============================================================
 
 // ============================================================
@@ -761,19 +766,30 @@ async function retirerDuProfil(id) {
 }
 
 // Redimensionne + compresse une photo (blob) pour l'upload : max 1280px, JPEG qualité 0.7 (~léger)
-function compresserPourMur(blob) {
+// Compresse pour le mur. Si "zone" est fournie ({x,y,w,h} en fractions 0-1),
+// l'image est d'abord recadrée sur cette zone.
+function compresserPourMur(blob, zone) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
       try {
         const maxDim = 1280;
-        let w = img.naturalWidth, h = img.naturalHeight;
+        // Zone source (recadrage) : par défaut l'image entière
+        let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight;
+        if (zone && zone.w > 0 && zone.h > 0) {
+          sx = Math.max(0, Math.round(zone.x * img.naturalWidth));
+          sy = Math.max(0, Math.round(zone.y * img.naturalHeight));
+          sw = Math.min(img.naturalWidth - sx, Math.round(zone.w * img.naturalWidth));
+          sh = Math.min(img.naturalHeight - sy, Math.round(zone.h * img.naturalHeight));
+          if (sw < 8 || sh < 8) { sx = 0; sy = 0; sw = img.naturalWidth; sh = img.naturalHeight; }
+        }
+        let w = sw, h = sh;
         if (w > h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
         else if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
         const cv = document.createElement("canvas");
         cv.width = w; cv.height = h;
-        cv.getContext("2d").drawImage(img, 0, 0, w, h);
+        cv.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
         URL.revokeObjectURL(url);
         cv.toBlob((b) => b ? resolve(b) : reject(new Error("compression")), "image/jpeg", 0.7);
       } catch (e) { URL.revokeObjectURL(url); reject(e); }
@@ -796,13 +812,13 @@ function positionSelonPrecision(gps, precision) {
   return { lat: Math.round(gps.lat * 100) / 100, lon: Math.round(gps.lon * 100) / 100 };
 }
 
-async function publierAuMur(obs, auteur, precision) {
+async function publierAuMur(obs, auteur, precision, cadreMur) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Mur non configuré");
-  // 1) upload de la photo compressée
+  // 1) upload de la photo compressée (recadrée si un cadre est fourni)
   let photoUrl = "";
   if (obs.photo) {
-    const compresse = await compresserPourMur(obs.photo);
+    const compresse = await compresserPourMur(obs.photo, cadreMur);
     const nomFichier = `post-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
     const { error: errUp } = await sb.storage.from("photos").upload(nomFichier, compresse, { contentType: "image/jpeg", upsert: false });
     if (errUp) throw new Error("Envoi de la photo impossible");
@@ -1043,6 +1059,9 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.00", date: "2026-07", items: ["🎉 BioDex v1.0 ! Et pour marquer le coup, un écran « Confidentialité » clair et honnête (dans le menu) : ce qui reste sur ton téléphone, ce que tu choisis de partager, ce qu'il advient de tes photos. Aucune pub, aucun traqueur, aucune revente de données — et tu peux demander la suppression de tes données à tout moment."] },
+  { v: "0.99", date: "2026-07", items: ["✂️ Recadrage au partage : avant de publier une trouvaille sur le mur, tu peux recadrer ta photo pour bien mettre l'insecte en valeur. Ta photo d'origine reste intacte dans ta collection !"] },
+  { v: "0.98", date: "2026-07", items: ["🔍 Guide d'observation : un nouvel écran (dans le menu) explique quand et où chercher les insectes, comment réussir ses photos, et surtout comment les observer sans les déranger. Avec un calendrier des saisons pour savoir quoi guetter selon le mois !"] },
   { v: "0.97", date: "2026-07", items: ["⚖️ Combat rééquilibré : l'avantage de type était trop écrasant (il décidait quasi tout, surtout que l'adversaire est aléatoire) — il est adouci pour que tes stats et tes cartes comptent davantage. Le poison du Venimeux est aussi légèrement dosé. Combats plus justes !"] },
   { v: "0.96", date: "2026-07", items: ["⚖️ Arène rééquilibrée : le mode Arène était bien trop dur (on perdait souvent d'entrée). Le premier adversaire est maintenant un échauffement, la montée en difficulté est plus douce, et ton insecte est mieux soigné entre les manches. Les runs sont plus longs et gratifiants !"] },
   { v: "0.95", date: "2026-07", items: ["🏟️ Combat plus prenant (4/4) : le mode Arène ! Enchaîne des adversaires de plus en plus coriaces, ton insecte soigné entre chaque manche, et bats ton record de série. Choisis « Arène » avant de sélectionner ton champion. Jusqu'où iras-tu ?"] },
@@ -2284,6 +2303,153 @@ function calculerClassement(posts, periode, raretes) {
     parAuteur[a].trouvailles += 1;
   });
   return Object.values(parAuteur).sort((x, y) => y.points - x.points || y.trouvailles - x.trouvailles);
+}
+
+function Confidentialite({ onFermer }) {
+  const p = { fontFamily: sans, fontSize: 13, color: C.papierClair, lineHeight: 1.6, marginBottom: 10 };
+  const li = { fontFamily: sans, fontSize: 13, color: C.papierClair, lineHeight: 1.6, marginBottom: 6 };
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 16 }}>← Retour</Bouton>
+
+      <div style={{ textAlign: "center", marginBottom: 6 }}><div style={{ fontSize: 38 }}>🔒</div></div>
+      <h2 style={{ fontFamily: serif, fontSize: 23, fontWeight: 700, color: C.papier, textAlign: "center", marginBottom: 4 }}>Confidentialité</h2>
+      <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, textAlign: "center", marginBottom: 16 }}>Mise à jour : juillet 2026</div>
+
+      {/* Résumé */}
+      <div style={{ padding: "13px 15px", borderRadius: 12, background: "linear-gradient(135deg, #1A2820, #14201A)", border: "1px solid #2E4A3A", marginBottom: 16 }}>
+        <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: "#7FC79B", marginBottom: 8 }}>L'essentiel</div>
+        <div style={li}>📱 <b style={{ color: C.papier }}>Ta collection reste sur ton téléphone.</b> Elle ne part nulle part.</div>
+        <div style={li}>🌐 <b style={{ color: C.papier }}>Seul ce que tu publies</b> sur le mur est envoyé sur un serveur.</div>
+        <div style={li}>📍 <b style={{ color: C.papier }}>Ta position exacte n'est jamais partagée par défaut</b> (floutée à ~1 km).</div>
+        <div style={{ ...li, marginBottom: 0 }}>🚫 <b style={{ color: C.papier }}>Aucune pub, aucun traqueur, aucune revente de données.</b> Jamais.</div>
+      </div>
+
+      <SectionPliable titre="📱 Ce qui reste chez toi">
+        <div style={p}>Tes observations (photos, espèce, position <b style={{ color: C.papier }}>précise</b>, biotope, date, météo, notes) sont enregistrées <b style={{ color: C.papier }}>localement</b>, dans le stockage de ton navigateur.</div>
+        <div style={p}>Elles ne sont envoyées à personne, et je n'y ai aucun accès. Si tu effaces les données de ton navigateur, elles sont perdues — pense à la fonction d'export pour les sauvegarder.</div>
+      </SectionPliable>
+
+      <SectionPliable titre="🌐 Ce que tu choisis de partager">
+        <div style={p}>Rien n'est partagé sans une action explicite de ta part.</div>
+        <div style={p}><b style={{ color: C.papier }}>Sur le mur commun</b>, quand tu appuies sur « Partager au mur » : la photo, ton prénom, l'espèce et le niveau de confiance, le biotope, la date, et la position selon le niveau que <b style={{ color: C.papier }}>tu</b> choisis (approximative ~1 km par défaut, exacte, ou masquée).</div>
+        <div style={p}><b style={{ color: C.papier }}>Autres fonctions sociales</b> : réactions (ton prénom), boîte à idées (prénom + texte), Ligue et classement (prénom, cartes, scores), missions validées.</div>
+        <div style={p}><b style={{ color: C.papier }}>Connexion par email (facultative)</b> : l'appli marche sans compte. Si tu te connectes, ton email sert uniquement au lien de connexion et à rattacher ton profil. Il n'est jamais affiché aux autres.</div>
+      </SectionPliable>
+
+      <SectionPliable titre="🤖 L'identification par IA">
+        <div style={p}>Quand tu lances une identification, <b style={{ color: C.papier }}>la photo est envoyée à un service d'IA</b> (l'API d'Anthropic) pour reconnaître l'insecte. Elle transite par un serveur intermédiaire qui <b style={{ color: C.papier }}>ne la conserve pas</b>.</div>
+        <div style={p}>Une alternative <b style={{ color: C.papier }}>entièrement locale</b> existe (« test local hors-ligne ») : moins précise, mais ta photo ne quitte jamais ton appareil.</div>
+        <div style={p}>L'appli interroge aussi iNaturalist pour estimer la rareté : seul le <b style={{ color: C.papier }}>nom scientifique</b> est transmis — jamais ta photo ni ta position.</div>
+      </SectionPliable>
+
+      <SectionPliable titre="🗄️ Où sont stockées les données partagées">
+        <div style={p}>Les données publiées sont hébergées chez <b style={{ color: C.papier }}>Supabase</b> (base de données et photos), et l'application est distribuée par <b style={{ color: C.papier }}>Netlify</b>. Ces prestataires hébergent les données ; ils n'en sont pas propriétaires.</div>
+      </SectionPliable>
+
+      <SectionPliable titre="✊ Tes droits">
+        <div style={p}>Tu restes <b style={{ color: C.papier }}>propriétaire des photos que tu prends</b>. En les publiant, tu acceptes simplement qu'elles soient visibles par les autres utilisateurs.</div>
+        <div style={p}>Tu peux à tout moment : consulter tes données, les corriger, <b style={{ color: C.papier }}>supprimer tes publications</b> (directement depuis l'appli) ou demander la suppression de l'ensemble de tes données, et t'opposer à leur traitement.</div>
+        <div style={{ ...p, marginBottom: 0 }}>Pour toute demande, écris à : <b style={{ color: C.ambreClair }}>{EMAIL_CONTACT || "(adresse de contact à renseigner)"}</b></div>
+      </SectionPliable>
+
+      <SectionPliable titre="👶 Les enfants">
+        <div style={{ ...p, marginBottom: 0 }}>BioDex peut être utilisée en famille. Si un enfant l'utilise, il est recommandé qu'un parent supervise ce qui est publié sur le mur (photo, prénom, position).</div>
+      </SectionPliable>
+
+      <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+        <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, lineHeight: 1.6 }}>
+          <b style={{ color: C.papier }}>Responsable du traitement :</b> Sylvain Mercier<br />
+          {EMAIL_CONTACT ? <span><b style={{ color: C.papier }}>Contact :</b> {EMAIL_CONTACT}<br /></span> : null}
+          BioDex est un projet personnel, sans but lucratif. Les dons servent à couvrir les frais (notamment le coût des identifications).
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GuideObservation({ onFermer }) {
+  const MOIS = [
+    { m: "Décembre – Février", txt: "Saison creuse : cherche les insectes qui hivernent. Sous les écorces mortes, dans le bois pourri, sous les pierres, dans les tas de feuilles. Coccinelles en grappes, larves, chrysalides, papillons hivernants (Citron, Paon-du-jour) réveillés par un redoux." },
+    { m: "Mars – Mai", txt: "Le grand réveil ! Premiers papillons, bourdons fondatrices en quête de nid, abeilles solitaires. Les fleurs printanières (saules, pissenlits, fruitiers) sont des mangeoires géantes. Excellente période pour les pollinisateurs." },
+    { m: "Juin – Août", txt: "Le pic ! Tout est dehors. Lucane cerf-volant et Rosalie des Alpes (les enquêtes OPIE !), libellules près de l'eau, criquets et sauterelles dans les prairies, papillons partout. Les nuits chaudes sont parfaites pour les nocturnes." },
+    { m: "Septembre – Novembre", txt: "Dernière danse : frelons et guêpes très actifs, araignées aux grandes toiles (épeires), papillons tardifs (Vulcain, Belle-Dame). Les lierres en fleur en octobre sont un festin pour les derniers butineurs." },
+  ];
+  const encart = (emoji, titre, texte, couleur) => (
+    <div style={{ display: "flex", gap: 11, alignItems: "flex-start", padding: "11px 13px", borderRadius: 10, background: C.panneau, border: `1px solid ${couleur || C.bordure}`, marginBottom: 9 }}>
+      <span style={{ fontSize: 19, flexShrink: 0 }}>{emoji}</span>
+      <div>
+        <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: C.papier, marginBottom: 2 }}>{titre}</div>
+        <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierClair, lineHeight: 1.55 }}>{texte}</div>
+      </div>
+    </div>
+  );
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 16 }}>← Retour</Bouton>
+
+      <div style={{ textAlign: "center", marginBottom: 6 }}>
+        <div style={{ fontSize: 40 }}>🔍</div>
+      </div>
+      <h2 style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.papier, textAlign: "center", marginBottom: 4 }}>Guide d'observation</h2>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, textAlign: "center", lineHeight: 1.55, marginBottom: 18 }}>
+        Quelques clés pour dénicher les insectes, les photographier — et les respecter.
+      </div>
+
+      <SectionPliable titre="🕐 Quand observer" ouvertParDefaut={true}>
+        {encart("☀️", "Le bon moment de la journée", "Les insectes sont à sang froid : ils ont besoin de chaleur pour bouger. Le milieu de matinée (9h–12h) est idéal — ils sont actifs mais encore engourdis, donc plus faciles à photographier. En pleine chaleur, beaucoup se cachent. Tôt le matin, les papillons et libellules sont immobiles, parfois couverts de rosée : des photos superbes !")}
+        {encart("🌡️", "La météo qui aide", "Chaud, ensoleillé, peu ou pas de vent : les conditions rêvées. Le vent est ton pire ennemi (tout bouge, tout se cache). Après une pluie d'été suivie de soleil, l'activité repart en flèche. Par temps couvert ou frais, cherche plutôt sous les abris.")}
+        {encart("🌙", "La nuit, un autre monde", "Une lampe (ou un simple lampadaire) attire papillons de nuit, hannetons et bien d'autres. Un drap blanc éclairé fait un « écran à papillons » très efficace. Les nuits douces et sans lune sont les meilleures.")}
+      </SectionPliable>
+
+      <SectionPliable titre="📍 Où chercher">
+        {encart("🌸", "Les fleurs, cantine à insectes", "Le point de départ le plus rentable. Vise les ombellifères (carotte sauvage), les composées (marguerites), le lierre en fleur à l'automne, les ronciers. Reste immobile devant un massif fleuri et laisse venir : abeilles, syrphes, papillons, coléoptères défileront.")}
+        {encart("🪵", "Le bois mort, trésor caché", "Souches, troncs pourris, tas de bûches : c'est là que vivent les larves de lucane, les longicornes, les cétoines. Soulève délicatement les écorces qui se décollent (et remets-les en place !).")}
+        {encart("💧", "Près de l'eau", "Mares, ruisseaux, flaques : libellules et demoiselles y patrouillent, notamment sur les tiges émergentes où elles se posent. Les berges boueuses attirent aussi les papillons qui viennent boire.")}
+        {encart("🪨", "Sous les pierres et les feuilles", "Un monde discret : carabes, cloportes, forficules. Soulève, observe... et repose la pierre exactement comme tu l'as trouvée : c'est un abri pour eux.")}
+        {encart("🏡", "Ton jardin, ton terrain de chasse", "Un coin d'herbes hautes non tondu, un tas de bois, quelques fleurs sauvages : tu multiplies les espèces visibles chez toi. Le meilleur observatoire, c'est celui qu'on visite tous les jours.")}
+      </SectionPliable>
+
+      <SectionPliable titre="📷 Réussir ses photos (et ses identifications)">
+        {encart("🎯", "Ce que l'IA a besoin de voir", "Une photo nette, cadrée serrée sur l'insecte, avec le corps entier si possible. Les détails qui font la différence : les ailes (nervures, motifs), la tête et les antennes, les pattes. Une photo de dessus ET une de profil valent mieux qu'une seule.")}
+        {encart("🔦", "La lumière", "Évite le flash direct (il écrase les couleurs et fait fuir). Préfère la lumière naturelle, et place-toi de façon à ne pas faire d'ombre sur le sujet. Un ciel légèrement voilé donne une lumière douce parfaite.")}
+        {encart("🐌", "Approcher sans faire fuir", "Bouge lentement, sans gestes brusques ni ombre portée sur l'insecte. Approche par le côté plutôt que par le dessus (un ombre au-dessus = un prédateur !). La patience paie : reste immobile quelques secondes, souvent l'insecte se réhabitue.")}
+        {encart("📏", "Le contexte compte", "Note la plante sur laquelle il se trouve, le milieu (prairie, forêt, mare) : ça aide énormément à l'identification. BioDex enregistre déjà le lieu, la date et la météo pour toi — pense juste à renseigner le biotope !")}
+      </SectionPliable>
+
+      <SectionPliable titre="💚 Observer sans nuire">
+        {encart("🤲", "Regarder, pas capturer", "Aucun besoin d'attraper un insecte pour l'admirer ou le photographier. Ne les capture pas, ne les mets pas au congélateur ou dans un bocal pour « poser ». Une photo dans son milieu vaut cent fois mieux — et c'est ce que la science attend.", "#3E5A2E")}
+        {encart("🚫", "Ne pas déranger", "Ne déplace pas un insecte pour le mettre « en scène », n'arrache pas la plante où il est posé, ne détruis pas une toile d'araignée ou un nid. Si tu soulèves une pierre ou une écorce, remets-la à l'identique.", "#3E5A2E")}
+        {encart("🐝", "Les piqueurs : garder ses distances", "Abeilles, guêpes, frelons ne piquent que s'ils se sentent menacés. N'approche jamais un nid, ne fais pas de gestes brusques. Le frelon asiatique et le frelon européen se photographient de loin, au zoom. Aucune photo ne vaut une piqûre.", "#5A4A2E")}
+        {encart("🌿", "Laisser le milieu intact", "Reste sur les sentiers quand ils existent, ne piétine pas les prairies fleuries, remporte tes déchets. Un bon observateur laisse un lieu exactement comme il l'a trouvé.", "#3E5A2E")}
+        {encart("🔬", "Partager, c'est protéger", "Tes observations, versées à iNaturalist ou aux enquêtes OPIE, servent vraiment : elles aident à cartographier les espèces et à mesurer leur déclin. C'est la meilleure façon de transformer une balade en acte utile.", "#2E4A3A")}
+      </SectionPliable>
+
+      <SectionPliable titre="📅 Au fil des saisons">
+        {MOIS.map((s, i) => (
+          <div key={i} style={{ padding: "11px 13px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}`, marginBottom: 9 }}>
+            <div style={{ fontFamily: serif, fontSize: 15, fontWeight: 600, color: C.ambreClair, marginBottom: 3 }}>{s.m}</div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierClair, lineHeight: 1.55 }}>{s.txt}</div>
+          </div>
+        ))}
+      </SectionPliable>
+
+      <SectionPliable titre="🎒 Le matériel (spoiler : presque rien)">
+        {encart("📱", "Ton téléphone suffit", "Vraiment. Les appareils photo de smartphone récents font d'excellentes photos d'insectes. Utilise le zoom optique si tu en as un, et pense au bouton « 🔍 Zoomer » de BioDex pour vérifier la netteté avant d'identifier.")}
+        {encart("🔎", "Le petit plus : une loupe clip", "Une loupe macro à clipser sur le téléphone (quelques euros) change tout pour les tout petits insectes : elle révèle des détails invisibles à l'œil nu.")}
+        {encart("👕", "S'habiller malin", "Des vêtements clairs et couvrants (pour les tiques et les ronces), des chaussures fermées. Évite les parfums, qui attirent ou perturbent les insectes.")}
+      </SectionPliable>
+
+      <div style={{ marginTop: 18, padding: "13px 15px", borderRadius: 12, background: "linear-gradient(135deg, #2A2417, #201B12)", border: "1px solid #6B5A2E" }}>
+        <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambreClair, lineHeight: 1.6, textAlign: "center" }}>
+          « Le meilleur observateur n'est pas celui qui trouve le plus, mais celui qui regarde le mieux. »
+        </div>
+        <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, textAlign: "center", marginTop: 8, lineHeight: 1.5 }}>
+          Prends ton temps, observe, et laisse chaque bestiole vivre sa vie. 🐞
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Soutenir({ onFermer }) {
@@ -3798,6 +3964,8 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
   const [profilErreur, setProfilErreur] = useState("");
   const [cadrage, setCadrage] = useState(false);
   const [cadreZone, setCadreZone] = useState({ x: 0.2, y: 0.2, w: 0.6, h: 0.6 });
+  const [cadrageMur, setCadrageMur] = useState(false); // panneau de recadrage ouvert (partage au mur)
+  const [cadreMur, setCadreMur] = useState(null); // null = photo entière
   const photoDetailUrl = useBlobUrl(obs.photo);
   const ligne = { display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 14 };
   const cle = { color: C.lichen, fontWeight: 600 };
@@ -3852,7 +4020,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
     setMurEtat("envoi");
     setMurErreur("");
     try {
-      await publierAuMur(obs, auteur, precisionPos);
+      await publierAuMur(obs, auteur, precisionPos, cadreMur);
       try { localStorage.setItem("biodex_precision_pos", precisionPos); } catch {}
       setMurEtat("ok");
     } catch (e) {
@@ -4114,6 +4282,38 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
                 </div>
               )}
 
+              {/* Recadrage de la photo publiée */}
+              {obs.photo && (
+                <div style={{ marginBottom: 12 }}>
+                  {!cadrageMur ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <Bouton onClick={() => { setCadreZone(cadreMur || { x: 0.15, y: 0.15, w: 0.7, h: 0.7 }); setCadrageMur(true); }} style={{ flex: 1 }}>
+                        ✂️ {cadreMur ? "Modifier le cadrage" : "Recadrer la photo"}
+                      </Bouton>
+                      {cadreMur && (
+                        <Bouton onClick={() => setCadreMur(null)}>↺ Photo entière</Bouton>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ padding: 12, borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+                      <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 8, lineHeight: 1.5 }}>
+                        ✂️ Déplace et redimensionne le cadre pour choisir ce qui sera publié sur le mur.
+                      </div>
+                      <SelecteurZone photoUrl={photoDetailUrl} zone={cadreZone} onChange={setCadreZone} />
+                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                        <Bouton variante="primaire" onClick={() => { setCadreMur(cadreZone); setCadrageMur(false); }} style={{ flex: 1 }}>✓ Valider le cadrage</Bouton>
+                        <Bouton onClick={() => setCadrageMur(false)}>Annuler</Bouton>
+                      </div>
+                    </div>
+                  )}
+                  {cadreMur && !cadrageMur && (
+                    <div style={{ fontFamily: sans, fontSize: 11, color: C.lichen, marginTop: 6, fontStyle: "italic" }}>
+                      ✂️ La photo sera publiée recadrée.
+                    </div>
+                  )}
+                </div>
+              )}
+
               <Bouton variante="primaire" onClick={partagerAuMur} disabled={murEtat === "envoi"} style={{ width: "100%" }}>
                 {murEtat === "envoi" ? "📤 Partage en cours…" : "📤 Partager au mur"}
               </Bouton>
@@ -4348,6 +4548,8 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {MUR_ACTIF && item("🏅", "Classement", "Les meilleurs chasseurs de la bande", () => onAller("classement"), 0)}
         {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Mon profil" : "Se connecter", utilisateur ? "Ta collection d'espèces" : "Connexion facultative par email", () => onAller("connexion"), 0)}
+        {item("🔍", "Guide d'observation", "Quand, où et comment observer les insectes", () => onAller("guide"), 0)}
+        {item("🔒", "Confidentialité", "Quelles données, et ce que j'en fais", () => onAller("confidentialite"), 0)}
         {item("📣", "Partager l'appli", "Inviter des amis à rejoindre BioDex", () => partagerAppli(), 0)}
         {LIEN_DON && item("☕", "Soutenir BioDex", "Un petit don, si le cœur t'en dit", () => onAller("soutenir"), 0)}
         {onRevoirPresentation && item("✨", "Revoir la présentation", "L'écran de bienvenue de BioDex", () => { onFermer(); onRevoirPresentation(); }, 0)}
@@ -4999,7 +5201,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🌐 Mur commun</div>
         <p style={p}>
-          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Indique ton prénom une fois, il est mémorisé. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
+          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection. Indique ton prénom une fois, il est mémorisé. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
         </p>
         <div style={t}>📖 Posts détaillés</div>
         <p style={p}>
@@ -6938,6 +7140,12 @@ function BioDex() {
       )}
       {vue === "soutenir" && (
         <Soutenir onFermer={() => setVue("collection")} />
+      )}
+      {vue === "guide" && (
+        <GuideObservation onFermer={() => setVue("collection")} />
+      )}
+      {vue === "confidentialite" && (
+        <Confidentialite onFermer={() => setVue("collection")} />
       )}
       {vue === "defi" && carteDefiee && (
         <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
