@@ -129,9 +129,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.01 (PWA) ============
+// ============ BioDex v1.03 (PWA) ============
 
-const VERSION = "v1.01";
+const VERSION = "v1.03";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -142,7 +142,7 @@ const LIEN_DON = "https://paypal.me/BioDex";
 // Adresse de contact affichée dans la politique de confidentialité (RGPD).
 // Mets ici l'email où l'on peut te joindre pour une demande de suppression de données.
 // Exemple : "biodex.contact@gmail.com"
-const EMAIL_CONTACT = "";
+const EMAIL_CONTACT = "biodex@outlook.fr";
 // ============================================================
 
 // ============================================================
@@ -1059,6 +1059,8 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.03", date: "2026-07", items: ["💛 Petite retouche : l'icône « Soutenir BioDex » passe de la tasse de café au cœur — plus dans l'esprit de l'appli !"] },
+  { v: "1.02", date: "2026-07", items: ["📧 Contact : une adresse (biodex@outlook.fr) est désormais indiquée dans l'écran Confidentialité, pour toute question ou demande concernant tes données."] },
   { v: "1.01", date: "2026-07", items: ["🧭 Menu réorganisé : les entrées sont désormais rangées par sections (La bande · Apprendre · Mon compte · Faire vivre BioDex · À propos), les plus utiles en haut. Beaucoup plus clair !"] },
   { v: "1.00", date: "2026-07", items: ["🎉 BioDex v1.0 ! Et pour marquer le coup, un écran « Confidentialité » clair et honnête (dans le menu) : ce qui reste sur ton téléphone, ce que tu choisis de partager, ce qu'il advient de tes photos. Aucune pub, aucun traqueur, aucune revente de données — et tu peux demander la suppression de tes données à tout moment."] },
   { v: "0.99", date: "2026-07", items: ["✂️ Recadrage au partage : avant de publier une trouvaille sur le mur, tu peux recadrer ta photo pour bien mettre l'insecte en valeur. Ta photo d'origine reste intacte dans ta collection !"] },
@@ -2351,7 +2353,9 @@ function Confidentialite({ onFermer }) {
       <SectionPliable titre="✊ Tes droits">
         <div style={p}>Tu restes <b style={{ color: C.papier }}>propriétaire des photos que tu prends</b>. En les publiant, tu acceptes simplement qu'elles soient visibles par les autres utilisateurs.</div>
         <div style={p}>Tu peux à tout moment : consulter tes données, les corriger, <b style={{ color: C.papier }}>supprimer tes publications</b> (directement depuis l'appli) ou demander la suppression de l'ensemble de tes données, et t'opposer à leur traitement.</div>
-        <div style={{ ...p, marginBottom: 0 }}>Pour toute demande, écris à : <b style={{ color: C.ambreClair }}>{EMAIL_CONTACT || "(adresse de contact à renseigner)"}</b></div>
+        <div style={{ ...p, marginBottom: 0 }}>Pour toute demande, écris à : {EMAIL_CONTACT
+          ? <a href={"mailto:" + EMAIL_CONTACT} style={{ color: C.ambreClair, fontWeight: 700, textDecoration: "underline" }}>{EMAIL_CONTACT}</a>
+          : <b>(adresse de contact à renseigner)</b>}</div>
       </SectionPliable>
 
       <SectionPliable titre="👶 Les enfants">
@@ -2361,7 +2365,7 @@ function Confidentialite({ onFermer }) {
       <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
         <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, lineHeight: 1.6 }}>
           <b style={{ color: C.papier }}>Responsable du traitement :</b> Sylvain Mercier<br />
-          {EMAIL_CONTACT ? <span><b style={{ color: C.papier }}>Contact :</b> {EMAIL_CONTACT}<br /></span> : null}
+          {EMAIL_CONTACT ? <span><b style={{ color: C.papier }}>Contact :</b> <a href={"mailto:" + EMAIL_CONTACT} style={{ color: C.ambreClair, textDecoration: "underline" }}>{EMAIL_CONTACT}</a><br /></span> : null}
           BioDex est un projet personnel, sans but lucratif. Les dons servent à couvrir les frais (notamment le coût des identifications).
         </div>
       </div>
@@ -2477,7 +2481,7 @@ function Soutenir({ onFermer }) {
 
       {LIEN_DON && (
         <a href={LIEN_DON} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", marginTop: 22, boxSizing: "border-box", fontFamily: sans, fontSize: 16, fontWeight: 800, padding: "15px 0", borderRadius: 12, textDecoration: "none", color: C.encre, background: "linear-gradient(#E4C878, #C9A24B)", boxShadow: "0 4px 14px rgba(201,162,75,.3)" }}>
-          ☕ Faire un don
+          💛 Faire un don
         </a>
       )}
       <div style={{ textAlign: "center", fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 12, lineHeight: 1.5 }}>
@@ -4568,7 +4572,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {/* Faire vivre BioDex */}
         {titreSection("Faire vivre BioDex")}
         {item("📣", "Partager l'appli", "Inviter des amis à rejoindre BioDex", () => partagerAppli(), 0)}
-        {LIEN_DON && item("☕", "Soutenir BioDex", "Un petit don, si le cœur t'en dit", () => onAller("soutenir"), 0)}
+        {LIEN_DON && item("💛", "Soutenir BioDex", "Un petit don, si le cœur t'en dit", () => onAller("soutenir"), 0)}
 
         {/* À propos — rarement consulté */}
         {titreSection("À propos")}
