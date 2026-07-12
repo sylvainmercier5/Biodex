@@ -129,9 +129,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.03 (PWA) ============
+// ============ BioDex v1.04 (PWA) ============
 
-const VERSION = "v1.03";
+const VERSION = "v1.04";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1059,6 +1059,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.04", date: "2026-07", items: ["🔧 Correctif menu : le menu débordait de l'écran (la dernière entrée était coupée) et le défilement faisait bouger la page derrière au lieu du menu. C'est corrigé : le menu défile désormais correctement, tout en gardant son en-tête visible."] },
   { v: "1.03", date: "2026-07", items: ["💛 Petite retouche : l'icône « Soutenir BioDex » passe de la tasse de café au cœur — plus dans l'esprit de l'appli !"] },
   { v: "1.02", date: "2026-07", items: ["📧 Contact : une adresse (biodex@outlook.fr) est désormais indiquée dans l'écran Confidentialité, pour toute question ou demande concernant tes données."] },
   { v: "1.01", date: "2026-07", items: ["🧭 Menu réorganisé : les entrées sont désormais rangées par sections (La bande · Apprendre · Mon compte · Faire vivre BioDex · À propos), les plus utiles en haut. Beaucoup plus clair !"] },
@@ -4437,7 +4438,7 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
 
   return (
     <div onClick={onFermer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 1200, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, margin: "56px 12px 0", background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 14, overflow: "hidden", maxHeight: "82vh", overflowY: "auto", boxShadow: "0 8px 30px rgba(0,0,0,.5)" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, margin: "56px 12px 0", background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 14, overflow: "hidden", maxHeight: "82vh", overflowY: "auto", overscrollBehavior: "contain", boxShadow: "0 8px 30px rgba(0,0,0,.5)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.bordure}` }}>
           <span style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier }}>🔔 Notifications</span>
           <button onClick={onFermer} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
@@ -4548,12 +4549,13 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
   );
 
   return (
-    <div onClick={onFermer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 1200, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, margin: "56px 12px 0", background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 8px 30px rgba(0,0,0,.5)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.bordure}` }}>
+    <div onClick={onFermer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 1200, display: "flex", justifyContent: "center", alignItems: "flex-start", overscrollBehavior: "contain" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, margin: "56px 12px 12px", maxHeight: "calc(100vh - 68px)", display: "flex", flexDirection: "column", background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 8px 30px rgba(0,0,0,.5)" }}>
+        <div style={{ flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", borderBottom: `1px solid ${C.bordure}` }}>
           <span style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier }}>Menu</span>
           <button onClick={onFermer} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
         </div>
+        <div style={{ overflowY: "auto", overscrollBehavior: "contain", WebkitOverflowScrolling: "touch", flex: 1 }}>
         {/* La bande — ce qu'on consulte souvent */}
         {titreSection("La bande")}
         {item("🎯", "Missions saisonnières", "Défis d'observation de la bande", () => onAller("missions"), missionsNouv)}
@@ -4581,6 +4583,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         <div style={{ padding: "14px 16px 16px", textAlign: "center" }}>
           <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 12, color: C.ambre }}>Une création de Sylvain Mercier</div>
           <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, marginTop: 2 }}>BioDex © 2026 · Tous droits réservés</div>
+        </div>
         </div>
       </div>
     </div>
