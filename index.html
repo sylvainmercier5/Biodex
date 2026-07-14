@@ -60,6 +60,20 @@
   .bd-secousse-ecran { animation: bdSecousseEcran .42s ease; }
   @keyframes bdCallout { 0%{opacity:0; transform:translateX(-50%) scale(.6)} 20%{opacity:1; transform:translateX(-50%) scale(1.12)} 75%{opacity:1; transform:translateX(-50%) scale(1)} 100%{opacity:0; transform:translateX(-50%) scale(1)} }
   .bd-callout { animation: bdCallout 1s ease forwards; }
+  @keyframes bdConfetti {
+    0% { transform: translateY(-10vh) rotate(0deg); opacity: 0; }
+    8% { opacity: 1; }
+    100% { transform: translateY(105vh) rotate(420deg); opacity: 0; }
+  }
+  .bd-confetti { animation-name: bdConfetti; animation-timing-function: linear; animation-fill-mode: forwards; }
+  @keyframes bdCelebration {
+    0% { transform: translateY(-70px) scale(.92); opacity: 0; }
+    12% { transform: translateY(0) scale(1.03); opacity: 1; }
+    20% { transform: translateY(0) scale(1); }
+    85% { transform: translateY(0) scale(1); opacity: 1; }
+    100% { transform: translateY(-24px) scale(.97); opacity: 0; }
+  }
+  .bd-celebration { animation: bdCelebration 4.2s cubic-bezier(.2,.9,.3,1) forwards; }
   @keyframes bdIntro { 0%{opacity:0; transform:scale(1.12)} 12%{opacity:1; transform:scale(1)} 82%{opacity:1; transform:scale(1)} 100%{opacity:0; transform:scale(1)} }
   .bd-intro { animation: bdIntro 1.9s ease forwards; }
   .bd-flash { animation: bdFlash .45s ease; }
@@ -127,9 +141,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.18 (PWA) ============
+// ============ BioDex v1.20 (PWA) ============
 
-const VERSION = "v1.18";
+const VERSION = "v1.20";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1058,6 +1072,8 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.20", date: "2026-07", items: ["🔧 Correctif : les célébrations ne se rejouent plus. Chaque réussite n'est fêtée qu'une seule fois, au moment où tu la débloques — même si le réseau était coupé à cet instant."] },
+  { v: "1.19", date: "2026-07", items: ["🎉 Célébrations ! Tes réussites ne passent plus inaperçues : quand tu relèves un défi, accomplis une mission, découvres une nouvelle espèce ou franchis un palier du jardin refuge, une bannière festive apparaît avec des confettis (papillons et coccinelles !) et un petit son de victoire. Les espèces rares ont droit à une célébration dorée."] },
   { v: "1.18", date: "2026-07", items: ["📈 Suivi des espèces : un nouvel écran (menu ☰) qui montre, pour chaque espèce partagée sur le mur, à quelle période la bande la voit, son pic d'activité, où elle se trouve, qui l'a débusquée — et surtout la DATE DE PREMIÈRE APPARITION de chaque année. C'est de la phénologie amateur : au fil des saisons, vos données révéleront si les espèces sortent plus tôt ou plus tard. Plus vous publiez, plus les courbes deviennent parlantes !"] },
   { v: "1.17", date: "2026-07", items: ["🗺️ Le territoire de la bande : en mode « 🌐 La bande » sur la carte, découvre l'étendue explorée par le groupe, le coin le plus riche en espèces, qui cartographie le plus… et surtout la liste des espèces que les autres ont trouvées mais pas toi. De quoi savoir où aller chasser !"] },
   { v: "1.16", date: "2026-07", items: ["🔬 « Ce que révèlent tes données » : les statistiques croisent désormais tes observations pour en tirer de vraies tendances — à quelle température sortent tes libellules par rapport à tes coléoptères, à quel moment tu croises tel ou tel ordre, quel spot est le plus riche… De la petite science personnelle, tirée de tes propres trouvailles !"] },
@@ -2417,10 +2433,29 @@ function JardinRefuge({ onFermer }) {
     try { const b = localStorage.getItem("biodex_refuge"); const l = b ? JSON.parse(b) : []; return Array.isArray(l) ? l : []; }
     catch { return []; }
   });
+  const paliers = [
+    { seuil: 3, emoji: "🌿", titre: "Jardin accueillant !", texte: "3 gestes accomplis — les insectes commencent à s'y sentir bien." },
+    { seuil: 6, emoji: "🌳", titre: "Vrai refuge à insectes !", texte: "6 gestes accomplis — ton jardin est un havre de biodiversité." },
+    { seuil: 10, emoji: "🏆", titre: "Sanctuaire de biodiversité !", texte: "Les 10 gestes accomplis. Chapeau bas — ton jardin est un modèle !" },
+  ];
   const basculer = (id) => {
+    const avant = faits.length;
     const maj = faits.includes(id) ? faits.filter((x) => x !== id) : [...faits, id];
     setFaits(maj);
     try { localStorage.setItem("biodex_refuge", JSON.stringify(maj)); } catch {}
+    // Palier franchi ? (une seule fois, à la montée)
+    if (maj.length > avant) {
+      const p = paliers.find((x) => x.seuil === maj.length);
+      if (p) {
+        try {
+          const cle = "biodex_refuge_palier_" + p.seuil;
+          if (!localStorage.getItem(cle)) {
+            localStorage.setItem(cle, "1");
+            setTimeout(() => celebrer({ emoji: p.emoji, titre: p.titre, texte: p.texte, ton: p.seuil >= 10 ? "legendaire" : "mission" }), 250);
+          }
+        } catch {}
+      }
+    }
   };
   const n = faits.length, total = GESTES_REFUGE.length;
   const pct = Math.round((n / total) * 100);
@@ -3412,6 +3447,82 @@ function ReveilSaisonnier() {
       </div>
       <div style={{ fontFamily: sans, fontSize: 13, color: C.papierClair, lineHeight: 1.55 }}>
         {conseil.texte}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Célébrations ----------
+// Un système unifié : bannière + confettis + son, déclenché par un événement global.
+// Usage : celebrer({ emoji, titre, texte, ton }) depuis n'importe où.
+function celebrer(detail) {
+  try { window.dispatchEvent(new CustomEvent("biodex-celebration", { detail })); } catch {}
+}
+// Sons de réussite (réutilisent le moteur audio du combat).
+function sonCelebration(ton) {
+  try {
+    if (ton === "legendaire") [523, 659, 784, 1047, 1319].forEach((f, i) => bip(f, 0.20, "triangle", 0.11, i * 0.10));
+    else if (ton === "espece") { bip(659, 0.12, "triangle", 0.10); bip(880, 0.18, "triangle", 0.10, 0.10); }
+    else [587, 784, 988].forEach((f, i) => bip(f, 0.16, "triangle", 0.10, i * 0.09));
+  } catch {}
+}
+
+// Affiche les célébrations (bannière + confettis). À monter une seule fois, au niveau de l'app.
+function Celebrations({ sonActif = true }) {
+  const [file, setFile] = useState([]); // célébrations en attente/affichage
+
+  useEffect(() => {
+    const surEvent = (e) => {
+      const d = (e && e.detail) || {};
+      const item = { id: Date.now() + Math.random(), emoji: d.emoji || "🎉", titre: d.titre || "Bravo !", texte: d.texte || "", ton: d.ton || "defi" };
+      setFile((f) => [...f, item]);
+      if (sonActif) sonCelebration(item.ton);
+      setTimeout(() => setFile((f) => f.filter((x) => x.id !== item.id)), 4200);
+    };
+    window.addEventListener("biodex-celebration", surEvent);
+    return () => window.removeEventListener("biodex-celebration", surEvent);
+  }, [sonActif]);
+
+  if (!file.length) return null;
+
+  // Confettis : petits éléments thématiques qui tombent
+  const CONFETTIS = ["🦋", "🐞", "✨", "🍃", "🌟", "🪲"];
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 10050, pointerEvents: "none", overflow: "hidden" }}>
+      {/* Confettis */}
+      {file.length > 0 && Array.from({ length: 18 }).map((_, i) => {
+        const gauche = (i * 5.5 + ((i * 37) % 9)) % 100;
+        const delai = ((i * 13) % 10) / 10;
+        const duree = 2.6 + ((i * 7) % 12) / 10;
+        const taille = 14 + ((i * 11) % 12);
+        return (
+          <span key={i} className="bd-confetti"
+            style={{ position: "absolute", top: -30, left: `${gauche}%`, fontSize: taille,
+              animationDelay: `${delai}s`, animationDuration: `${duree}s` }}>
+            {CONFETTIS[i % CONFETTIS.length]}
+          </span>
+        );
+      })}
+
+      {/* Bannières */}
+      <div style={{ position: "absolute", top: 14, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0 14px" }}>
+        {file.map((c) => {
+          const doré = c.ton === "legendaire";
+          return (
+            <div key={c.id} className="bd-celebration"
+              style={{ width: "100%", maxWidth: 420, display: "flex", alignItems: "center", gap: 13, padding: "13px 16px", borderRadius: 13,
+                background: doré ? "linear-gradient(135deg, #3A2F14, #26200E)" : "linear-gradient(135deg, #24301B, #18220F)",
+                border: `1px solid ${doré ? "#C9A24B" : "#6F9450"}`,
+                boxShadow: `0 6px 26px rgba(0,0,0,.5), 0 0 22px ${doré ? "rgba(201,162,75,.28)" : "rgba(122,170,90,.2)"}` }}>
+              <span style={{ fontSize: 30, flexShrink: 0 }}>{c.emoji}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: serif, fontSize: 16.5, fontWeight: 700, color: doré ? "#E4C878" : "#B7DA8E", lineHeight: 1.25 }}>{c.titre}</div>
+                {c.texte && <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierClair, marginTop: 2, lineHeight: 1.45 }}>{c.texte}</div>}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -5806,6 +5917,31 @@ function DefisSemaine({ observations, embarque }) {
   const faits = defis.filter((d) => defiRempli(d, obsSemaine));
   const tousFaits = faits.length === defis.length;
 
+  // Célébration : on fête chaque défi nouvellement relevé (une seule fois).
+  useEffect(() => {
+    const cleSem = "biodex_defis_fetes_" + numeroSemaine().annee + "_" + numeroSemaine().semaine;
+    let dejaFetes = [];
+    try { dejaFetes = JSON.parse(localStorage.getItem(cleSem) || "[]"); } catch {}
+    if (!Array.isArray(dejaFetes)) dejaFetes = [];
+    const nouveaux = faits.filter((d) => !dejaFetes.includes(d.id));
+    if (!nouveaux.length) return;
+    nouveaux.forEach((d, i) => {
+      setTimeout(() => celebrer({ emoji: d.emoji, titre: "Défi relevé !", texte: d.titre, ton: "defi" }), i * 900);
+    });
+    const maj = [...dejaFetes, ...nouveaux.map((d) => d.id)];
+    try { localStorage.setItem(cleSem, JSON.stringify(maj)); } catch {}
+    // Bonus : les 3 défis de la semaine !
+    if (maj.length >= defis.length) {
+      const cleAll = cleSem + "_all";
+      try {
+        if (!localStorage.getItem(cleAll)) {
+          setTimeout(() => celebrer({ emoji: "🏆", titre: "Chasse au trésor complète !", texte: "Les 3 défis de la semaine sont relevés. Chapeau !", ton: "legendaire" }), nouveaux.length * 900 + 400);
+          localStorage.setItem(cleAll, "1");
+        }
+      } catch {}
+    }
+  }, [observations]);
+
   return (
     <div style={{ padding: embarque ? 0 : 16, maxWidth: 560, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
@@ -5881,6 +6017,14 @@ function Missions({ observations, prenom, onDefinirPrenom, onFermer }) {
         try {
           await validerMission(saison.cle, m.id, moi, true);
           setValidations((prev) => [...prev, { mission_id: m.id, auteur: moi, auto: true }]);
+          // Célébration : une seule fois, mémorisée en local (indépendant du serveur).
+          const cleFete = "biodex_mission_fetee_" + saison.cle + "_" + m.id;
+          try {
+            if (!localStorage.getItem(cleFete)) {
+              localStorage.setItem(cleFete, "1");
+              celebrer({ emoji: m.emoji || "🎯", titre: "Mission accomplie !", texte: m.titre || "", ton: "mission" });
+            }
+          } catch {}
         } catch {}
       }
     });
@@ -8204,10 +8348,24 @@ function BioDex() {
 
   async function sauverObservation(obs) {
     try {
+      // Nouvelle espèce pour la collection ? (on regarde AVANT d'ajouter)
+      const cle = cleEspeceMur(obs);
+      const nouvelle = !!cle && compteEspeceCollection(cle, observations, obs.id) === 0;
       await dbAjouter(obs);
       setObservations((prev) => [obs, ...prev]);
       setVue("collection");
       verifierStockage();
+      if (nouvelle) {
+        const rar = litCacheRarete(cle);
+        const niv = rar && typeof rar.count === "number" ? niveauRarete(rar.count) : null;
+        const legendaire = !!(niv && niv.bonus >= 2); // rare ou très rare
+        setTimeout(() => celebrer({
+          emoji: legendaire ? (niv.emoji || "🌟") : "🌟",
+          titre: legendaire ? "Espèce rare capturée !" : "Nouvelle espèce !",
+          texte: (obs.nom || "Un nouveau spécimen") + (legendaire && niv ? " · " + niv.label : "") + " rejoint ta collection.",
+          ton: legendaire ? "legendaire" : "espece",
+        }), 350);
+      }
       return true;
     } catch {
       return false;
@@ -8484,6 +8642,7 @@ function BioDex() {
           />
         </div>
       )}
+      <Celebrations />
       {montrerPresentation && (
         <Presentation prenomActuel={prenom} onDefinirPrenom={definirPrenom} onCommencer={() => { try { localStorage.setItem("biodex_presentation_vue", "1"); } catch {} setMontrerPresentation(false); }} />
       )}
