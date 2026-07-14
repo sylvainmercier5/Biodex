@@ -141,9 +141,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.20 (PWA) ============
+// ============ BioDex v1.23 (PWA) ============
 
-const VERSION = "v1.20";
+const VERSION = "v1.23";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -488,12 +488,21 @@ function blobVersCanvasBase64(blob, zone) {
   });
 }
 
-async function identifierCloud(blob, zone, contexte) {
+async function identifierCloud(blob, zone, contexte, blobsSupp) {
+  // Photo principale (recadrée si une zone est fournie) + éventuelles vues complémentaires.
   const image = await blobVersCanvasBase64(blob, zone);
+  const images = [{ data: image, media_type: "image/jpeg" }];
+  for (const b of (blobsSupp || []).slice(0, 3)) {
+    try {
+      const d = await blobVersCanvasBase64(b, null);
+      if (d) images.push({ data: d, media_type: "image/jpeg" });
+    } catch {}
+  }
   const r = await fetch("/.netlify/functions/identifier", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "identification", image, media_type: "image/jpeg", contexte }),
+    // On envoie "images" (nouveau) ET "image" (compat serveur non mis à jour).
+    body: JSON.stringify({ mode: "identification", images, image, media_type: "image/jpeg", contexte }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.erreur) throw new Error(j.erreur || "Service indisponible");
@@ -711,6 +720,39 @@ async function ajouterAuProfil(obs, auteur) {
 }
 
 // Liste les espèces déjà présentes dans le profil public de l'utilisateur connecté
+// ---------- Administration (sécurisée côté serveur) ----------
+// L'appli DEMANDE au serveur si l'utilisateur connecté est admin.
+// Même si quelqu'un force l'affichage du panneau, Supabase refusera ses actions (RLS).
+async function estAdminServeur() {
+  const sb = clientSupabase();
+  if (!sb) return false;
+  try {
+    const { data: uData } = await sb.auth.getUser();
+    const user = uData ? uData.user : null;
+    if (!user || !user.email) return false;
+    // La policy RLS ne laisse voir QUE sa propre ligne : si on la trouve, on est admin.
+    const { data, error } = await sb.from("admins").select("email").eq("email", user.email).maybeSingle();
+    if (error) return false;
+    return !!data;
+  } catch { return false; }
+}
+
+// Actions de modération (le serveur vérifie lui-même les droits)
+async function adminSupprimerPost(id) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { error } = await sb.from("posts").delete().eq("id", id);
+  if (error) throw new Error(error.message || "Suppression refusée par le serveur");
+  return true;
+}
+async function adminSupprimerIdee(id) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { error } = await sb.from("idees").delete().eq("id", id);
+  if (error) throw new Error(error.message || "Suppression refusée par le serveur");
+  return true;
+}
+
 async function listerMonProfil() {
   const sb = clientSupabase();
   if (!sb) return [];
@@ -1072,6 +1114,9 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.23", date: "2026-07", items: ["🔐 Espace d'administration (réservé au créateur) : modération du mur et des idées, statistiques globales, liste des membres et outils de maintenance. L'accès est vérifié par le serveur — pas juste masqué dans l'appli."] },
+  { v: "1.22", date: "2026-07", items: ["🔍 Filtres dans le suivi des espèces : filtre par ordre d'insecte (papillons, coléoptères…), n'affiche que les espèces rares 🌟, et trie la liste (les plus observées, les plus récentes, ou par ordre alphabétique). Pratique quand la liste s'allonge !"] },
+  { v: "1.21", date: "2026-07", items: ["📸 Plusieurs photos pour identifier ! Ajoute jusqu'à 3 vues complémentaires du même insecte (dessus, profil, détail des ailes…) : l'IA les croise pour affiner son identification. Un critère invisible sur une vue peut être décisif sur une autre — comme le ferait un vrai entomologiste."] },
   { v: "1.20", date: "2026-07", items: ["🔧 Correctif : les célébrations ne se rejouent plus. Chaque réussite n'est fêtée qu'une seule fois, au moment où tu la débloques — même si le réseau était coupé à cet instant."] },
   { v: "1.19", date: "2026-07", items: ["🎉 Célébrations ! Tes réussites ne passent plus inaperçues : quand tu relèves un défi, accomplis une mission, découvres une nouvelle espèce ou franchis un palier du jardin refuge, une bannière festive apparaît avec des confettis (papillons et coccinelles !) et un petit son de victoire. Les espèces rares ont droit à une célébration dorée."] },
   { v: "1.18", date: "2026-07", items: ["📈 Suivi des espèces : un nouvel écran (menu ☰) qui montre, pour chaque espèce partagée sur le mur, à quelle période la bande la voit, son pic d'activité, où elle se trouve, qui l'a débusquée — et surtout la DATE DE PREMIÈRE APPARITION de chaque année. C'est de la phénologie amateur : au fil des saisons, vos données révéleront si les espèces sortent plus tôt ou plus tard. Plus vous publiez, plus les courbes deviennent parlantes !"] },
@@ -2812,6 +2857,9 @@ function SuiviEspeces({ onFermer }) {
   const [etat, setEtat] = useState("chargement");
   const [choisie, setChoisie] = useState(null); // clé d'espèce
   const [recherche, setRecherche] = useState("");
+  const [fOrdre, setFOrdre] = useState("");      // filtre par ordre d'insecte
+  const [fRares, setFRares] = useState(false);   // uniquement les espèces peu communes+
+  const [tri, setTri] = useState("populaires");  // populaires | recentes | alpha
 
   useEffect(() => {
     let vivant = true;
@@ -2834,10 +2882,34 @@ function SuiviEspeces({ onFermer }) {
     if (!especes[c]) especes[c] = { cle: c, nom: p.espece || p.espece_sci || "?", sci: p.espece_sci || "", posts: [] };
     especes[c].posts.push(p);
   });
-  const listeEspeces = Object.values(especes).sort((a, b) => b.posts.length - a.posts.length);
-  const filtrees = recherche.trim()
-    ? listeEspeces.filter((e) => sansAccents(e.nom + " " + e.sci).includes(sansAccents(recherche)))
-    : listeEspeces;
+  const listeEspeces = Object.values(especes);
+
+  // Une espèce est-elle "rare" ? (cache iNaturalist, comme ailleurs dans l'appli)
+  const estRare = (e) => {
+    const c = litCacheRarete(e.cle);
+    const n = c && typeof c.count === "number" ? niveauRarete(c.count) : null;
+    return !!(n && n.bonus > 0);
+  };
+  const derniereDe = (e) => e.posts.reduce((max, p) => (new Date(p.created_at) > new Date(max.created_at) ? p : max), e.posts[0]);
+
+  // Ordres présents (pour les onglets), avec compteur
+  const ordresPresents = ORDRES
+    .map((o) => ({ ...o, n: listeEspeces.filter((e) => deduireOrdre({ nom: e.nom, nomSci: e.sci }) === o.id).length }))
+    .filter((o) => o.n > 0);
+  const nbRares = listeEspeces.filter(estRare).length;
+
+  // Filtrage
+  let filtrees = listeEspeces;
+  if (recherche.trim()) filtrees = filtrees.filter((e) => sansAccents(e.nom + " " + e.sci).includes(sansAccents(recherche)));
+  if (fOrdre) filtrees = filtrees.filter((e) => deduireOrdre({ nom: e.nom, nomSci: e.sci }) === fOrdre);
+  if (fRares) filtrees = filtrees.filter(estRare);
+
+  // Tri
+  filtrees = [...filtrees].sort((a, b) => {
+    if (tri === "alpha") return a.nom.localeCompare(b.nom, "fr");
+    if (tri === "recentes") return new Date(derniereDe(b).created_at) - new Date(derniereDe(a).created_at);
+    return b.posts.length - a.posts.length; // populaires
+  });
 
   const carte = { background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 12, padding: 14 };
   const MOIS_C = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
@@ -2995,7 +3067,51 @@ function SuiviEspeces({ onFermer }) {
       {etat === "ok" && listeEspeces.length > 0 && (
         <div>
           <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="🔍 Chercher une espèce…"
-            style={{ width: "100%", boxSizing: "border-box", background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 9, padding: "10px 12px", fontFamily: sans, fontSize: 14, color: C.papier, outline: "none", marginBottom: 14 }} />
+            style={{ width: "100%", boxSizing: "border-box", background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 9, padding: "10px 12px", fontFamily: sans, fontSize: 14, color: C.papier, outline: "none", marginBottom: 12 }} />
+
+          {/* Filtre par ordre */}
+          {ordresPresents.length > 1 && (
+            <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 4, marginBottom: 9 }}>
+              <button onClick={() => setFOrdre("")}
+                style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: fOrdre === "" ? 700 : 400, padding: "6px 12px", borderRadius: 18, cursor: "pointer",
+                  border: `1px solid ${fOrdre === "" ? C.ambre : C.bordure}`, background: fOrdre === "" ? C.ambre : C.panneau, color: fOrdre === "" ? C.encre : C.papier }}>
+                Tous {listeEspeces.length}
+              </button>
+              {ordresPresents.map((o) => (
+                <button key={o.id} onClick={() => setFOrdre(o.id === fOrdre ? "" : o.id)}
+                  style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: fOrdre === o.id ? 700 : 400, padding: "6px 12px", borderRadius: 18, cursor: "pointer",
+                    border: `1px solid ${fOrdre === o.id ? C.ambre : C.bordure}`, background: fOrdre === o.id ? C.ambre : C.panneau, color: fOrdre === o.id ? C.encre : C.papier }}>
+                  {o.emoji} {o.n}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Rares + tri */}
+          <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
+            {nbRares > 0 && (
+              <button onClick={() => setFRares((v) => !v)}
+                style={{ fontFamily: sans, fontSize: 12.5, fontWeight: fRares ? 700 : 400, padding: "6px 12px", borderRadius: 18, cursor: "pointer",
+                  border: `1px solid ${fRares ? "#E5B84B" : C.bordure}`, background: fRares ? "#E5B84B" : C.panneau, color: fRares ? C.encre : C.papier }}>
+                🌟 Rares {nbRares}
+              </button>
+            )}
+            <span style={{ flex: 1 }} />
+            <span style={{ fontFamily: sans, fontSize: 11.5, fontWeight: 700, color: C.papierSombre }}>Trier :</span>
+            {[["populaires", "🔥"], ["recentes", "🕘"], ["alpha", "🔤"]].map(([id, emo]) => (
+              <button key={id} onClick={() => setTri(id)} title={id}
+                style={{ fontFamily: sans, fontSize: 13, padding: "5px 10px", borderRadius: 16, cursor: "pointer",
+                  border: `1px solid ${tri === id ? C.ambre : C.bordure}`, background: tri === id ? C.ambre : "transparent", color: tri === id ? C.encre : C.papier }}>
+                {emo}
+              </button>
+            ))}
+          </div>
+
+          {filtrees.length === 0 && (
+            <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 13.5, color: C.papierSombre, lineHeight: 1.6 }}>
+              Aucune espèce ne correspond à ces filtres. 🔍
+            </div>
+          )}
 
           <div style={{ display: "grid", gap: 9 }}>
             {filtrees.map((e) => {
@@ -3026,6 +3142,250 @@ function SuiviEspeces({ onFermer }) {
   );
 }
 
+// Panneau d'administration. L'affichage est conditionné par le serveur,
+// et CHAQUE action est re-vérifiée par Supabase (RLS) : pas de fausse sécurité.
+function Administration({ onFermer }) {
+  const [onglet, setOnglet] = useState("stats"); // stats | mur | idees | membres | maintenance
+  const [posts, setPosts] = useState([]);
+  const [idees, setIdees] = useState([]);
+  const [etat, setEtat] = useState("chargement");
+  const [message, setMessage] = useState("");
+  const [occupe, setOccupe] = useState(null);
+
+  const recharger = async () => {
+    setEtat("chargement");
+    try {
+      const [p, i] = await Promise.all([chargerMur(300), chargerIdees().catch(() => [])]);
+      setPosts(p);
+      setIdees(Array.isArray(i) ? i : []);
+      setEtat("ok");
+    } catch { setEtat("echec"); }
+  };
+  useEffect(() => { recharger(); }, []);
+
+  const supprimerPost = async (p) => {
+    if (!window.confirm(`Supprimer définitivement la trouvaille « ${p.espece || "?"} » de ${p.auteur || "?"} ?\n\nCette action est irréversible.`)) return;
+    setOccupe(p.id);
+    try {
+      await adminSupprimerPost(p.id);
+      setPosts((l) => l.filter((x) => x.id !== p.id));
+      setMessage("✓ Trouvaille supprimée.");
+    } catch (e) { setMessage("❌ " + (e.message || "Échec")); }
+    setOccupe(null);
+    setTimeout(() => setMessage(""), 3500);
+  };
+  const supprimerIdee = async (i) => {
+    if (!window.confirm("Supprimer définitivement cette idée ?\n\nCette action est irréversible.")) return;
+    setOccupe(i.id);
+    try {
+      await adminSupprimerIdee(i.id);
+      setIdees((l) => l.filter((x) => x.id !== i.id));
+      setMessage("✓ Idée supprimée.");
+    } catch (e) { setMessage("❌ " + (e.message || "Échec")); }
+    setOccupe(null);
+    setTimeout(() => setMessage(""), 3500);
+  };
+
+  // ── Stats globales
+  const especes = new Set(posts.map(cleEspeceMur).filter(Boolean));
+  const membres = {};
+  posts.forEach((p) => { const a = (p.auteur || "").trim(); if (a) membres[a] = (membres[a] || 0) + 1; });
+  const membresTri = Object.entries(membres).sort((a, b) => b[1] - a[1]);
+  const now = Date.now();
+  const posts7j = posts.filter((p) => now - new Date(p.created_at).getTime() < 7 * 864e5).length;
+  const posts30j = posts.filter((p) => now - new Date(p.created_at).getTime() < 30 * 864e5).length;
+  const actifs7j = new Set(posts.filter((p) => now - new Date(p.created_at).getTime() < 7 * 864e5).map((p) => p.auteur)).size;
+  const idesNonRealisees = idees.filter((i) => !i.realisee).length;
+
+  const carte = { background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 12, padding: 14 };
+  const ongletBtn = (id, label) => (
+    <button key={id} onClick={() => setOnglet(id)}
+      style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: onglet === id ? 700 : 400, padding: "7px 13px", borderRadius: 18, cursor: "pointer",
+        border: `1px solid ${onglet === id ? C.ambre : C.bordure}`, background: onglet === id ? C.ambre : C.panneau, color: onglet === id ? C.encre : C.papier }}>
+      {label}
+    </button>
+  );
+
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Retour</Bouton>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 6 }}>
+        <span style={{ fontSize: 28 }}>🔐</span>
+        <div>
+          <div style={{ fontFamily: serif, fontSize: 21, fontWeight: 700, color: C.papier, lineHeight: 1.15 }}>Administration</div>
+          <div style={{ fontFamily: sans, fontSize: 11.5, color: C.lichen }}>Accès vérifié par le serveur 🛡️</div>
+        </div>
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginBottom: 14, lineHeight: 1.5, fontStyle: "italic" }}>
+        Les suppressions sont définitives et s'appliquent pour toute la bande.
+      </div>
+
+      <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 4, marginBottom: 14 }}>
+        {ongletBtn("stats", "📊 Stats")}
+        {ongletBtn("mur", "🌐 Mur " + posts.length)}
+        {ongletBtn("idees", "💡 Idées " + idees.length)}
+        {ongletBtn("membres", "👥 Membres " + membresTri.length)}
+        {ongletBtn("maintenance", "🧹 Maintenance")}
+      </div>
+
+      {message && (
+        <div style={{ fontFamily: sans, fontSize: 13, color: message.startsWith("✓") ? C.lichen : C.rouge, marginBottom: 12, padding: "9px 12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}` }}>
+          {message}
+        </div>
+      )}
+
+      {etat === "chargement" && <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, fontStyle: "italic", textAlign: "center", padding: "24px 0" }}>Chargement…</div>}
+      {etat === "echec" && <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>Impossible de charger les données (réseau ?).</div>}
+
+      {etat === "ok" && onglet === "stats" && (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 9, marginBottom: 12 }}>
+            {[["Trouvailles", posts.length, "🌐"], ["Espèces", especes.size, "🦋"], ["Membres", membresTri.length, "👥"], ["Idées", idees.length, "💡"]].map(([l, v, e]) => (
+              <div key={l} style={{ ...carte, display: "flex", alignItems: "center", gap: 11, padding: "13px 12px" }}>
+                <span style={{ fontSize: 21 }}>{e}</span>
+                <div>
+                  <div style={{ fontFamily: serif, fontSize: 21, fontWeight: 700, color: C.ambreClair, lineHeight: 1 }}>{v}</div>
+                  <div style={{ fontFamily: sans, fontSize: 10, textTransform: "uppercase", color: C.papierSombre, marginTop: 3 }}>{l}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ ...carte, marginBottom: 12 }}>
+            <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 11 }}>Activité récente</div>
+            {[["7 derniers jours", posts7j + " trouvaille" + (posts7j > 1 ? "s" : "") + " · " + actifs7j + " membre" + (actifs7j > 1 ? "s" : "") + " actif" + (actifs7j > 1 ? "s" : "")],
+              ["30 derniers jours", posts30j + " trouvaille" + (posts30j > 1 ? "s" : "")],
+              ["Idées en attente", idesNonRealisees + " non réalisée" + (idesNonRealisees > 1 ? "s" : "")]].map(([l, v]) => (
+              <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 13 }}>
+                <span style={{ color: C.papierSombre }}>{l}</span>
+                <span style={{ color: C.papier, fontWeight: 600 }}>{v}</span>
+              </div>
+            ))}
+          </div>
+          <Bouton onClick={recharger} style={{ width: "100%" }}>↻ Rafraîchir les données</Bouton>
+        </div>
+      )}
+
+      {etat === "ok" && onglet === "mur" && (
+        <div style={{ display: "grid", gap: 9 }}>
+          {posts.length === 0 && <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>Aucune trouvaille sur le mur.</div>}
+          {posts.map((p) => (
+            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 12px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+              {p.photo_url
+                ? <img src={p.photo_url} alt="" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 8, border: `1px solid ${C.bordure}`, flexShrink: 0 }} />
+                : <div style={{ width: 48, height: 48, borderRadius: 8, background: C.fond, border: `1px solid ${C.bordure}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>🐛</div>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 600, color: C.papier, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.espece || "Non identifié"}</div>
+                <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 2 }}>{p.auteur || "?"} · {new Date(p.created_at).toLocaleDateString("fr-FR")}</div>
+              </div>
+              <button onClick={() => supprimerPost(p)} disabled={occupe === p.id}
+                style={{ flexShrink: 0, fontFamily: sans, fontSize: 12, fontWeight: 700, padding: "7px 11px", borderRadius: 8, cursor: "pointer", border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, opacity: occupe === p.id ? 0.5 : 1 }}>
+                {occupe === p.id ? "…" : "🗑️"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {etat === "ok" && onglet === "idees" && (
+        <div style={{ display: "grid", gap: 9 }}>
+          {idees.length === 0 && <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>Aucune idée proposée.</div>}
+          {idees.map((i) => (
+            <div key={i.id} style={{ padding: "11px 13px", borderRadius: 10, background: i.realisee ? "linear-gradient(#1A2216, #161C12)" : C.panneau, border: `1px solid ${i.realisee ? "#3E5A2E" : C.bordure}` }}>
+              <div style={{ fontFamily: sans, fontSize: 13.5, color: C.papier, lineHeight: 1.5, marginBottom: 7 }}>{i.texte}</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre }}>
+                  💡 {i.auteur || "?"} · {new Date(i.created_at).toLocaleDateString("fr-FR")}{i.realisee ? " · ✅ réalisée" : ""}
+                </span>
+                <button onClick={() => supprimerIdee(i)} disabled={occupe === i.id}
+                  style={{ flexShrink: 0, fontFamily: sans, fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 8, cursor: "pointer", border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, opacity: occupe === i.id ? 0.5 : 1 }}>
+                  {occupe === i.id ? "…" : "🗑️"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {etat === "ok" && onglet === "membres" && (
+        <div style={{ display: "grid", gap: 9 }}>
+          {membresTri.length === 0 && <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>Aucun membre actif.</div>}
+          {membresTri.map(([nom, n]) => {
+            const siens = posts.filter((p) => (p.auteur || "").trim() === nom);
+            const derniere = siens.reduce((max, p) => (new Date(p.created_at) > new Date(max.created_at) ? p : max), siens[0]);
+            const esp = new Set(siens.map(cleEspeceMur).filter(Boolean)).size;
+            return (
+              <div key={nom} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 13px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+                <span style={{ fontSize: 20 }}>🐛</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: serif, fontSize: 15, fontWeight: 600, color: C.papier }}>{nom}</div>
+                  <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 2 }}>
+                    {n} trouvaille{n > 1 ? "s" : ""} · {esp} espèce{esp > 1 ? "s" : ""} · vu le {new Date(derniere.created_at).toLocaleDateString("fr-FR")}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {etat === "ok" && onglet === "maintenance" && (
+        <div style={{ display: "grid", gap: 11 }}>
+          <div style={{ ...carte }}>
+            <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: C.papier, marginBottom: 4 }}>♻️ Vider les caches de rareté</div>
+            <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 11, lineHeight: 1.5 }}>
+              Force le recalcul des raretés (iNaturalist) au prochain affichage. Utile si les seuils ont changé.
+            </div>
+            <Bouton onClick={() => {
+              let n = 0;
+              try {
+                Object.keys(localStorage).forEach((k) => { if (k.startsWith("biodex:rarete:")) { localStorage.removeItem(k); n++; } });
+              } catch {}
+              setMessage(`✓ ${n} rareté(s) purgée(s) — elles se recalculeront.`);
+              setTimeout(() => setMessage(""), 3500);
+            }} style={{ width: "100%" }}>Vider le cache des raretés</Bouton>
+          </div>
+
+          <div style={{ ...carte }}>
+            <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: C.papier, marginBottom: 4 }}>🎉 Réinitialiser les célébrations</div>
+            <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 11, lineHeight: 1.5 }}>
+              Permet de re-tester les animations de réussite (défis, missions, paliers).
+            </div>
+            <Bouton onClick={() => {
+              let n = 0;
+              try {
+                Object.keys(localStorage).forEach((k) => {
+                  if (k.startsWith("biodex_defis_fetes_") || k.startsWith("biodex_mission_fetee_") || k.startsWith("biodex_refuge_palier_")) { localStorage.removeItem(k); n++; }
+                });
+              } catch {}
+              setMessage(`✓ ${n} marqueur(s) effacé(s).`);
+              setTimeout(() => setMessage(""), 3500);
+            }} style={{ width: "100%" }}>Réinitialiser</Bouton>
+          </div>
+
+          <div style={{ ...carte }}>
+            <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: C.papier, marginBottom: 4 }}>🔄 Forcer la mise à jour de l'appli</div>
+            <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 11, lineHeight: 1.5 }}>
+              Vide le cache du Service Worker et recharge. Utile si une nouvelle version ne s'installe pas.
+            </div>
+            <Bouton onClick={async () => {
+              try {
+                if ("caches" in window) { const cles = await caches.keys(); await Promise.all(cles.map((c) => caches.delete(c))); }
+                if (navigator.serviceWorker) {
+                  const regs = await navigator.serviceWorker.getRegistrations();
+                  await Promise.all(regs.map((r) => r.unregister()));
+                }
+                window.location.reload(true);
+              } catch { setMessage("❌ Échec du rechargement forcé."); }
+            }} style={{ width: "100%" }}>Vider le cache et recharger</Bouton>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Panneau d'administration : chargé au-dessus.
 function ProfilPublic({ auteur, onFermer }) {
   const [posts, setPosts] = useState(null);
   const [raretes, setRaretes] = useState({});
@@ -4149,6 +4509,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
   const modeTri = !!base && mode !== "edition";
   const modeEdition = mode === "edition";
   const [photoBlob, setPhotoBlob] = useState(base ? base.photo : null);
+  const [photosSupp, setPhotosSupp] = useState(base && Array.isArray(base.photosSupp) ? base.photosSupp : []);
   const [nom, setNom] = useState(base ? base.nom || "" : "");
   const [nomSci, setNomSci] = useState(base ? base.nomSci || "" : "");
   const [confiance, setConfiance] = useState(base ? (base.confiance !== undefined ? base.confiance : null) : null);
@@ -4340,7 +4701,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
     setCloudErreur("");
     try {
       const contexte = contexteTerrain();
-      const res = await identifierCloud(photoBlob, utiliserZone ? zone : null, contexte);
+      const res = await identifierCloud(photoBlob, utiliserZone ? zone : null, contexte, photosSupp);
       setCloudResultat(res);
       setCloudEtat("ok");
     } catch (e) {
@@ -4447,6 +4808,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           notable: notable || "",
           gps: gpsEtat === "ok" ? gps : null,
           photo: photoBlob,
+          photosSupp: photosSupp,
           // id et date d'origine conservés via ...base
         }
       : modeTri
@@ -4465,6 +4827,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           notes: notes.trim(),
           notable: notable || "",
           photo: photoBlob,
+          photosSupp: photosSupp,
           // id, date, gps d'origine conservés via ...base
         }
       : {
@@ -4483,6 +4846,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           gps: gpsEtat === "ok" ? gps : null,
           date: new Date().toISOString(),
           photo: photoBlob,
+          photosSupp: photosSupp,
         };
     const ok = await onSauver(obs);
     setEnregistrement(false);
@@ -4762,6 +5126,47 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
         <label style={libelle}>Nom scientifique (optionnel)</label>
         <input style={{ ...champ, fontFamily: serif, fontStyle: "italic" }} value={nomSci} onChange={(e) => setNomSci(e.target.value)} placeholder="ex : Lucanus cervus" />
       </div>
+
+      {/* Vues complémentaires : d'autres angles aident beaucoup l'identification */}
+      {photoBlob && (
+        <div style={{ marginBottom: 16, padding: "12px 13px", borderRadius: 11, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: photosSupp.length ? 10 : 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.papier }}>📸 Autres angles <span style={{ fontWeight: 400, color: C.papierSombre }}>({photosSupp.length}/3)</span></div>
+              <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 2, lineHeight: 1.4 }}>Dessus, profil, détail des ailes… ça aide beaucoup l'IA !</div>
+            </div>
+            {photosSupp.length < 3 && (
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                <Bouton onClick={() => {}}>＋ Ajouter</Bouton>
+                <input type="file" accept="image/*" multiple
+                  onChange={async (e) => {
+                    const fichiers = Array.from(e.target.files || []);
+                    e.target.value = "";
+                    const place = 3 - photosSupp.length;
+                    const ajout = [];
+                    for (const f of fichiers.slice(0, place)) {
+                      try { ajout.push(await compresserImage(f)); } catch {}
+                    }
+                    if (ajout.length) setPhotosSupp((p) => [...p, ...ajout].slice(0, 3));
+                  }}
+                  style={inputOverlay} />
+              </div>
+            )}
+          </div>
+          {photosSupp.length > 0 && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {photosSupp.map((b, i) => (
+                <div key={i} style={{ position: "relative", width: 72, height: 72 }}>
+                  <PhotoBlob blob={b} alt={"vue " + (i + 2)} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 9, border: `1px solid ${C.bordure}`, display: "block" }} />
+                  <button onClick={() => setPhotosSupp((p) => p.filter((_, j) => j !== i))}
+                    aria-label="Retirer cette vue"
+                    style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: 11, border: `1px solid ${C.bordure}`, background: C.fond, color: C.papier, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Indicateur : nouvelle espèce ou déjà photographiée */}
       {(() => {
@@ -5111,6 +5516,14 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
       <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Collection</Bouton>
       <PhotoBlob blob={obs.photo} alt={obs.nom} style={{ width: "100%", borderRadius: 12, display: "block", border: `1px solid ${C.bordure}`, boxShadow: "0 4px 14px rgba(0,0,0,.35)" }} />
+      {Array.isArray(obs.photosSupp) && obs.photosSupp.length > 0 && (
+        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          {obs.photosSupp.map((b, i) => (
+            <PhotoBlob key={i} blob={b} alt={"Vue complémentaire " + (i + 2)}
+              style={{ width: 78, height: 78, objectFit: "cover", borderRadius: 9, border: `1px solid ${C.bordure}`, display: "block" }} />
+          ))}
+        </div>
+      )}
       <h2 style={{ fontFamily: serif, color: C.papier, fontSize: 25, fontWeight: 600, margin: "18px 0 2px", letterSpacing: 0.2 }}>
         {obs.nom || "Spécimen non identifié"}
       </h2>
@@ -5573,7 +5986,7 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
 }
 
 // ---------- Menu principal (regroupe missions, idées, profil) ----------
-function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller, onRevoirPresentation }) {
+function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller, onRevoirPresentation, estAdmin }) {
   const partagerAppli = async () => {
     const url = "https://lucanus.netlify.app";
     const data = { title: "BioDex", text: "🔍 BioDex : photographie les insectes que tu croises, monte ta collection, défie la bande et participe au recensement de la biodiversité !", url };
@@ -5639,6 +6052,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {/* À propos — rarement consulté */}
         {titreSection("À propos")}
         {item("🔒", "Confidentialité", "Quelles données, et ce que j'en fais", () => onAller("confidentialite"), 0)}
+        {estAdmin && item("🔐", "Administration", "Modération, stats, maintenance", () => onAller("admin"), 0)}
 
         <div style={{ padding: "14px 16px 16px", textAlign: "center" }}>
           <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 12, color: C.ambre }}>Une création de Sylvain Mercier</div>
@@ -6532,7 +6946,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>✨ Identification précise (Claude)</div>
         <p style={p}>
-          Le bouton « Identifier cette zone » envoie la photo à Claude via un petit serveur : il propose un nom français et latin avec un pourcentage de confiance. Avant chaque identification, un cadre s'affiche sur ta photo : place-le sur l'insecte pour que l'IA se concentre dessus — c'est surtout utile quand la bête est petite ou perdue dans le décor, et ça améliore nettement la précision. Si ta photo est déjà bien cadrée, un lien te permet d'identifier l'image entière directement. Le bouton « 🔍 Zoomer sur la photo » ouvre l'image en plein écran pour l'inspecter de près. Et « 📷 Appareil photo » ouvre directement l'appareil photo de ton téléphone, pour une meilleure qualité. L'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Nécessite le réseau. Chaque identification coûte une fraction de centime.
+          Tu peux ajouter jusqu'à 3 vues complémentaires (dessus, profil, détail des ailes…) : l'IA les croise pour affiner son identification, exactement comme le ferait un entomologiste. Le bouton « Identifier cette zone » envoie la ou les photos à Claude via un petit serveur : il propose un nom français et latin avec un pourcentage de confiance. Avant chaque identification, un cadre s'affiche sur ta photo : place-le sur l'insecte pour que l'IA se concentre dessus — c'est surtout utile quand la bête est petite ou perdue dans le décor, et ça améliore nettement la précision. Si ta photo est déjà bien cadrée, un lien te permet d'identifier l'image entière directement. Le bouton « 🔍 Zoomer sur la photo » ouvre l'image en plein écran pour l'inspecter de près. Et « 📷 Appareil photo » ouvre directement l'appareil photo de ton téléphone, pour une meilleure qualité. L'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Nécessite le réseau. Chaque identification coûte une fraction de centime.
         </p>
         <div style={t}>🌿 Pourquoi il compte</div>
         <p style={p}>
@@ -8180,6 +8594,7 @@ function BioDex() {
     try { localStorage.setItem("biodex_install_refusee", "1"); } catch {}
   }
   const [utilisateur, setUtilisateur] = useState(null);
+  const [estAdmin, setEstAdmin] = useState(false);
 
   useEffect(() => {
     if (!MUR_ACTIF) return;
@@ -8194,6 +8609,14 @@ function BioDex() {
       return () => { try { data.subscription.unsubscribe(); } catch {} };
     }
   }, []);
+
+  // Statut admin : c'est le SERVEUR qui tranche (RLS). Rien n'est décidé côté navigateur.
+  useEffect(() => {
+    let vivant = true;
+    if (!utilisateur) { setEstAdmin(false); return; }
+    estAdminServeur().then((ok) => { if (vivant) setEstAdmin(!!ok); }).catch(() => { if (vivant) setEstAdmin(false); });
+    return () => { vivant = false; };
+  }, [utilisateur]);
 
   async function deconnexion() {
     await seDeconnecter();
@@ -8620,6 +9043,9 @@ function BioDex() {
       {vue === "suivi" && (
         <SuiviEspeces onFermer={() => setVue("collection")} />
       )}
+      {vue === "admin" && estAdmin && (
+        <Administration onFermer={() => setVue("collection")} />
+      )}
       {vue === "confidentialite" && (
         <Confidentialite onFermer={() => setVue("collection")} />
       )}
@@ -8662,6 +9088,7 @@ function BioDex() {
           onFermer={() => setMenuOuvert(false)}
           onAller={(v) => setVue(v)}
           onRevoirPresentation={() => setMontrerPresentation(true)}
+          estAdmin={estAdmin}
         />
       )}
       {vue === "cartes" && (
