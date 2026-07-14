@@ -127,9 +127,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.09 (PWA) ============
+// ============ BioDex v1.10 (PWA) ============
 
-const VERSION = "v1.09";
+const VERSION = "v1.10";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1011,6 +1011,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.10", date: "2026-07", items: ["🌡️ Import encore plus malin : quand tu importes tes photos de balade, l'appli récupère désormais la <b>vraie météo du moment où la photo a été prise</b> (température et ciel de ce jour-là, même pour une photo d'il y a des semaines) — et non la météo actuelle. Avec la date, la position et le moment de la journée, il ne te reste presque plus qu'à identifier l'insecte !"] },
   { v: "1.09", date: "2026-07", items: [
     "📥 « À trier » repensé : importe d'un coup toutes tes photos de balade depuis la galerie ! Chaque photo garde sa propre date et sa position d'origine (lue dans l'image). Fini la caméra intégrée, place à ton appareil photo natif.",
     "⚡ Appli plus légère et plus rapide : le « test local hors-ligne » (peu précis) a été retiré, ainsi qu'une ancienne caméra devenue inutile. Résultat : environ 1 Mo de moins à charger à chaque ouverture !"
@@ -3047,20 +3048,56 @@ function Presentation({ onCommencer }) {
   );
 }
 
+// Météo à une date/heure précise et à un lieu donné (Open-Meteo, gratuit, sans clé).
+// - photo récente (< ~90 jours) : endpoint "forecast" avec past_days (données du modèle)
+// - photo ancienne : endpoint "archive" (réanalyse ERA5, données depuis 1940)
+// Renvoie { ciel, temp, meteoAuto } ou null.
+async function meteoHistorique(gps, quand) {
+  if (!gps || !quand) return null;
+  const d = quand instanceof Date ? quand : new Date(quand);
+  if (isNaN(d)) return null;
+  const jours = Math.floor((Date.now() - d.getTime()) / 864e5);
+  if (jours < 0) return null; // date dans le futur : on ne devine pas
+  const jour = d.toISOString().slice(0, 10);
+  const heureCible = d.getHours();
+  try {
+    let url;
+    if (jours <= 90) {
+      const past = Math.min(92, Math.max(1, jours + 1));
+      url = `https://api.open-meteo.com/v1/forecast?latitude=${gps.lat}&longitude=${gps.lon}`
+          + `&hourly=temperature_2m,weather_code&past_days=${past}&forecast_days=1&timezone=auto`;
+    } else {
+      url = `https://archive-api.open-meteo.com/v1/archive?latitude=${gps.lat}&longitude=${gps.lon}`
+          + `&start_date=${jour}&end_date=${jour}&hourly=temperature_2m,weather_code&timezone=auto`;
+    }
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const data = await r.json();
+    const h = data.hourly || {};
+    const temps = h.time || [], tArr = h.temperature_2m || [], cArr = h.weather_code || [];
+    if (!temps.length) return null;
+    // On cherche l'heure la plus proche du moment de la photo
+    let idx = -1, meilleur = Infinity;
+    for (let i = 0; i < temps.length; i++) {
+      const t = new Date(temps[i]);
+      if (isNaN(t)) continue;
+      const ecart = Math.abs(t.getTime() - d.getTime());
+      if (ecart < meilleur) { meilleur = ecart; idx = i; }
+    }
+    if (idx < 0 || meilleur > 3 * 3600 * 1000) return null; // rien à moins de 3h : on renonce
+    const temp = tArr[idx], code = cArr[idx];
+    if (typeof temp !== "number" && typeof code !== "number") return null;
+    return {
+      ciel: typeof code === "number" ? wmoVersCiel(code) : "",
+      temp: typeof temp === "number" ? String(Math.round(temp)) : "",
+      meteoAuto: true,
+    };
+  } catch { return null; }
+}
+
 function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
   const [flash, setFlash] = useState("");
   const [enCours, setEnCours] = useState(null); // { fait, total }
-
-  async function meteoPour(gps, quand) {
-    if (!gps) return null;
-    try {
-      const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${gps.lat}&longitude=${gps.lon}&current=temperature_2m,weather_code`);
-      if (!r.ok) return null;
-      const d = await r.json();
-      const cur = d.current || {};
-      return { ciel: wmoVersCiel(cur.weather_code), temp: typeof cur.temperature_2m === "number" ? String(Math.round(cur.temperature_2m)) : "", meteoAuto: true };
-    } catch { return null; }
-  }
 
   // Position actuelle (repli si la photo n'a pas de GPS dans ses métadonnées)
   function positionActuelle() {
@@ -3087,7 +3124,7 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
     setFlash("");
 
     let posSecours; // position actuelle, demandée une seule fois si besoin
-    let ajoutees = 0, echecs = 0, avecGps = 0;
+    let ajoutees = 0, echecs = 0, avecGps = 0, avecMeteo = 0;
 
     for (let i = 0; i < fichiers.length; i++) {
       const f = fichiers[i];
@@ -3105,16 +3142,16 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
         const quand = f.lastModified ? new Date(f.lastModified) : new Date();
         // 3) Compression
         const blob = await compresserImage(f);
-        // 4) Météo (best effort — actuelle, donc approximative pour une vieille photo)
-        const recente = (Date.now() - quand.getTime()) < 3 * 3600 * 1000;
-        const m = recente ? await meteoPour(gps) : null;
+        // 4) Météo du MOMENT DE LA PHOTO (historique si besoin), pas la météo actuelle
+        const m = await meteoHistorique(gps, quand);
+        if (m) avecMeteo++;
 
         const obs = {
           id: `${Date.now()}-${i}-${Math.floor(Math.random() * 9999)}`,
           statut: "a_trier",
           nom: "", nomSci: "", biotope: "", notes: "",
           ciel: m ? m.ciel : "", temp: m ? m.temp : "", meteoAuto: !!m,
-          meteoARattraper: false,
+          meteoARattraper: !m && !!gps, // réseau absent ? on retentera au moment du tri
           moment: momentDepuisDate(quand),
           gps: gps || null,
           date: quand.toISOString(),
@@ -3129,10 +3166,11 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
 
     setEnCours(null);
     const bits = [`${ajoutees} photo${ajoutees > 1 ? "s" : ""} ajoutée${ajoutees > 1 ? "s" : ""} à la file`];
-    if (avecGps > 0) bits.push(`${avecGps} avec position d'origine 📍`);
-    if (echecs > 0) bits.push(`${echecs} échec${echecs > 1 ? "s" : ""}`);
+    if (avecGps > 0) bits.push(`📍 ${avecGps} avec la position d'origine`);
+    if (avecMeteo > 0) bits.push(`🌡️ ${avecMeteo} avec la météo du jour de la photo`);
+    if (echecs > 0) bits.push(`⚠️ ${echecs} échec${echecs > 1 ? "s" : ""}`);
     setFlash("✓ " + bits.join(" · "));
-    setTimeout(() => setFlash(""), 4500);
+    setTimeout(() => setFlash(""), 5500);
   }
 
   return (
@@ -3236,8 +3274,22 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
 
   useEffect(() => {
     if (modeTri) {
-      // Position déjà figée à la capture. On rattrape juste la météo si elle manquait (photo prise hors réseau).
-      if (base && base.meteoARattraper && base.gps) chercherMeteo(base.gps);
+      // Position déjà figée. On rattrape la météo si elle manquait — à la DATE DE LA PHOTO, pas celle du jour.
+      if (base && base.meteoARattraper && base.gps) {
+        setMeteoEtat("recherche");
+        meteoHistorique(base.gps, base.date)
+          .then((m) => {
+            if (m && (m.temp || m.ciel)) {
+              if (m.ciel) setCiel(m.ciel);
+              if (m.temp) setTemp(m.temp);
+              setMeteoAuto(true);
+              setMeteoEtat("ok");
+            } else {
+              setMeteoEtat("echec");
+            }
+          })
+          .catch(() => setMeteoEtat("echec"));
+      }
       return;
     }
     if (modeEdition) return; // en édition, on garde la position existante (modifiable à la main)
@@ -5288,7 +5340,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>📥 À trier (import groupé)</div>
         <p style={p}>
-          Tu reviens de balade avec plein de photos ? L'onglet « À trier » te permet de les <b>importer toutes d'un coup</b> depuis ta galerie. Chaque photo garde <b>sa propre date</b> et, si elle en contient une, <b>sa position d'origine</b> (lue dans les métadonnées de l'image) — sinon ta position actuelle sert de repli. Elles atterrissent dans une file d'attente : plus tard, au calme, touche une photo pour l'identifier et la classer dans ta collection.
+          Tu reviens de balade avec plein de photos ? L'onglet « À trier » te permet de les <b>importer toutes d'un coup</b> depuis ta galerie. Chaque photo garde <b>sa propre date</b> et, si elle en contient une, <b>sa position d'origine</b> (lue dans les métadonnées de l'image) — sinon ta position actuelle sert de repli. La <b>météo du jour où la photo a été prise</b> est même récupérée automatiquement (température et ciel réels de ce moment-là, pas ceux d'aujourd'hui !), ainsi que le moment de la journée. Elles atterrissent dans une file d'attente : plus tard, au calme, touche une photo pour l'identifier et la classer dans ta collection — il ne te restera quasiment que le nom et le biotope à renseigner.
         </p>
         <div style={t}>✨ Identification précise (Claude)</div>
         <p style={p}>
