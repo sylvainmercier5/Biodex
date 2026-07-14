@@ -154,12 +154,16 @@ exports.handler = async (event) => {
     messages = [{ role: "user", content: [{ type: "text", text: "Espèce à documenter : " + nom + (nomSci ? " (" + nomSci + ")" : "") + "." }] }];
     maxTokens = 1100;
   } else {
-    // Identification poussée à partir de la photo
-    if (!corps.image || !corps.media_type) {
+    // Identification poussée à partir d'UNE OU PLUSIEURS photos (angles différents).
+    // Rétrocompatible : accepte l'ancien format { image, media_type } ou le nouveau { images: [{data, media_type}] }.
+    const photos = Array.isArray(corps.images) && corps.images.length
+      ? corps.images.filter((p) => p && p.data && p.media_type).slice(0, 4)
+      : (corps.image && corps.media_type ? [{ data: corps.image, media_type: corps.media_type }] : []);
+    if (!photos.length) {
       return { statusCode: 400, headers: enTetes, body: JSON.stringify({ erreur: "Image manquante." }) };
     }
     systeme =
-      "Tu es un entomologiste expert en identification visuelle, compétent sur la faune du monde entier. Analyse la photo avec méthode : " +
+      "Tu es un entomologiste expert en identification visuelle, compétent sur la faune du monde entier. Analyse la ou les photos avec méthode : " +
       "observe le nombre de pattes, la présence et le type d'ailes, les antennes, les pièces buccales, la forme du corps, " +
       "les proportions et la taille estimée, les couleurs et motifs. Déduis d'abord l'ordre, puis affine autant que l'image le permet. " +
       "Utilise le contexte de terrain comme un FILTRE BIOGÉOGRAPHIQUE : la région/zone climatique indiquée oriente vers la faune locale " +
@@ -167,6 +171,8 @@ exports.handler = async (event) => {
       "la saison (mois) restreint les espèces au stade adulte visible à cette période — attention, les saisons sont inversées dans l'hémisphère sud ; " +
       "le biotope écarte les espèces au habitat incompatible. " +
       "Si aucune région n'est fournie, ne suppose aucune localisation particulière et raisonne uniquement sur les critères visuels. " +
+      "SI PLUSIEURS PHOTOS te sont fournies, elles montrent le MÊME individu sous des angles différents (dessus, profil, détail...) : croise-les pour affiner ton identification, " +
+      "car un critère invisible sur une vue peut être décisif sur une autre. Ta confiance doit refléter ce gain d'information. " +
       "Écarte activement les hypothèses incohérentes avec ce contexte, MAIS l'image prime toujours : si un critère visuel contredit le contexte, fie-toi à l'image et signale-le. " +
       "Cas particulier IMPORTANT : si tu es visuellement confiant sur une espèce mais que sa présence détonne avec la région/saison indiquée " +
       "(espèce potentiellement invasive, échappée d'élevage, en expansion, ou individu transporté), garde ton identification visuelle ET renseigne le champ \"inhabituel\". " +
@@ -181,13 +187,14 @@ exports.handler = async (event) => {
       '"inhabituel":"vide si de présence normale pour la zone ; SINON une phrase expliquant pourquoi cette observation est notable (ex : espèce invasive en expansion, hors de son aire habituelle, échappée...)",' +
       '"alternatives":[{"nom":"","nomSci":"","pourquoi":"ce qui distinguerait cette hypothèse"}]}. ' +
       "Le tableau alternatives contient 0 à 2 hypothèses secondaires (vide si tu es très sûr).";
-    messages = [{
-      role: "user",
-      content: [
-        { type: "image", source: { type: "base64", media_type: corps.media_type, data: corps.image } },
-        { type: "text", text: "Identifie cet arthropode." + blocCtx },
-      ],
-    }];
+    const contenuId = photos.map((p) => ({ type: "image", source: { type: "base64", media_type: p.media_type, data: p.data } }));
+    contenuId.push({
+      type: "text",
+      text: (photos.length > 1
+        ? "Identifie cet arthropode. Les " + photos.length + " photos montrent le MÊME individu sous des angles différents : croise-les."
+        : "Identifie cet arthropode.") + blocCtx,
+    });
+    messages = [{ role: "user", content: contenuId }];
     maxTokens = 700;
   }
 
