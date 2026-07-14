@@ -127,9 +127,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.10 (PWA) ============
+// ============ BioDex v1.18 (PWA) ============
 
-const VERSION = "v1.10";
+const VERSION = "v1.18";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -798,6 +798,53 @@ async function publierAuMur(obs, auteur, precision, cadreMur) {
 }
 
 // Charge les derniers posts du mur commun
+// ---------- Profils personnalisés ----------
+// Emblèmes disponibles (thème insectes & nature).
+const EMBLEMES = ["🐛", "🦋", "🐞", "🪲", "🐝", "🦗", "🕷️", "🦟", "🐜", "🦂", "🪳", "🪰", "🦠", "🌿", "🍃", "🌸", "🔍", "🌟"];
+const EMBLEME_DEFAUT = "🐛";
+
+// Charge tous les profils (peu nombreux : on les met en cache mémoire pendant la session).
+let _cacheProfils = null;
+async function chargerProfils(forcer) {
+  const sb = clientSupabase();
+  if (!sb) return {};
+  if (_cacheProfils && !forcer) return _cacheProfils;
+  try {
+    const { data, error } = await sb.from("profils").select("*");
+    if (error) return _cacheProfils || {};
+    const map = {};
+    (data || []).forEach((p) => { if (p.prenom) map[String(p.prenom).trim().toLowerCase()] = p; });
+    _cacheProfils = map;
+    return map;
+  } catch { return _cacheProfils || {}; }
+}
+function profilDe(prenom, profils) {
+  if (!prenom || !profils) return null;
+  return profils[String(prenom).trim().toLowerCase()] || null;
+}
+function emblemeDe(prenom, profils) {
+  const p = profilDe(prenom, profils);
+  return (p && p.embleme) || EMBLEME_DEFAUT;
+}
+async function enregistrerProfil(prenom, champs) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const p = (prenom || "").trim();
+  if (!p) throw new Error("Prénom requis");
+  const ligne = {
+    prenom: p,
+    embleme: champs.embleme || EMBLEME_DEFAUT,
+    bio: (champs.bio || "").slice(0, 160),
+    region: (champs.region || "").slice(0, 60),
+    fetiche: (champs.fetiche || "").slice(0, 80),
+    maj: new Date().toISOString(),
+  };
+  const { error } = await sb.from("profils").upsert(ligne, { onConflict: "prenom" });
+  if (error) throw new Error(error.message || "Enregistrement impossible");
+  _cacheProfils = null; // on invalide le cache
+  return ligne;
+}
+
 async function chargerMur(limite = 50) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Mur non configuré");
@@ -1011,6 +1058,14 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.18", date: "2026-07", items: ["📈 Suivi des espèces : un nouvel écran (menu ☰) qui montre, pour chaque espèce partagée sur le mur, à quelle période la bande la voit, son pic d'activité, où elle se trouve, qui l'a débusquée — et surtout la DATE DE PREMIÈRE APPARITION de chaque année. C'est de la phénologie amateur : au fil des saisons, vos données révéleront si les espèces sortent plus tôt ou plus tard. Plus vous publiez, plus les courbes deviennent parlantes !"] },
+  { v: "1.17", date: "2026-07", items: ["🗺️ Le territoire de la bande : en mode « 🌐 La bande » sur la carte, découvre l'étendue explorée par le groupe, le coin le plus riche en espèces, qui cartographie le plus… et surtout la liste des espèces que les autres ont trouvées mais pas toi. De quoi savoir où aller chasser !"] },
+  { v: "1.16", date: "2026-07", items: ["🔬 « Ce que révèlent tes données » : les statistiques croisent désormais tes observations pour en tirer de vraies tendances — à quelle température sortent tes libellules par rapport à tes coléoptères, à quel moment tu croises tel ou tel ordre, quel spot est le plus riche… De la petite science personnelle, tirée de tes propres trouvailles !"] },
+  { v: "1.15", date: "2026-07", items: ["🏡 Jardin refuge : un nouvel écran (menu ☰) avec 10 gestes concrets pour accueillir les insectes chez toi — laisser un carré non tondu, garder du bois mort, bannir les pesticides, offrir un point d'eau… Coche ceux que tu as faits et fais grimper ton jardin du statut de « premiers gestes » à « sanctuaire de biodiversité » ! Observer, c'est bien. Accueillir, c'est mieux."] },
+  { v: "1.14", date: "2026-07", items: ["🎯 Chasse au trésor : chaque semaine, 3 défis ludiques (les mêmes pour toute la bande) t'invitent à chercher des choses précises — un insecte rouge, une sortie nocturne, un pollinisateur, deux ordres différents… Ils se valident tout seuls et changent chaque lundi. À retrouver dans l'écran Missions !"] },
+  { v: "1.13", date: "2026-07", items: ["🔔 Réveil saisonnier : chaque jour, l'appli te dit ce qu'il faut guetter en ce moment ! Un conseil de chasse adapté au mois, avec les espèces suivies par les enquêtes nationales mises en avant quand c'est leur saison (le Lucane cerf-volant en juin-juillet, par exemple). De quoi savoir quoi chercher, et quand."] },
+  { v: "1.12", date: "2026-07", items: ["👋 Accueil plus chaleureux : les nouveaux venus peuvent se présenter dès l'arrivée (prénom + emblème), et une invitation discrète rappelle qu'on peut personnaliser son profil. Tout est optionnel : on peut passer et le faire plus tard, ou jamais."] },
+  { v: "1.11", date: "2026-07", items: ["🎨 Personnalise ton profil ! Dans le menu, choisis ton emblème (🦋 🐞 🪲 🐝…), écris ta devise, indique ton secteur de chasse et ton insecte fétiche. Ton emblème apparaît partout : sur le mur, dans le classement, et sur ton profil que la bande peut consulter."] },
   { v: "1.10", date: "2026-07", items: ["🌡️ Import encore plus malin : quand tu importes tes photos de balade, l'appli récupère désormais la <b>vraie météo du moment où la photo a été prise</b> (température et ciel de ce jour-là, même pour une photo d'il y a des semaines) — et non la météo actuelle. Avec la date, la position et le moment de la journée, il ne te reste presque plus qu'à identifier l'insecte !"] },
   { v: "1.09", date: "2026-07", items: [
     "📥 « À trier » repensé : importe d'un coup toutes tes photos de balade depuis la galerie ! Chaque photo garde sa propre date et sa position d'origine (lue dans l'image). Fini la caméra intégrée, place à ton appareil photo natif.",
@@ -1683,6 +1738,79 @@ function Stats({ observations, raretes, onFermer }) {
   const cielsTri = Object.entries(parCiel).sort((a, b) => b[1] - a[1]);
   const cielTop = cielsTri.length ? cielOf(cielsTri[0][0]) : null;
 
+  // --- Corrélations : ce que révèlent tes données (température × ordre, moment × ordre) ---
+  const tempDe = (o) => {
+    const v = parseFloat(String(o.temp || "").replace(",", ".").replace(/[^0-9.\-]/g, ""));
+    return !isNaN(v) && v > -30 && v < 55 ? v : null;
+  };
+  // Température moyenne par ordre (min. 2 observations avec température)
+  const parOrdreTemp = {};
+  observations.forEach((o) => {
+    const t = tempDe(o);
+    if (t === null) return;
+    const id = deduireOrdre(o);
+    if (!id || id === "autres") return;
+    if (!parOrdreTemp[id]) parOrdreTemp[id] = [];
+    parOrdreTemp[id].push(t);
+  });
+  const tempsParOrdre = Object.entries(parOrdreTemp)
+    .filter(([, arr]) => arr.length >= 2)
+    .map(([id, arr]) => ({ id, n: arr.length, moy: arr.reduce((a, b) => a + b, 0) / arr.length }))
+    .sort((a, b) => b.moy - a.moy);
+
+  // Moment favori par ordre (min. 2 observations avec moment)
+  const parOrdreMoment = {};
+  observations.forEach((o) => {
+    if (!o.moment) return;
+    const id = deduireOrdre(o);
+    if (!id || id === "autres") return;
+    if (!parOrdreMoment[id]) parOrdreMoment[id] = {};
+    parOrdreMoment[id][o.moment] = (parOrdreMoment[id][o.moment] || 0) + 1;
+  });
+  const momentsParOrdre = Object.entries(parOrdreMoment)
+    .map(([id, m]) => {
+      const tri = Object.entries(m).sort((a, b) => b[1] - a[1]);
+      const total = tri.reduce((s, [, n]) => s + n, 0);
+      return { id, moment: tri[0][0], n: tri[0][1], total };
+    })
+    .filter((x) => x.total >= 2 && x.n / x.total >= 0.6) // un vrai penchant, pas du bruit
+    .sort((a, b) => b.total - a.total);
+
+  // Les enseignements à afficher (on ne montre que ce qui est statistiquement honnête)
+  const enseignements = [];
+  if (tempsParOrdre.length >= 2) {
+    const chaud = tempsParOrdre[0], froid = tempsParOrdre[tempsParOrdre.length - 1];
+    if (Math.abs(chaud.moy - froid.moy) >= 2) {
+      enseignements.push({
+        emoji: ordreInfo(chaud.id).emoji,
+        texte: <span>Tes <b style={{ color: C.papier }}>{ordreInfo(chaud.id).label.toLowerCase()}</b> sortent par les températures les plus chaudes (<b style={{ color: C.ambreClair }}>{Math.round(chaud.moy)}°C</b> en moyenne), tandis que tes <b style={{ color: C.papier }}>{ordreInfo(froid.id).label.toLowerCase()}</b> se contentent de <b style={{ color: C.ambreClair }}>{Math.round(froid.moy)}°C</b>.</span>,
+      });
+    }
+  }
+  momentsParOrdre.slice(0, 2).forEach((x) => {
+    const mi = momentOf(x.moment);
+    if (!mi) return;
+    enseignements.push({
+      emoji: mi.emoji,
+      texte: <span>Tu croises surtout tes <b style={{ color: C.papier }}>{ordreInfo(x.id).label.toLowerCase()}</b> <b style={{ color: C.ambreClair }}>{mi.label.toLowerCase()}</b> ({x.n} fois sur {x.total}).</span>,
+    });
+  });
+  if (temps.length >= 4) {
+    const min = Math.min(...temps), max = Math.max(...temps);
+    if (max - min >= 5) {
+      enseignements.push({
+        emoji: "🌡️",
+        texte: <span>Tes observations s'étalent de <b style={{ color: C.ambreClair }}>{Math.round(min)}°C</b> à <b style={{ color: C.ambreClair }}>{Math.round(max)}°C</b> — les insectes sont actifs sur une belle plage !</span>,
+      });
+    }
+  }
+  if (spotsTri.length >= 2 && spotsTri[0].especes > spotsTri[1].especes) {
+    enseignements.push({
+      emoji: "📍",
+      texte: <span><b style={{ color: C.papier }}>{spotsTri[0].nom}</b> est ton spot le plus riche : <b style={{ color: C.ambreClair }}>{spotsTri[0].especes} espèces</b>, contre {spotsTri[1].especes} pour {spotsTri[1].nom}.</span>,
+    });
+  }
+
 
   // Répartition par biotope
   const parBiotope = {};
@@ -1837,6 +1965,30 @@ function Stats({ observations, raretes, onFermer }) {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Ce que révèlent tes données (corrélations) */}
+      {enseignements.length > 0 && (
+        <div style={{ ...carte, marginBottom: 16, background: "linear-gradient(135deg, #1A2820, #14201A)", border: "1px solid #2E4A3A" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 17 }}>🔬</span>
+            <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#7FC79B" }}>Ce que révèlent tes données</span>
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 13, lineHeight: 1.5, fontStyle: "italic" }}>
+            Des tendances tirées de tes propres observations — de la vraie petite science !
+          </div>
+          <div style={{ display: "grid", gap: 10 }}>
+            {enseignements.map((e, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 9, background: "rgba(0,0,0,.22)", border: `1px solid ${C.bordure}` }}>
+                <span style={{ fontSize: 17, flexShrink: 0 }}>{e.emoji}</span>
+                <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierClair, lineHeight: 1.55 }}>{e.texte}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, marginTop: 11, lineHeight: 1.45, fontStyle: "italic" }}>
+            ⚠️ Ce sont des tendances personnelles, pas des vérités scientifiques : elles reflètent tes habitudes de sortie autant que la biologie des insectes !
+          </div>
         </div>
       )}
 
@@ -2245,6 +2397,106 @@ function Confidentialite({ onFermer }) {
   );
 }
 
+// ---------- Jardin refuge : accueillir les insectes chez soi ----------
+// Gestes concrets, cochables (mémorisés en local). Objectif : passer de l'observation à l'action.
+const GESTES_REFUGE = [
+  { id: "tonte", emoji: "🌾", titre: "Laisse un carré non tondu", texte: "Le geste le plus efficace, et le plus simple : arrête de tondre un coin du jardin. En quelques semaines, les herbes montent, fleurissent, et deviennent un garde-manger et une nurserie pour criquets, papillons et pollinisateurs.", effort: "Facile", saison: "Mars → septembre" },
+  { id: "fleurs", emoji: "🌸", titre: "Plante des fleurs mellifères", texte: "Privilégie les espèces locales et simples (pas les fleurs doubles, stériles pour les insectes) : lavande, bourrache, phacélie, marguerite, trèfle, sauge. Échelonne les floraisons pour nourrir du printemps à l'automne.", effort: "Facile", saison: "Semis au printemps" },
+  { id: "bois", emoji: "🪵", titre: "Garde un tas de bois mort", texte: "Un simple tas de bûches, une souche laissée en place : c'est là que se développent les larves de lucane, les longicornes, les cétoines. Le bois mort est un des habitats les plus riches — et les plus menacés.", effort: "Très facile", saison: "Toute l'année" },
+  { id: "hotel", emoji: "🏨", titre: "Installe un hôtel à insectes", texte: "Des tiges creuses (bambou, sureau) de 5 à 10 mm de diamètre, exposées au sud, à l'abri de la pluie : les abeilles solitaires s'y installent. Évite les modèles décoratifs du commerce, souvent inefficaces — un simple fagot fait mieux !", effort: "Moyen", saison: "Installer en hiver" },
+  { id: "eau", emoji: "💧", titre: "Offre un point d'eau", texte: "Une coupelle avec des cailloux (pour qu'ils ne se noient pas) suffit aux abeilles et guêpes. Encore mieux : une petite mare, même minuscule — elle attirera libellules et gerris en un été.", effort: "Facile", saison: "Essentiel en été" },
+  { id: "pesticides", emoji: "🚫", titre: "Bannis les pesticides", texte: "Insecticides, mais aussi herbicides (ils suppriment les plantes hôtes) et anti-limaces. Même « bio », un insecticide tue sans distinction. La meilleure protection, c'est un jardin équilibré où les prédateurs (coccinelles, carabes, syrphes) font le travail.", effort: "Facile", saison: "Toute l'année", cle: true },
+  { id: "feuilles", emoji: "🍂", titre: "Laisse les feuilles mortes", texte: "Ne « nettoie » pas tout à l'automne. Sous les feuilles hivernent chrysalides, larves et coccinelles. Un tas de feuilles dans un coin = un refuge d'hiver gratuit.", effort: "Très facile", saison: "Automne → printemps" },
+  { id: "haie", emoji: "🌳", titre: "Plante une haie variée", texte: "Une haie d'essences locales (aubépine, noisetier, sureau, cornouiller) nourrit et abrite bien plus qu'un thuya. Elle offre fleurs, fruits, bois mort et cachettes.", effort: "Moyen", saison: "Plantation en automne" },
+  { id: "lumiere", emoji: "💡", titre: "Éteins les lumières la nuit", texte: "L'éclairage nocturne désoriente et épuise les insectes nocturnes (papillons de nuit, notamment), qui tournent autour jusqu'à l'épuisement. Éteins, ou utilise une lumière chaude orientée vers le bas.", effort: "Très facile", saison: "Toute l'année", cle: true },
+  { id: "pierres", emoji: "🪨", titre: "Empile quelques pierres", texte: "Un petit tas de pierres au soleil crée des microhabitats : chaleur, cachettes, hivernage. Carabes, araignées et bien d'autres s'y installent.", effort: "Très facile", saison: "Toute l'année" },
+];
+
+function JardinRefuge({ onFermer }) {
+  const [faits, setFaits] = useState(() => {
+    try { const b = localStorage.getItem("biodex_refuge"); const l = b ? JSON.parse(b) : []; return Array.isArray(l) ? l : []; }
+    catch { return []; }
+  });
+  const basculer = (id) => {
+    const maj = faits.includes(id) ? faits.filter((x) => x !== id) : [...faits, id];
+    setFaits(maj);
+    try { localStorage.setItem("biodex_refuge", JSON.stringify(maj)); } catch {}
+  };
+  const n = faits.length, total = GESTES_REFUGE.length;
+  const pct = Math.round((n / total) * 100);
+  const niveau = n === 0 ? { t: "À toi de jouer !", e: "🌱" }
+    : n < 3 ? { t: "Premiers gestes", e: "🌱" }
+    : n < 6 ? { t: "Jardin accueillant", e: "🌿" }
+    : n < total ? { t: "Vrai refuge à insectes", e: "🌳" }
+    : { t: "Sanctuaire de biodiversité !", e: "🏆" };
+
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 16 }}>← Retour</Bouton>
+
+      <div style={{ textAlign: "center", marginBottom: 6 }}><div style={{ fontSize: 40 }}>🏡</div></div>
+      <h2 style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.papier, textAlign: "center", marginBottom: 4 }}>Jardin refuge</h2>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, textAlign: "center", lineHeight: 1.55, marginBottom: 18 }}>
+        Observer, c'est bien. Accueillir, c'est mieux. Voici des gestes concrets — même sur un balcon.
+      </div>
+
+      {/* Progression */}
+      <div style={{ padding: "14px 15px", borderRadius: 12, background: "linear-gradient(135deg, #1F2A18, #182012)", border: `1px solid ${n === total ? "#5C8A3C" : "#3E5A2E"}`, marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 30 }}>{niveau.e}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: "#B7DA8E" }}>{niveau.t}</div>
+            <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 2 }}>{n} geste{n > 1 ? "s" : ""} sur {total}</div>
+          </div>
+          <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: "#8AAE6B" }}>{pct}%</div>
+        </div>
+        <div style={{ height: 8, borderRadius: 4, background: "#0F130C", overflow: "hidden", marginTop: 11 }}>
+          <div style={{ height: "100%", width: `${pct}%`, borderRadius: 4, background: "linear-gradient(90deg, #6E8B4E, #A8C97E)", transition: "width .5s ease" }} />
+        </div>
+      </div>
+
+      {/* Gestes */}
+      <div style={{ display: "grid", gap: 11 }}>
+        {GESTES_REFUGE.map((g) => {
+          const fait = faits.includes(g.id);
+          return (
+            <div key={g.id} onClick={() => basculer(g.id)}
+              style={{ padding: "13px 14px", borderRadius: 12, cursor: "pointer",
+                background: fait ? "linear-gradient(#1F2A18, #182012)" : C.panneau,
+                border: `1px solid ${fait ? "#5C8A3C" : (g.cle ? "#6B5A2E" : C.bordure)}`,
+                transition: "background .2s" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <span style={{ fontSize: 24, flexShrink: 0, filter: fait ? "none" : "grayscale(.2)" }}>{g.emoji}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
+                    <span style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: fait ? "#B7DA8E" : C.papier }}>{g.titre}</span>
+                    {g.cle && !fait && <span style={{ fontFamily: sans, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#E0B341", border: "1px solid #6B5A2E", borderRadius: 10, padding: "1px 6px" }}>Essentiel</span>}
+                  </div>
+                  <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierClair, lineHeight: 1.55, marginBottom: 8 }}>{g.texte}</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 10, padding: "2px 8px" }}>💪 {g.effort}</span>
+                    <span style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 10, padding: "2px 8px" }}>📅 {g.saison}</span>
+                  </div>
+                </div>
+                <span style={{ fontSize: 20, flexShrink: 0, color: fait ? "#8AAE6B" : C.bordure }}>{fait ? "✓" : "○"}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ marginTop: 18, padding: "13px 15px", borderRadius: 12, background: "linear-gradient(135deg, #2A2417, #201B12)", border: "1px solid #6B5A2E" }}>
+        <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambreClair, lineHeight: 1.6, textAlign: "center" }}>
+          « Un jardin sans insectes est un jardin mort. »
+        </div>
+        <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, textAlign: "center", marginTop: 8, lineHeight: 1.5 }}>
+          Les populations d'insectes s'effondrent. Chaque mètre carré accueillant compte — vraiment. 🐞
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GuideObservation({ onFermer }) {
   const MOIS = [
     { m: "Décembre – Février", txt: "Saison creuse : cherche les insectes qui hivernent. Sous les écorces mortes, dans le bois pourri, sous les pierres, dans les tas de feuilles. Coccinelles en grappes, larves, chrysalides, papillons hivernants (Citron, Paon-du-jour) réveillés par un redoux." },
@@ -2363,17 +2615,393 @@ function Soutenir({ onFermer }) {
   );
 }
 
+// Écran d'édition de son propre profil (visible par toute la bande).
+function MonProfil({ prenom, onDefinirPrenom, observations, onFermer }) {
+  const [nom, setNom] = useState(prenom || "");
+  const [embleme, setEmbleme] = useState(EMBLEME_DEFAUT);
+  const [bio, setBio] = useState("");
+  const [region, setRegion] = useState("");
+  const [fetiche, setFetiche] = useState("");
+  const [etat, setEtat] = useState("chargement");
+  const [message, setMessage] = useState("");
+  const [enregistrement, setEnregistrement] = useState(false);
+
+  useEffect(() => {
+    let vivant = true;
+    (async () => {
+      if (!prenom) { setEtat("ok"); return; }
+      const profils = await chargerProfils(true);
+      if (!vivant) return;
+      const p = profilDe(prenom, profils);
+      if (p) {
+        setEmbleme(p.embleme || EMBLEME_DEFAUT);
+        setBio(p.bio || "");
+        setRegion(p.region || "");
+        setFetiche(p.fetiche || "");
+      }
+      setEtat("ok");
+    })();
+    return () => { vivant = false; };
+  }, [prenom]);
+
+  // Espèces de sa collection (pour choisir son insecte fétiche)
+  const especes = [...new Set(observations.filter((o) => o.nom).map((o) => o.nom.trim()))].sort();
+
+  async function sauver() {
+    const p = nom.trim();
+    if (!p) { setMessage("Indique ton prénom."); return; }
+    setEnregistrement(true);
+    setMessage("");
+    try {
+      await enregistrerProfil(p, { embleme, bio, region, fetiche });
+      onDefinirPrenom(p);
+      setMessage("✓ Profil enregistré ! Toute la bande le verra.");
+      setTimeout(() => setMessage(""), 3500);
+    } catch (e) {
+      setMessage("Échec : " + (e.message || "réseau ?"));
+    }
+    setEnregistrement(false);
+  }
+
+  const champ = { width: "100%", boxSizing: "border-box", background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 9, padding: "10px 12px", fontFamily: sans, fontSize: 14.5, color: C.papier, outline: "none" };
+  const libelle = { display: "block", fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: C.lichen, marginBottom: 7 };
+  const carte = { background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 12, padding: 14, marginBottom: 14 };
+
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 16 }}>← Retour</Bouton>
+
+      {/* Aperçu */}
+      <div style={{ textAlign: "center", marginBottom: 18 }}>
+        <div style={{ fontSize: 52, lineHeight: 1.1 }}>{embleme}</div>
+        <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.papier, marginTop: 4 }}>{nom.trim() || "Ton prénom"}</div>
+        {region.trim() && <div style={{ fontFamily: sans, fontSize: 12.5, color: C.lichen, marginTop: 2 }}>📍 {region.trim()}</div>}
+        {bio.trim() && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 13.5, color: C.papierSombre, marginTop: 6, lineHeight: 1.5 }}>« {bio.trim()} »</div>}
+      </div>
+
+      {etat === "chargement" ? (
+        <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, fontStyle: "italic", textAlign: "center", padding: "20px 0" }}>Chargement…</div>
+      ) : (
+        <div>
+          {/* Prénom */}
+          <div style={carte}>
+            <label style={libelle}>Ton prénom (visible par la bande)</label>
+            <input style={champ} value={nom} onChange={(e) => setNom(e.target.value)} maxLength={24} placeholder="ex : Sylvain" />
+          </div>
+
+          {/* Emblème */}
+          <div style={carte}>
+            <label style={libelle}>Ton emblème</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {EMBLEMES.map((e) => (
+                <button key={e} onClick={() => setEmbleme(e)}
+                  style={{ fontSize: 24, width: 46, height: 46, borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                    border: `2px solid ${embleme === e ? C.ambre : C.bordure}`,
+                    background: embleme === e ? "linear-gradient(#3A4A2C, #2C3623)" : C.fond,
+                    transform: embleme === e ? "scale(1.06)" : "none", transition: "transform .12s" }}>
+                  {e}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Bio */}
+          <div style={carte}>
+            <label style={libelle}>Ta devise <span style={{ fontWeight: 400, textTransform: "none", color: C.papierSombre }}>({160 - bio.length} caractères restants)</span></label>
+            <textarea style={{ ...champ, resize: "none", fontFamily: serif, fontStyle: "italic" }} rows={2} maxLength={160}
+              value={bio} onChange={(e) => setBio(e.target.value)}
+              placeholder="ex : Chasseur de coléoptères depuis toujours…" />
+          </div>
+
+          {/* Région */}
+          <div style={carte}>
+            <label style={libelle}>Ton secteur de chasse <span style={{ fontWeight: 400, textTransform: "none", color: C.papierSombre }}>(optionnel)</span></label>
+            <input style={champ} value={region} onChange={(e) => setRegion(e.target.value)} maxLength={60} placeholder="ex : Limousin, bords de Vienne…" />
+          </div>
+
+          {/* Insecte fétiche */}
+          <div style={carte}>
+            <label style={libelle}>Ton insecte fétiche</label>
+            {especes.length === 0 ? (
+              <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, fontStyle: "italic", lineHeight: 1.5 }}>
+                Identifie quelques insectes, et tu pourras choisir ton préféré ici ! 🐞
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                  {especes.slice(0, 30).map((e) => (
+                    <button key={e} onClick={() => setFetiche(e === fetiche ? "" : e)}
+                      style={{ fontFamily: sans, fontSize: 12.5, padding: "6px 11px", borderRadius: 18, cursor: "pointer",
+                        border: `1px solid ${fetiche === e ? C.ambre : C.bordure}`,
+                        background: fetiche === e ? C.ambre : C.fond,
+                        color: fetiche === e ? C.encre : C.papier,
+                        fontWeight: fetiche === e ? 700 : 400 }}>
+                      {e}
+                    </button>
+                  ))}
+                </div>
+                {fetiche && (
+                  <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 8, fontStyle: "italic" }}>
+                    Retape dessus pour le retirer.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {message && (
+            <div style={{ fontFamily: sans, fontSize: 13, color: message.startsWith("✓") ? C.lichen : C.rouge, marginBottom: 12, padding: "9px 12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}`, lineHeight: 1.45 }}>
+              {message}
+            </div>
+          )}
+
+          <Bouton variante="primaire" onClick={sauver} disabled={enregistrement} style={{ width: "100%" }}>
+            {enregistrement ? "Enregistrement…" : "✓ Enregistrer mon profil"}
+          </Bouton>
+          <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, textAlign: "center", marginTop: 10, lineHeight: 1.5 }}>
+            Ton profil est visible par toute la bande (sur le mur et dans le classement).
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Profil public d'un membre : construit à partir de ses publications sur le mur.
 // (Ne montre QUE ce que la personne a publié — sa collection perso reste privée.)
-function ProfilPublic({ auteur, onFermer }) {
-  const [posts, setPosts] = useState(null);
-  const [raretes, setRaretes] = useState({});
+// ---------- Suivi collectif d'espèce (phénologie amateur) ----------
+// Toutes les données viennent du mur : quand la bande voit telle espèce, où, qui.
+// Plus il y a d'observations (et d'années), plus c'est parlant.
+function SuiviEspeces({ onFermer }) {
+  const [posts, setPosts] = useState([]);
   const [etat, setEtat] = useState("chargement");
+  const [choisie, setChoisie] = useState(null); // clé d'espèce
+  const [recherche, setRecherche] = useState("");
 
   useEffect(() => {
     let vivant = true;
     (async () => {
       try {
+        const p = await chargerMur(300);
+        if (!vivant) return;
+        setPosts(p);
+        setEtat("ok");
+      } catch { if (vivant) setEtat("echec"); }
+    })();
+    return () => { vivant = false; };
+  }, []);
+
+  // Regroupement par espèce
+  const especes = {};
+  posts.forEach((p) => {
+    const c = cleEspeceMur(p);
+    if (!c) return;
+    if (!especes[c]) especes[c] = { cle: c, nom: p.espece || p.espece_sci || "?", sci: p.espece_sci || "", posts: [] };
+    especes[c].posts.push(p);
+  });
+  const listeEspeces = Object.values(especes).sort((a, b) => b.posts.length - a.posts.length);
+  const filtrees = recherche.trim()
+    ? listeEspeces.filter((e) => sansAccents(e.nom + " " + e.sci).includes(sansAccents(recherche)))
+    : listeEspeces;
+
+  const carte = { background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 12, padding: 14 };
+  const MOIS_C = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+  const MOIS_L = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+
+  // ── Fiche détaillée d'une espèce
+  if (choisie && especes[choisie]) {
+    const e = especes[choisie];
+    const obs = e.posts;
+
+    // Répartition par mois (toutes années confondues)
+    const parMois = new Array(12).fill(0);
+    obs.forEach((p) => { const d = new Date(p.created_at); if (!isNaN(d)) parMois[d.getMonth()] += 1; });
+    const maxMois = Math.max(...parMois, 0);
+    const pic = maxMois > 0 ? parMois.indexOf(maxMois) : -1;
+    // Saison : premier et dernier mois où l'espèce apparaît
+    const moisActifs = parMois.map((n, i) => (n > 0 ? i : -1)).filter((i) => i >= 0);
+
+    // Première observation de chaque année (donnée phénologique clé !)
+    const parAnnee = {};
+    obs.forEach((p) => {
+      const d = new Date(p.created_at);
+      if (isNaN(d)) return;
+      const a = d.getFullYear();
+      if (!parAnnee[a] || d < new Date(parAnnee[a].created_at)) parAnnee[a] = p;
+    });
+    const premieres = Object.entries(parAnnee).sort((a, b) => b[0] - a[0]);
+
+    // Qui l'a trouvée / où
+    const auteurs = {};
+    const biotopes = {};
+    obs.forEach((p) => {
+      const a = (p.auteur || "").trim();
+      if (a) auteurs[a] = (auteurs[a] || 0) + 1;
+      if (p.lieu) biotopes[p.lieu] = (biotopes[p.lieu] || 0) + 1;
+    });
+    const auteursTri = Object.entries(auteurs).sort((a, b) => b[1] - a[1]);
+    const biotopesTri = Object.entries(biotopes).sort((a, b) => b[1] - a[1]);
+    const rarete = litCacheRarete(e.cle);
+    const niv = rarete && typeof rarete.count === "number" ? niveauRarete(rarete.count) : null;
+
+    return (
+      <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+        <Bouton onClick={() => setChoisie(null)} style={{ marginBottom: 16 }}>← Toutes les espèces</Bouton>
+
+        <div style={{ textAlign: "center", marginBottom: 18 }}>
+          <div style={{ fontSize: 38 }}>{ordreInfo(deduireOrdre({ nom: e.nom, nomSci: e.sci })).emoji}</div>
+          <h2 style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.papier, marginTop: 4 }}>{e.nom}</h2>
+          {e.sci && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 15, color: C.ambre, marginTop: 2 }}>{e.sci}</div>}
+          <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 14, padding: "3px 10px" }}>
+              {obs.length} observation{obs.length > 1 ? "s" : ""} par la bande
+            </span>
+            {niv && niv.bonus > 0 && <BadgeRarete count={rarete.count} />}
+          </div>
+        </div>
+
+        {/* Calendrier de présence */}
+        {maxMois > 0 && (
+          <div style={{ ...carte, marginBottom: 14 }}>
+            <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 4 }}>
+              Quand la bande la voit
+            </div>
+            {pic >= 0 && (
+              <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 14, lineHeight: 1.5 }}>
+                Pic d'observation en <b style={{ color: C.ambreClair }}>{MOIS_L[pic]}</b>
+                {moisActifs.length > 1 && <span> · présente de <b style={{ color: C.papier }}>{MOIS_L[moisActifs[0]]}</b> à <b style={{ color: C.papier }}>{MOIS_L[moisActifs[moisActifs.length - 1]]}</b></span>}
+              </div>
+            )}
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 74 }}>
+              {parMois.map((n, i) => (
+                <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                  <span style={{ fontFamily: sans, fontSize: 9, color: n > 0 ? C.papierSombre : "transparent", height: 11 }}>{n || ""}</span>
+                  <div style={{ width: "100%", height: `${maxMois ? (n / maxMois) * 42 : 0}px`, minHeight: n > 0 ? 3 : 0, borderRadius: "3px 3px 0 0",
+                    background: i === pic ? "linear-gradient(#E4C878, #C9A24B)" : (n > 0 ? "linear-gradient(#6E8B4E, #4A5F35)" : "transparent") }} />
+                  <span style={{ fontFamily: sans, fontSize: 9, color: i === pic ? C.ambreClair : C.papierSombre, fontWeight: i === pic ? 800 : 400 }}>{MOIS_C[i]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Premières observations de l'année (phénologie !) */}
+        {premieres.length > 0 && (
+          <div style={{ ...carte, marginBottom: 14, background: "linear-gradient(135deg, #2A2417, #201B12)", border: "1px solid #6B5A2E" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 16 }}>🥇</span>
+              <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#E0B341" }}>Première de l'année</span>
+            </div>
+            <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5, fontStyle: "italic" }}>
+              La date de première apparition est une donnée précieuse : elle bouge avec le climat.
+            </div>
+            {premieres.map(([annee, p]) => (
+              <div key={annee} style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 11px", borderRadius: 9, background: "rgba(0,0,0,.25)", border: `1px solid ${C.bordure}`, marginBottom: 7 }}>
+                <span style={{ fontFamily: serif, fontSize: 16, fontWeight: 700, color: C.ambreClair, minWidth: 42 }}>{annee}</span>
+                <div style={{ flex: 1, fontFamily: sans, fontSize: 12.5, color: C.papierClair, lineHeight: 1.4 }}>
+                  <b style={{ color: C.papier }}>{new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}</b>
+                  {p.auteur ? <span style={{ color: C.papierSombre }}> · par {p.auteur}</span> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Qui l'a trouvée */}
+        {auteursTri.length > 0 && (
+          <div style={{ ...carte, marginBottom: 14 }}>
+            <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 11 }}>Qui l'a débusquée</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+              {auteursTri.map(([a, n]) => (
+                <span key={a} style={{ fontFamily: sans, fontSize: 12.5, padding: "6px 11px", borderRadius: 18, background: C.fond, border: `1px solid ${C.bordure}`, color: C.papier }}>
+                  {a} <b style={{ color: C.ambreClair }}>×{n}</b>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Où */}
+        {biotopesTri.length > 0 && (
+          <div style={{ ...carte }}>
+            <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 11 }}>Où la bande la trouve</div>
+            {biotopesTri.map(([b, n]) => (
+              <div key={b} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 11px", borderRadius: 9, background: C.fond, border: `1px solid ${C.bordure}`, marginBottom: 6 }}>
+                <span style={{ fontFamily: sans, fontSize: 13, color: C.papier }}>{b}</span>
+                <span style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre }}>{n} fois</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Liste des espèces suivies
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 16 }}>← Retour</Bouton>
+
+      <div style={{ textAlign: "center", marginBottom: 6 }}><div style={{ fontSize: 38 }}>📈</div></div>
+      <h2 style={{ fontFamily: serif, fontSize: 23, fontWeight: 700, color: C.papier, textAlign: "center", marginBottom: 4 }}>Suivi des espèces</h2>
+      <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, textAlign: "center", lineHeight: 1.55, marginBottom: 18 }}>
+        Quand la bande voit-elle telle espèce ? Qui l'a repérée en premier cette année ? De la phénologie amateur, construite par vos observations.
+      </div>
+
+      {etat === "chargement" && <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, fontStyle: "italic", textAlign: "center", padding: "30px 0" }}>Chargement du mur…</div>}
+      {etat === "echec" && <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 14, color: C.papierSombre }}>Impossible de charger les données (réseau ?).</div>}
+
+      {etat === "ok" && listeEspeces.length === 0 && (
+        <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 13.5, color: C.papierSombre, lineHeight: 1.6 }}>
+          Aucune espèce partagée sur le mur pour l'instant. 🐞<br />Publiez vos trouvailles, et les courbes se construiront !
+        </div>
+      )}
+
+      {etat === "ok" && listeEspeces.length > 0 && (
+        <div>
+          <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="🔍 Chercher une espèce…"
+            style={{ width: "100%", boxSizing: "border-box", background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 9, padding: "10px 12px", fontFamily: sans, fontSize: 14, color: C.papier, outline: "none", marginBottom: 14 }} />
+
+          <div style={{ display: "grid", gap: 9 }}>
+            {filtrees.map((e) => {
+              const rar = litCacheRarete(e.cle);
+              const niv = rar && typeof rar.count === "number" ? niveauRarete(rar.count) : null;
+              const derniere = e.posts.reduce((max, p) => (new Date(p.created_at) > new Date(max.created_at) ? p : max), e.posts[0]);
+              return (
+                <div key={e.cle} onClick={() => setChoisie(e.cle)}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 11, background: C.panneau, border: `1px solid ${C.bordure}`, cursor: "pointer" }}>
+                  <span style={{ fontSize: 22, flexShrink: 0 }}>{ordreInfo(deduireOrdre({ nom: e.nom, nomSci: e.sci })).emoji}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                      <span style={{ fontFamily: serif, fontSize: 15.5, fontWeight: 600, color: C.papier }}>{e.nom}</span>
+                      {niv && niv.bonus > 0 && <span style={{ fontSize: 13 }}>{niv.emoji}</span>}
+                    </div>
+                    <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 2 }}>
+                      {e.posts.length} obs. · vue le {new Date(derniere.created_at).toLocaleDateString("fr-FR")}
+                    </div>
+                  </div>
+                  <span style={{ color: C.papierSombre, fontSize: 16, flexShrink: 0 }}>›</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProfilPublic({ auteur, onFermer }) {
+  const [posts, setPosts] = useState(null);
+  const [raretes, setRaretes] = useState({});
+  const [etat, setEtat] = useState("chargement");
+  const [perso, setPerso] = useState(null); // profil personnalisé (emblème, bio…)
+
+  useEffect(() => {
+    let vivant = true;
+    (async () => {
+      try {
+        chargerProfils().then((pf) => { if (vivant) setPerso(profilDe(auteur, pf)); }).catch(() => {});
         const tous = await chargerMur(200);
         if (!vivant) return;
         const cible = (auteur || "").trim().toLowerCase();
@@ -2457,11 +3085,24 @@ function ProfilPublic({ auteur, onFermer }) {
 
       {/* En-tête */}
       <div style={{ textAlign: "center", marginBottom: 18 }}>
-        <div style={{ fontSize: 44 }}>🐛</div>
+        <div style={{ fontSize: 46, lineHeight: 1.1 }}>{(perso && perso.embleme) || "🐛"}</div>
         <div style={{ fontFamily: serif, fontSize: 26, fontWeight: 700, color: C.papier, marginTop: 2 }}>{auteur}</div>
+        {perso && perso.region && (
+          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.lichen, marginTop: 3 }}>📍 {perso.region}</div>
+        )}
         <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginTop: 3 }}>
-          {total === 0 ? "Aucune trouvaille publiée pour l'instant" : `Chasseur d'insectes${premier ? " · depuis le " + new Date(premier.created_at).toLocaleDateString("fr-FR", { month: "long", year: "numeric" }) : ""}`}
+          {total === 0 ? "Aucune trouvaille publiée pour l'instant" : `Chasseur d'insectes${premier ? " · depuis " + new Date(premier.created_at).toLocaleDateString("fr-FR", { month: "long", year: "numeric" }) : ""}`}
         </div>
+        {perso && perso.bio && (
+          <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.papier, marginTop: 10, lineHeight: 1.55, padding: "0 10px" }}>
+            « {perso.bio} »
+          </div>
+        )}
+        {perso && perso.fetiche && (
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12, padding: "5px 12px", borderRadius: 18, background: "linear-gradient(#2A2417, #201B12)", border: "1px solid #6B5A2E", fontFamily: sans, fontSize: 12.5, color: C.ambreClair }}>
+            🌟 Insecte fétiche : <b style={{ color: C.papier }}>{perso.fetiche}</b>
+          </div>
+        )}
       </div>
 
       {total === 0 ? (
@@ -2551,6 +3192,8 @@ function ProfilPublic({ auteur, onFermer }) {
 }
 
 function Classement({ onFermer, onOuvrirProfil }) {
+  const [profils, setProfils] = useState({});
+  useEffect(() => { let v = true; chargerProfils().then((p) => { if (v) setProfils(p); }).catch(() => {}); return () => { v = false; }; }, []);
   const [periode, setPeriode] = useState("semaine");
   const [posts, setPosts] = useState(null);
   const [raretes, setRaretes] = useState({});
@@ -2634,7 +3277,7 @@ function Classement({ onFermer, onOuvrirProfil }) {
                 style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 11, background: i < 3 ? "linear-gradient(#20281A, #1A2015)" : C.panneau, border: `1px solid ${i < 3 ? "#3A4A2C" : C.bordure}`, cursor: onOuvrirProfil ? "pointer" : "default" }}>
                 <div style={{ minWidth: 30, textAlign: "center", fontFamily: serif, fontSize: i < 3 ? 22 : 16, fontWeight: 700, color: r.coul }}>{r.emoji}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.auteur}</div>
+                  <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{emblemeDe(c.auteur, profils)} {c.auteur}</div>
                   <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre }}>{c.trouvailles} trouvaille{c.trouvailles > 1 ? "s" : ""}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
@@ -2673,6 +3316,107 @@ function Classement({ onFermer, onOuvrirProfil }) {
 }
 
 // Anecdotes entomologiques fiables (faits bien établis) pour la carte "Le savais-tu ?".
+// ---------- Réveil saisonnier ----------
+// Ce qu'il faut guetter selon le mois. Plusieurs entrées par mois : on en montre une par jour.
+// enquete: true => espèce suivie par une enquête nationale OPIE (on la met en valeur).
+const SAISONS = {
+  0: [ // Janvier
+    { emoji: "🍂", titre: "Cherche sous les écorces", texte: "Les insectes hivernent : soulève délicatement une écorce qui se décolle, fouille le bois mort. Larves, coccinelles en grappes, chrysalides t'attendent." },
+    { emoji: "🐞", titre: "Les coccinelles dorment ensemble", texte: "Elles s'agglutinent par dizaines dans les anfractuosités, sous les feuilles mortes ou dans les cabanes. Un spectacle méconnu !" },
+  ],
+  1: [ // Février
+    { emoji: "🦋", titre: "Guette les premiers papillons", texte: "Au premier redoux, le Citron et le Paon-du-jour sortent d'hibernation. Ce sont les tout premiers papillons de l'année — une belle prise !" },
+    { emoji: "🌱", titre: "Les bourdons fondatrices se réveillent", texte: "Les grosses reines bourdons sortent chercher un nid. Elles butinent les premières fleurs (saules, noisetiers)." },
+  ],
+  2: [ // Mars
+    { emoji: "🐝", titre: "Le réveil des pollinisateurs", texte: "Abeilles solitaires, bourdons et syrphes se ruent sur les saules en fleurs et les pissenlits. C'est le grand retour !" },
+    { emoji: "🦋", titre: "Les premières émergences", texte: "Piérides et Vulcains apparaissent. Cherche près des haies exposées au sud, là où il fait le plus chaud." },
+  ],
+  3: [ // Avril
+    { emoji: "🌸", titre: "Les vergers en fleurs", texte: "Un pommier ou un cerisier en fleurs est un aéroport à insectes : abeilles, syrphes, coléoptères. Poste-toi et laisse venir." },
+    { emoji: "🪲", titre: "Les carabes en chasse", texte: "Sous les pierres et les planches, ces coléoptères prédateurs (souvent noirs et brillants) sont très actifs. Repose la pierre après !" },
+  ],
+  4: [ // Mai
+    { emoji: "🪲", titre: "Le Hanneton entre en scène", texte: "Les hannetons volent lourdement au crépuscule autour des arbres. Impossible de les rater !" },
+    { emoji: "🐛", titre: "Les chenilles partout", texte: "C'est le pic des chenilles : sur les orties (Vulcain, Paon-du-jour), les arbres, les haies. Note la plante — elle aide à identifier l'espèce !" },
+  ],
+  5: [ // Juin
+    { emoji: "🦌", titre: "LE LUCANE CERF-VOLANT EST DE SORTIE !", texte: "Le plus grand coléoptère d'Europe vole en juin-juillet, au crépuscule, autour des vieux chênes et du bois mort. Il fait l'objet d'une ENQUÊTE NATIONALE OPIE : ton observation compte pour la science !", enquete: true },
+    { emoji: "🌈", titre: "La Rosalie des Alpes", texte: "Ce longicorne bleu cendré aux taches noires est magnifique — et protégé. Cherche sur les vieux hêtres et frênes en montagne. Enquête nationale OPIE en cours !", enquete: true },
+    { emoji: "🦗", titre: "Les prairies bourdonnent", texte: "Criquets, sauterelles, papillons : une prairie fleurie non fauchée est le meilleur spot de l'année. Marche lentement dans les hautes herbes." },
+  ],
+  6: [ // Juillet
+    { emoji: "🦌", titre: "Dernières semaines pour le Lucane !", texte: "Le vol du Lucane cerf-volant se termine bientôt. Sors au crépuscule près des vieux chênes — et signale-le à l'enquête OPIE !", enquete: true },
+    { emoji: "🩵", titre: "Les libellules règnent", texte: "Mares, étangs, ruisseaux : les libellules patrouillent et se posent sur les tiges émergentes. Approche lentement, par le côté." },
+    { emoji: "🌻", titre: "Le pic de l'année", texte: "Juillet est LE mois : tout est dehors, tout est actif. C'est maintenant qu'on remplit sa collection !" },
+  ],
+  7: [ // Août
+    { emoji: "🦗", titre: "Le concert des orthoptères", texte: "Criquets et sauterelles stridulent partout. La Grande sauterelle verte peut atteindre 4 cm — impressionnante !" },
+    { emoji: "🕷️", titre: "Les épeires tissent", texte: "Les grandes toiles géométriques apparaissent dans les jardins. L'Épeire diadème est reconnaissable à sa croix blanche." },
+  ],
+  8: [ // Septembre
+    { emoji: "🐝", titre: "Frelons et guêpes au maximum", texte: "Les colonies sont à leur apogée. Photographie-les de loin, au zoom — jamais près d'un nid. Aucune photo ne vaut une piqûre." },
+    { emoji: "🦋", titre: "Les papillons tardifs", texte: "Vulcain, Belle-Dame, Paon-du-jour se gavent sur les fruits tombés et les dernières fleurs, pour affronter l'hiver." },
+  ],
+  9: [ // Octobre
+    { emoji: "🍃", titre: "Le lierre en fleur : le dernier festin", texte: "En octobre, le lierre fleurit — et c'est la dernière grande table de l'année. Abeilles, guêpes, syrphes, papillons s'y pressent. Un spot en or !" },
+    { emoji: "🕷️", titre: "Les araignées entrent", texte: "Les mâles cherchent des partenaires et s'invitent dans les maisons. Sors-les délicatement avec un verre et une feuille." },
+  ],
+  10: [ // Novembre
+    { emoji: "🍂", titre: "Fouille la litière", texte: "Sous les feuilles mortes grouille un monde discret : cloportes, collemboles, carabes. Un écosystème entier à hauteur de sol." },
+    { emoji: "🐛", titre: "Cherche les cocons", texte: "Chrysalides et cocons s'accrochent aux branches et aux murs. Ne les décroche pas — ils attendent le printemps !" },
+  ],
+  11: [ // Décembre
+    { emoji: "🪵", titre: "Le bois mort, refuge d'hiver", texte: "Un tas de bûches ou une souche pourrie abrite larves de lucane, coléoptères et bien d'autres. Observe sans détruire." },
+    { emoji: "🏡", titre: "Prépare le printemps", texte: "C'est le moment d'installer un hôtel à insectes ou de laisser un coin de jardin en friche. Ils te le rendront au printemps !" },
+  ],
+};
+
+// Renvoie le conseil saisonnier du jour (change chaque jour, stable sur la journée).
+function conseilSaison(d) {
+  const date = d || new Date();
+  const liste = SAISONS[date.getMonth()] || [];
+  if (!liste.length) return null;
+  const jour = Math.floor(date.getTime() / 864e5);
+  return liste[jour % liste.length];
+}
+
+function ReveilSaisonnier() {
+  const conseil = conseilSaison();
+  const [ferme, setFerme] = useState(() => {
+    try {
+      const vu = localStorage.getItem("biodex_saison_vue");
+      return vu === new Date().toDateString();
+    } catch { return false; }
+  });
+  if (!conseil || ferme) return null;
+  const fermer = () => {
+    try { localStorage.setItem("biodex_saison_vue", new Date().toDateString()); } catch {}
+    setFerme(true);
+  };
+  const doré = !!conseil.enquete;
+  return (
+    <div style={{ position: "relative", marginBottom: 16, padding: "14px 16px", borderRadius: 12,
+      background: doré ? "linear-gradient(135deg, #2E2612, #221B0E)" : "linear-gradient(135deg, #1F2A18, #182012)",
+      border: `1px solid ${doré ? "#8A6E2E" : "#3E5A2E"}`, boxShadow: "0 2px 10px rgba(0,0,0,.25)" }}>
+      <button onClick={fermer} aria-label="Masquer pour aujourd'hui"
+        style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", color: C.papierSombre, fontSize: 17, cursor: "pointer", lineHeight: 1, padding: 2 }}>×</button>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
+        <span style={{ fontSize: 17 }}>{conseil.emoji}</span>
+        <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: doré ? "#E0B341" : "#A8C97E" }}>
+          {doré ? "🇫🇷 Espèce suivie · à guetter maintenant" : "À guetter en ce moment"}
+        </span>
+      </div>
+      <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, lineHeight: 1.35, marginBottom: 5, paddingRight: 14 }}>
+        {conseil.titre}
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierClair, lineHeight: 1.55 }}>
+        {conseil.texte}
+      </div>
+    </div>
+  );
+}
+
 const ANECDOTES = [
   "Les fourmis n'ont pas de poumons : elles respirent par de minuscules orifices appelés stigmates, répartis le long de leur corps.",
   "Une abeille doit butiner environ 4 millions de fleurs pour produire 1 kg de miel.",
@@ -2982,13 +3726,75 @@ function PasserelleInat({ obs }) {
   );
 }
 
-function Presentation({ onCommencer }) {
+function Presentation({ onCommencer, prenomActuel, onDefinirPrenom }) {
+  const [etape, setEtape] = useState(1); // 1 = présentation, 2 = « je me présente » (optionnel)
+  const [nom, setNom] = useState(prenomActuel || "");
+  const [embleme, setEmbleme] = useState(EMBLEME_DEFAUT);
+  const [envoi, setEnvoi] = useState(false);
   const carac = [
     { emoji: "📷", titre: "Identifie", texte: "Photographie un insecte, l'IA te dit qui c'est — en un instant." },
     { emoji: "🗃️", titre: "Collectionne", texte: "Chaque trouvaille rejoint ta boîte, ton cabinet de curiosités numérique." },
     { emoji: "🎴", titre: "Joue & partage", texte: "Mur commun, réactions, classement, cartes à forger, combats et quiz du jour." },
     { emoji: "🔬", titre: "Contribue", texte: "Tes observations peuvent servir la vraie science : iNaturalist, enquêtes OPIE…" },
   ];
+
+  // ── Étape 2 : « je me présente » — entièrement optionnelle
+  if (etape === 2) {
+    const valider = async () => {
+      const p = nom.trim();
+      if (!p) { onCommencer(); return; } // rien saisi ? on passe, sans insister
+      setEnvoi(true);
+      onDefinirPrenom(p);
+      try { await enregistrerProfil(p, { embleme, bio: "", region: "", fetiche: "" }); } catch {}
+      setEnvoi(false);
+      onCommencer();
+    };
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 9999, overflowY: "auto", background: `radial-gradient(120% 60% at 50% 0%, #24301B 0%, ${C.fond} 60%)` }}>
+        <div style={{ maxWidth: 480, margin: "0 auto", padding: "40px 24px 32px", minHeight: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
+          <div style={{ textAlign: "center", marginBottom: 4 }}>
+            <div style={{ fontSize: 52, lineHeight: 1.1 }}>{embleme}</div>
+          </div>
+          <div style={{ textAlign: "center", fontFamily: serif, fontSize: 27, fontWeight: 700, color: C.papier, marginTop: 6 }}>Enchanté !</div>
+          <div style={{ textAlign: "center", fontFamily: sans, fontSize: 14, color: C.papierSombre, marginTop: 8, lineHeight: 1.6, marginBottom: 24 }}>
+            Comment veux-tu qu'on t'appelle ? C'est le nom que la bande verra sur tes trouvailles.
+          </div>
+
+          <label style={{ display: "block", fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: C.lichen, marginBottom: 7 }}>Ton prénom</label>
+          <input value={nom} onChange={(e) => setNom(e.target.value)} maxLength={24} placeholder="ex : Sylvain"
+            style={{ width: "100%", boxSizing: "border-box", background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 10, padding: "13px 14px", fontFamily: sans, fontSize: 16, color: C.papier, outline: "none", marginBottom: 20 }} />
+
+          <label style={{ display: "block", fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: C.lichen, marginBottom: 9 }}>Ton emblème</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 26 }}>
+            {EMBLEMES.map((e) => (
+              <button key={e} onClick={() => setEmbleme(e)}
+                style={{ fontSize: 23, width: 44, height: 44, borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  border: `2px solid ${embleme === e ? C.ambre : C.bordure}`,
+                  background: embleme === e ? "linear-gradient(#3A4A2C, #2C3623)" : C.panneau,
+                  transform: embleme === e ? "scale(1.06)" : "none", transition: "transform .12s" }}>
+                {e}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ marginTop: "auto" }}>
+            <button onClick={valider} disabled={envoi} className="bd-press"
+              style={{ width: "100%", fontFamily: sans, fontSize: 16, fontWeight: 800, padding: "15px 0", borderRadius: 12, cursor: "pointer", border: "none", color: C.encre, background: "linear-gradient(#E4C878, #C9A24B)", boxShadow: "0 4px 14px rgba(201,162,75,.3)" }}>
+              {envoi ? "…" : "C'est parti ! →"}
+            </button>
+            <button onClick={onCommencer}
+              style={{ width: "100%", marginTop: 10, background: "none", border: "none", color: C.papierSombre, fontFamily: sans, fontSize: 13, cursor: "pointer", padding: "8px 0" }}>
+              Passer pour l'instant
+            </button>
+            <div style={{ textAlign: "center", fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 8, lineHeight: 1.5 }}>
+              Tu pourras tout changer plus tard (menu ☰ → 🎨 Mon profil).
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, overflowY: "auto", background: `radial-gradient(120% 60% at 50% 0%, #24301B 0%, ${C.fond} 60%)` }}>
       <div style={{ maxWidth: 480, margin: "0 auto", padding: "40px 24px 32px", minHeight: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
@@ -3030,7 +3836,7 @@ function Presentation({ onCommencer }) {
         </div>
 
         <div style={{ marginTop: "auto" }}>
-          <button onClick={onCommencer} className="bd-press" style={{ width: "100%", fontFamily: sans, fontSize: 16, fontWeight: 800, padding: "15px 0", borderRadius: 12, cursor: "pointer", border: "none", color: C.encre, background: `linear-gradient(#E4C878, #C9A24B)`, boxShadow: "0 4px 14px rgba(201,162,75,.3)" }}>
+          <button onClick={() => setEtape(2)} className="bd-press" style={{ width: "100%", fontFamily: sans, fontSize: 16, fontWeight: 800, padding: "15px 0", borderRadius: 12, cursor: "pointer", border: "none", color: C.encre, background: `linear-gradient(#E4C878, #C9A24B)`, boxShadow: "0 4px 14px rgba(201,162,75,.3)" }}>
             Commencer l'aventure →
           </button>
           <div style={{ textAlign: "center", fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 14, lineHeight: 1.5 }}>
@@ -4701,15 +5507,18 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {item("🎯", "Missions saisonnières", "Défis d'observation de la bande", () => onAller("missions"), missionsNouv)}
         {MUR_ACTIF && item("🏅", "Classement", "Les meilleurs chasseurs de la bande", () => onAller("classement"), 0)}
         {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
+        {MUR_ACTIF && item("📈", "Suivi des espèces", "Quand la bande voit quoi (phénologie)", () => onAller("suivi"), 0)}
 
         {/* Apprendre */}
         {titreSection("Apprendre")}
         {item("🔍", "Guide d'observation", "Quand, où et comment observer les insectes", () => onAller("guide"), 0)}
+        {item("🏡", "Jardin refuge", "Accueillir les insectes chez toi", () => onAller("refuge"), 0)}
         {onRevoirPresentation && item("✨", "Revoir la présentation", "L'écran de bienvenue de BioDex", () => { onFermer(); onRevoirPresentation(); }, 0)}
 
         {/* Compte */}
         {MUR_ACTIF && titreSection("Mon compte")}
-        {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Mon profil" : "Se connecter", utilisateur ? "Ta collection d'espèces" : "Connexion facultative par email", () => onAller("connexion"), 0)}
+        {MUR_ACTIF && item("🎨", "Mon profil", "Emblème, devise, secteur, insecte fétiche", () => onAller("monprofil"), 0)}
+        {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Ma collection publique" : "Se connecter", utilisateur ? "Tes espèces sur ton profil" : "Connexion facultative par email", () => onAller("connexion"), 0)}
 
         {/* Faire vivre BioDex */}
         {titreSection("Faire vivre BioDex")}
@@ -4932,6 +5741,119 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
 }
 
 // ---------- Vue : missions saisonnières ----------
+// ---------- Défis « chasse au trésor » (hebdomadaires, ludiques, vérifiés en local) ----------
+// Chaque semaine, 3 défis tirés au sort (mêmes défis pour toute la bande : tirage par n° de semaine).
+// Ils se valident tout seuls dès qu'une observation de la semaine remplit la condition.
+const DEFIS = [
+  { id: "rouge", emoji: "🔴", titre: "Le rouge est mis", texte: "Trouve un insecte à dominante rouge ou orange.", test: (o) => /coccinel|rouge|orange|carmin|pyrrhocor|gendarme|vulcain|cardinal/i.test(sansAccents(o.nom + " " + o.nomSci)) },
+  { id: "noir", emoji: "⚫", titre: "Tout de noir vêtu", texte: "Déniche un insecte noir (carabe, fourmi, bousier…).", test: (o) => /carab|noir|fourmi|bousier|scarab|blaps|charbon/i.test(sansAccents(o.nom + " " + o.nomSci)) },
+  { id: "aile", emoji: "🦋", titre: "Sur des ailes", texte: "Photographie un insecte aux ailes déployées ou en vol.", test: (o) => deduireOrdre(o) === "lepidopteres" || deduireOrdre(o) === "odonates" },
+  { id: "nuit", emoji: "🌙", titre: "Chasseur nocturne", texte: "Fais une observation de nuit (ou au crépuscule).", test: (o) => o.moment === "nuit" || o.moment === "soir" },
+  { id: "matin", emoji: "🌅", titre: "L'insecte du matin", texte: "Sors observer avant midi.", test: (o) => o.moment === "matin" },
+  { id: "eau", emoji: "💧", titre: "Les pieds dans l'eau", texte: "Trouve un insecte près d'un point d'eau.", test: (o) => o.biotope === "eau" || deduireOrdre(o) === "odonates" },
+  { id: "foret", emoji: "🌳", titre: "Au cœur des bois", texte: "Rapporte une trouvaille de forêt.", test: (o) => o.biotope === "foret" },
+  { id: "jardin", emoji: "🏡", titre: "Trésor de jardin", texte: "La biodiversité commence chez toi : trouve un insecte dans un jardin.", test: (o) => o.biotope === "jardin" },
+  { id: "pollinisateur", emoji: "🐝", titre: "Ami des fleurs", texte: "Immortalise un pollinisateur (abeille, bourdon, syrphe, papillon).", test: (o) => ["hymenopteres", "lepidopteres", "dipteres"].includes(deduireOrdre(o)) },
+  { id: "coleo", emoji: "🪲", titre: "Carapace brillante", texte: "Trouve un coléoptère (le plus grand ordre du monde vivant !).", test: (o) => deduireOrdre(o) === "coleopteres" },
+  { id: "rare", emoji: "🌟", titre: "Perle rare", texte: "Déniche une espèce peu commune (ou mieux).", test: (o) => { const c = litCacheRarete(cleEspeceMur(o)); const n = c && typeof c.count === "number" ? niveauRarete(c.count) : null; return !!(n && n.bonus > 0); } },
+  { id: "trio", emoji: "🎯", titre: "Le triplé", texte: "Fais 3 observations d'espèces différentes cette semaine.", multi: (obs) => new Set(obs.map((o) => cleEspeceMur(o)).filter(Boolean)).size >= 3 },
+  { id: "duo_ordres", emoji: "🔀", titre: "Deux mondes", texte: "Observe des insectes de 2 ordres différents.", multi: (obs) => new Set(obs.map(deduireOrdre).filter((x) => x && x !== "autres")).size >= 2 },
+  { id: "meteo", emoji: "🌡️", titre: "Chaleur estivale", texte: "Fais une observation par plus de 25 °C.", test: (o) => { const t = parseFloat(String(o.temp || "").replace(",", ".")); return !isNaN(t) && t >= 25; } },
+  { id: "spot", emoji: "📍", titre: "Explorateur", texte: "Observe dans un lieu que tu as enregistré.", test: (o) => !!(o.spot && o.spot.trim()) },
+];
+
+// Numéro de semaine (ISO-ish) : sert à tirer les mêmes défis pour toute la bande.
+function numeroSemaine(d = new Date()) {
+  const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const jeudi = new Date(date);
+  jeudi.setDate(date.getDate() + 3 - ((date.getDay() + 6) % 7));
+  const debutAnnee = new Date(jeudi.getFullYear(), 0, 1);
+  return { annee: jeudi.getFullYear(), semaine: 1 + Math.round(((jeudi - debutAnnee) / 864e5 - 3) / 7) };
+}
+// Début (lundi) de la semaine en cours.
+function debutSemaine(d = new Date()) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+// Les 3 défis de la semaine (identiques pour tout le monde, changent chaque lundi).
+function defisDeLaSemaine(d = new Date()) {
+  const { annee, semaine } = numeroSemaine(d);
+  const graine = annee * 100 + semaine;
+  const pioches = [];
+  const dispo = [...DEFIS];
+  let x = graine;
+  for (let i = 0; i < 3 && dispo.length; i++) {
+    x = (x * 1103515245 + 12345) & 0x7fffffff; // PRNG simple, déterministe
+    const idx = x % dispo.length;
+    pioches.push(dispo[idx]);
+    dispo.splice(idx, 1);
+  }
+  return pioches;
+}
+// Un défi est-il rempli par les observations de la semaine ?
+function defiRempli(defi, obsSemaine) {
+  if (!obsSemaine.length) return false;
+  if (defi.multi) return !!defi.multi(obsSemaine);
+  return obsSemaine.some((o) => { try { return !!defi.test(o); } catch { return false; } });
+}
+
+function DefisSemaine({ observations, embarque }) {
+  const defis = defisDeLaSemaine();
+  const debut = debutSemaine();
+  const obsSemaine = observations.filter((o) => o.date && new Date(o.date) >= debut);
+  const faits = defis.filter((d) => defiRempli(d, obsSemaine));
+  const tousFaits = faits.length === defis.length;
+
+  return (
+    <div style={{ padding: embarque ? 0 : 16, maxWidth: 560, margin: "0 auto" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+        <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier }}>🎯 Chasse au trésor</div>
+        <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: tousFaits ? "#8AAE6B" : C.ambreClair }}>
+          {faits.length}/{defis.length}
+        </div>
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 14, lineHeight: 1.5 }}>
+        3 défis, la même semaine, pour toute la bande. Ils changent chaque lundi !
+      </div>
+
+      {tousFaits && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 13px", borderRadius: 10, background: "linear-gradient(#1F2A18, #182012)", border: "1px solid #5C8A3C", marginBottom: 12 }}>
+          <span style={{ fontSize: 20 }}>🏆</span>
+          <div style={{ fontFamily: sans, fontSize: 13, color: "#B7DA8E", fontWeight: 700, lineHeight: 1.4 }}>
+            Les 3 défis de la semaine sont relevés. Chapeau !
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: 10 }}>
+        {defis.map((d) => {
+          const ok = defiRempli(d, obsSemaine);
+          return (
+            <div key={d.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "13px 14px", borderRadius: 11,
+              background: ok ? "linear-gradient(#1F2A18, #182012)" : C.panneau,
+              border: `1px solid ${ok ? "#5C8A3C" : C.bordure}`, opacity: ok ? 1 : 0.95 }}>
+              <span style={{ fontSize: 22, flexShrink: 0, filter: ok ? "none" : "grayscale(.35)" }}>{d.emoji}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: serif, fontSize: 15.5, fontWeight: 600, color: ok ? "#B7DA8E" : C.papier, marginBottom: 2 }}>
+                  {d.titre}
+                </div>
+                <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5 }}>{d.texte}</div>
+              </div>
+              <span style={{ fontSize: 18, flexShrink: 0, color: ok ? "#8AAE6B" : C.bordure }}>{ok ? "✓" : "○"}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 12, lineHeight: 1.5, fontStyle: "italic", textAlign: "center" }}>
+        Les défis se valident tout seuls dès qu'une de tes observations de la semaine correspond.
+      </div>
+    </div>
+  );
+}
+
 function Missions({ observations, prenom, onDefinirPrenom, onFermer }) {
   const saison = saisonActuelle();
   const missions = missionsDe(saison.cle);
@@ -4994,6 +5916,15 @@ function Missions({ observations, prenom, onDefinirPrenom, onFermer }) {
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
       <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Retour</Bouton>
+
+      {/* Défis de la semaine (courts, ludiques, auto-validés) */}
+      <DefisSemaine observations={observations} embarque={true} />
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "26px auto 22px", width: "80%" }}>
+        <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, transparent, ${C.bordure})` }} />
+        <span style={{ color: C.bordure, fontSize: 11 }}>✦</span>
+        <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${C.bordure}, transparent)` }} />
+      </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
         <span style={{ fontSize: 32 }}>{saison.emoji}</span>
@@ -5085,6 +6016,45 @@ function Carte({ observations, onOuvrirFiche }) {
   const avecGps = observations.filter((o) => o.gps);
   const sansGps = observations.length - avecGps.length;
   const postsAvecPos = postsBande.filter((p) => typeof p.lat === "number" && typeof p.lon === "number");
+
+  // ---- Analyse du territoire de la bande ----
+  // Découpe grossière en "zones" (grille de ~2 km) pour repérer les coins bien couverts.
+  const CELLULE = 0.02; // ~2 km en latitude
+  const zones = {};
+  postsAvecPos.forEach((p) => {
+    const cle = Math.round(p.lat / CELLULE) + "," + Math.round(p.lon / CELLULE);
+    if (!zones[cle]) zones[cle] = { n: 0, especes: new Set(), auteurs: new Set(), lat: p.lat, lon: p.lon };
+    zones[cle].n += 1;
+    const e = cleEspeceMur(p);
+    if (e) zones[cle].especes.add(e);
+    if (p.auteur) zones[cle].auteurs.add(p.auteur);
+  });
+  const zonesTri = Object.values(zones).sort((a, b) => b.especes.size - a.especes.size || b.n - a.n);
+
+  // Contributeurs
+  const parAuteur = {};
+  postsAvecPos.forEach((p) => { const a = (p.auteur || "").trim(); if (a) parAuteur[a] = (parAuteur[a] || 0) + 1; });
+  const auteursTri = Object.entries(parAuteur).sort((a, b) => b[1] - a[1]);
+
+  // Espèces que la bande a trouvées... mais pas toi ! (ça donne envie de sortir)
+  const mesEspeces = new Set(observations.map(cleEspeceMur).filter(Boolean));
+  const especesBande = {};
+  postsBande.forEach((p) => {
+    const c = cleEspeceMur(p);
+    if (!c || mesEspeces.has(c)) return;
+    if (!especesBande[c]) especesBande[c] = { nom: p.espece || p.espece_sci || "?", auteurs: new Set() };
+    if (p.auteur) especesBande[c].auteurs.add(p.auteur);
+  });
+  const aChasser = Object.values(especesBande).slice(0, 8);
+
+  // Étendue du territoire (distance max entre deux points, approx.)
+  let etendue = 0;
+  if (postsAvecPos.length >= 2) {
+    const lats = postsAvecPos.map((p) => p.lat), lons = postsAvecPos.map((p) => p.lon);
+    const dLat = (Math.max(...lats) - Math.min(...lats)) * 111;
+    const dLon = (Math.max(...lons) - Math.min(...lons)) * 111 * Math.cos((lats[0] * Math.PI) / 180);
+    etendue = Math.round(Math.sqrt(dLat * dLat + dLon * dLon));
+  }
 
   // Charge les posts de la bande la première fois qu'on passe en mode "bande"
   useEffect(() => {
@@ -5195,6 +6165,80 @@ function Carte({ observations, onOuvrirFiche }) {
         </div>
       )}
       <div ref={divRef} style={{ width: "100%", height: "62vh", borderRadius: 10, border: `1px solid ${C.bordure}`, overflow: "hidden" }} />
+
+      {/* Analyse du territoire (mode bande) */}
+      {mode === "bande" && etatBande === "ok" && postsAvecPos.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          {/* Vue d'ensemble */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9, marginBottom: 12 }}>
+            <div style={{ textAlign: "center", padding: "12px 6px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+              <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{postsAvecPos.length}</div>
+              <div style={{ fontFamily: sans, fontSize: 9.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Trouvailles</div>
+            </div>
+            <div style={{ textAlign: "center", padding: "12px 6px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+              <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{zonesTri.length}</div>
+              <div style={{ fontFamily: sans, fontSize: 9.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Zones explorées</div>
+            </div>
+            <div style={{ textAlign: "center", padding: "12px 6px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+              <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{etendue > 0 ? etendue : "—"}</div>
+              <div style={{ fontFamily: sans, fontSize: 9.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>km de territoire</div>
+            </div>
+          </div>
+
+          {/* Zone la plus riche */}
+          {zonesTri.length > 0 && zonesTri[0].especes.size > 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 11, background: "linear-gradient(#2A2417, #201B12)", border: "1px solid #6B5A2E", marginBottom: 12 }}>
+              <span style={{ fontSize: 24 }}>🏅</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.5, color: "#D2A24A" }}>Le coin le plus riche</div>
+                <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierClair, marginTop: 3, lineHeight: 1.45 }}>
+                  <b style={{ color: C.papier }}>{zonesTri[0].especes.size} espèces</b> y ont été trouvées, par {zonesTri[0].auteurs.size} membre{zonesTri[0].auteurs.size > 1 ? "s" : ""}. Un secteur à explorer !
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Contributeurs */}
+          {auteursTri.length > 0 && (
+            <div style={{ padding: 14, borderRadius: 12, background: C.panneau, border: `1px solid ${C.bordure}`, marginBottom: 12 }}>
+              <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 11 }}>
+                Qui cartographie le territoire ?
+              </div>
+              {auteursTri.slice(0, 5).map(([a, n]) => (
+                <div key={a} style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 13, color: C.papier, marginBottom: 4 }}>
+                    <span>{a}</span>
+                    <span style={{ color: C.papierSombre }}>{n} point{n > 1 ? "s" : ""}</span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 3, background: "#0F130C", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${(n / auteursTri[0][1]) * 100}%`, borderRadius: 3, background: "linear-gradient(90deg, #6E8B4E, #A8C97E)" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Espèces que la bande a, mais pas toi */}
+          {aChasser.length > 0 && (
+            <div style={{ padding: 14, borderRadius: 12, background: "linear-gradient(135deg, #1A2820, #14201A)", border: "1px solid #2E4A3A" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 16 }}>🎯</span>
+                <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#7FC79B" }}>À toi de les débusquer !</span>
+              </div>
+              <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 11, lineHeight: 1.5 }}>
+                La bande a trouvé ces espèces… mais pas toi. Elles sont dans le coin, à toi de jouer !
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                {aChasser.map((e, i) => (
+                  <span key={i} style={{ fontFamily: sans, fontSize: 12.5, padding: "6px 11px", borderRadius: 18, background: C.panneau, border: `1px solid ${C.bordure}`, color: C.papier }}>
+                    {e.nom} <span style={{ color: C.papierSombre, fontSize: 11 }}>· {[...e.auteurs][0]}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -5394,7 +6438,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🌐 Mur commun</div>
         <p style={p}>
-          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection. Indique ton prénom une fois, il est mémorisé. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
+          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection. Indique ton prénom une fois, il est mémorisé. Tu peux aussi personnaliser ton profil (menu ☰ → 🎨 Mon profil) : choisis ton emblème, écris ta devise, indique ton secteur de chasse et ton insecte fétiche — toute la bande le verra sur le mur, dans le classement et sur ton profil. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
         </p>
         <div style={t}>📖 Posts détaillés</div>
         <p style={p}>
@@ -5838,6 +6882,8 @@ function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirPr
 
 // ---------- Mur commun (vue) ----------
 function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirProfil }) {
+  const [profils, setProfils] = useState({});
+  useEffect(() => { let v = true; chargerProfils().then((p) => { if (v) setProfils(p); }).catch(() => {}); return () => { v = false; }; }, []);
   const [posts, setPosts] = useState([]);
   const [etat, setEtat] = useState("chargement"); // chargement | ok | echec | inactif
   const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
@@ -5990,8 +7036,8 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
                 <span>
                   {onOuvrirProfil && p.auteur
                     ? <button onClick={(e) => { e.stopPropagation(); onOuvrirProfil(p.auteur); }}
-                        style={{ background: "none", border: "none", padding: 0, font: "inherit", color: C.ambreClair, cursor: "pointer", textDecoration: "underline" }}>🐛 {p.auteur}</button>
-                    : <span>🐛 {p.auteur || "Anonyme"}</span>}
+                        style={{ background: "none", border: "none", padding: 0, font: "inherit", color: C.ambreClair, cursor: "pointer", textDecoration: "underline" }}>{emblemeDe(p.auteur, profils)} {p.auteur}</button>
+                    : <span>{emblemeDe(p.auteur, profils)} {p.auteur || "Anonyme"}</span>}
                   {p.lieu ? ` · ${p.lieu}` : ""}
                 </span>
                 <span>{p.created_at ? new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
@@ -7034,6 +8080,20 @@ function BioDex() {
   const [menuOuvert, setMenuOuvert] = useState(false);
   const [montrerPresentation, setMontrerPresentation] = useState(() => { try { return !localStorage.getItem("biodex_presentation_vue"); } catch { return false; } });
   const [profilVu, setProfilVu] = useState(null); // prénom du membre dont on regarde le profil
+  const [inviteProfil, setInviteProfil] = useState(false);
+  useEffect(() => {
+    let vivant = true;
+    (async () => {
+      try {
+        if (!MUR_ACTIF || !prenom) { setInviteProfil(false); return; }
+        if (localStorage.getItem("biodex_invite_profil_vue")) { setInviteProfil(false); return; }
+        const pf = await chargerProfils();
+        if (!vivant) return;
+        setInviteProfil(!profilDe(prenom, pf)); // pas encore de profil ? on invite (une seule fois)
+      } catch { if (vivant) setInviteProfil(false); }
+    })();
+    return () => { vivant = false; };
+  }, [prenom]);
   const [vueAvantProfil, setVueAvantProfil] = useState("mur");
   const ouvrirProfil = (nom) => {
     const n = (nom || "").trim();
@@ -7307,6 +8367,21 @@ function BioDex() {
         </div>
       )}
 
+      {inviteProfil && !majDispo && !rappelSauvegarde && (vue === "collection") && (
+        <div style={{ maxWidth: 560, margin: "0 auto", padding: "10px 16px 0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "12px 14px", borderRadius: 11, background: "linear-gradient(135deg, #2A2417, #201B12)", border: "1px solid #6B5A2E", boxShadow: "0 2px 8px rgba(0,0,0,.3)" }}>
+            <span style={{ fontSize: 22, flexShrink: 0 }}>🎨</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: C.ambreClair, lineHeight: 1.35 }}>Personnalise ton profil !</div>
+              <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 2, lineHeight: 1.4 }}>Choisis ton emblème, ta devise, ton insecte fétiche…</div>
+            </div>
+            <button onClick={() => { try { localStorage.setItem("biodex_invite_profil_vue", "1"); } catch {} setInviteProfil(false); }}
+              aria-label="Masquer" style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 18, cursor: "pointer", padding: "2px 4px", flexShrink: 0, lineHeight: 1 }}>×</button>
+            <Bouton variante="primaire" onClick={() => { try { localStorage.setItem("biodex_invite_profil_vue", "1"); } catch {} setInviteProfil(false); setVue("monprofil"); }}>Créer</Bouton>
+          </div>
+        </div>
+      )}
+
       {rappelSauvegarde && !majDispo && (vue === "collection") && (
         <div style={{ maxWidth: 560, margin: "0 auto", padding: "10px 16px 0" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", boxShadow: "0 2px 8px rgba(0,0,0,.3)" }}>
@@ -7381,8 +8456,17 @@ function BioDex() {
       {vue === "guide" && (
         <GuideObservation onFermer={() => setVue("collection")} />
       )}
+      {vue === "refuge" && (
+        <JardinRefuge onFermer={() => setVue("collection")} />
+      )}
+      {vue === "suivi" && (
+        <SuiviEspeces onFermer={() => setVue("collection")} />
+      )}
       {vue === "confidentialite" && (
         <Confidentialite onFermer={() => setVue("collection")} />
+      )}
+      {vue === "monprofil" && (
+        <MonProfil prenom={prenom} onDefinirPrenom={definirPrenom} observations={observations} onFermer={() => setVue("collection")} />
       )}
       {vue === "profilpublic" && profilVu && (
         <ProfilPublic auteur={profilVu} onFermer={() => { setProfilVu(null); setVue(vueAvantProfil || "mur"); }} />
@@ -7401,7 +8485,7 @@ function BioDex() {
         </div>
       )}
       {montrerPresentation && (
-        <Presentation onCommencer={() => { try { localStorage.setItem("biodex_presentation_vue", "1"); } catch {} setMontrerPresentation(false); }} />
+        <Presentation prenomActuel={prenom} onDefinirPrenom={definirPrenom} onCommencer={() => { try { localStorage.setItem("biodex_presentation_vue", "1"); } catch {} setMontrerPresentation(false); }} />
       )}
       {centreOuvert && (
         <CentreNotifs
@@ -7472,6 +8556,7 @@ function BioDex() {
 
       {vue === "collection" && (
         <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+          <ReveilSaisonnier />
           <LeSaviasTu />
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
             <span style={{ fontFamily: serif, color: C.ambre, fontWeight: 700, fontSize: 26 }}>{triees.length}</span>
