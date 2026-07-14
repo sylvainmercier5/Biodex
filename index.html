@@ -121,17 +121,15 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <!-- IA locale (facultative) : reconnaissance dans le navigateur, sans serveur ni clé -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.06 (PWA) ============
+// ============ BioDex v1.09 (PWA) ============
 
-const VERSION = "v1.06";
+const VERSION = "v1.09";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -438,103 +436,10 @@ function formatDate(iso) {
 const biotopeOf = (id) => BIOTOPES.find((b) => b.id === id) || BIOTOPES[BIOTOPES.length - 1];
 const cielOf = (id) => CIELS.find((c) => c.id === id) || null;
 
-// ---------- IA locale : MobileNet (TensorFlow.js), tourne dans le navigateur ----------
-// Correspondances entre les classes ImageNet (anglais) et des noms FR d'arthropodes.
-// L'ORDRE compte : les pièges de sous-chaîne sont gérés (ex. "beetle" contient "bee",
-// "butterfly"/"dragonfly" contiennent "fly", "mantis" contient "ant"), donc les entrées
-// génériques (mouche, araignée) sont placées après les spécifiques.
-const ARTHRO_FR = [
-  { cles: ["ladybug", "ladybird"], nom: "Coccinelle", sci: "Coccinellidae", niveau: "famille" },
-  { cles: ["tiger beetle"], nom: "Cicindèle", sci: "Cicindelinae", niveau: "sous-famille" },
-  { cles: ["ground beetle", "carabid"], nom: "Carabe", sci: "Carabidae", niveau: "famille" },
-  { cles: ["long-horned beetle", "longicorn"], nom: "Longicorne", sci: "Cerambycidae", niveau: "famille" },
-  { cles: ["leaf beetle", "chrysomelid"], nom: "Chrysomèle", sci: "Chrysomelidae", niveau: "famille" },
-  { cles: ["dung beetle"], nom: "Bousier", sci: "Scarabaeidae", niveau: "famille" },
-  { cles: ["rhinoceros beetle"], nom: "Scarabée rhinocéros", sci: "Dynastinae", niveau: "sous-famille" },
-  { cles: ["weevil"], nom: "Charançon", sci: "Curculionidae", niveau: "famille" },
-  { cles: ["bee"], nom: "Abeille", sci: "Anthophila", niveau: "clade" },
-  { cles: ["ant,", "emmet", "pismire"], nom: "Fourmi", sci: "Formicidae", niveau: "famille" },
-  { cles: ["cricket"], nom: "Grillon", sci: "Gryllidae", niveau: "famille" },
-  { cles: ["grasshopper"], nom: "Sauterelle / criquet", sci: "Orthoptera", niveau: "ordre" },
-  { cles: ["walking stick", "stick insect"], nom: "Phasme", sci: "Phasmatodea", niveau: "ordre" },
-  { cles: ["cockroach", "roach"], nom: "Blatte", sci: "Blattodea", niveau: "ordre" },
-  { cles: ["mantis", "mantid"], nom: "Mante", sci: "Mantodea", niveau: "ordre" },
-  { cles: ["cicada", "cicala"], nom: "Cigale", sci: "Cicadidae", niveau: "famille" },
-  { cles: ["leafhopper"], nom: "Cicadelle", sci: "Cicadellidae", niveau: "famille" },
-  { cles: ["lacewing"], nom: "Chrysope", sci: "Chrysopidae", niveau: "famille" },
-  { cles: ["dragonfly", "darning needle"], nom: "Libellule", sci: "Anisoptera", niveau: "sous-ordre" },
-  { cles: ["damselfly"], nom: "Demoiselle", sci: "Zygoptera", niveau: "sous-ordre" },
-  { cles: ["monarch"], nom: "Monarque", sci: "Danaus plexippus", niveau: "espèce" },
-  { cles: ["admiral"], nom: "Vulcain / amiral", sci: "Nymphalidae", niveau: "famille" },
-  { cles: ["ringlet"], nom: "Tristan (papillon)", sci: "Satyrinae", niveau: "sous-famille" },
-  { cles: ["cabbage butterfly"], nom: "Piéride du chou", sci: "Pieris", niveau: "genre" },
-  { cles: ["sulphur butterfly", "sulfur butterfly"], nom: "Piéride jaune / souci", sci: "Coliadinae", niveau: "sous-famille" },
-  { cles: ["lycaenid"], nom: "Azuré (lycène)", sci: "Lycaenidae", niveau: "famille" },
-  { cles: ["fly"], nom: "Mouche", sci: "Diptera", niveau: "ordre" },
-  { cles: ["black widow"], nom: "Veuve noire", sci: "Latrodectus", niveau: "genre" },
-  { cles: ["tarantula"], nom: "Mygale", sci: "Theraphosidae", niveau: "famille" },
-  { cles: ["wolf spider", "hunting spider"], nom: "Araignée-loup", sci: "Lycosidae", niveau: "famille" },
-  { cles: ["garden spider", "argiope"], nom: "Épeire", sci: "Araneidae", niveau: "famille" },
-  { cles: ["barn spider"], nom: "Épeire des granges", sci: "Araneus", niveau: "genre" },
-  { cles: ["scorpion"], nom: "Scorpion", sci: "Scorpiones", niveau: "ordre" },
-  { cles: ["harvestman", "daddy longlegs", "daddy-longlegs"], nom: "Faucheux", sci: "Opiliones", niveau: "ordre" },
-  { cles: ["tick"], nom: "Tique", sci: "Ixodida", niveau: "ordre" },
-  { cles: ["centipede"], nom: "Mille-pattes (chilopode)", sci: "Chilopoda", niveau: "classe" },
-  { cles: ["isopod"], nom: "Cloporte", sci: "Isopoda", niveau: "ordre" },
-  { cles: ["spider"], nom: "Araignée", sci: "Araneae", niveau: "ordre" },
-];
 
 let _modelePromise = null;
-function chargerModele() {
-  if (_modelePromise) return _modelePromise;
-  _modelePromise = (async () => {
-    if (typeof mobilenet === "undefined") throw new Error("lib-absente");
-    return await mobilenet.load({ version: 2, alpha: 1.0 });
-  })().catch((e) => { _modelePromise = null; throw e; });
-  return _modelePromise;
-}
 
-function traduirePrediction(preds) {
-  for (const p of preds) {
-    const cn = (p.className || "").toLowerCase();
-    for (const e of ARTHRO_FR) {
-      if (e.cles.some((k) => cn.includes(k))) {
-        return { nom: e.nom, nomSci: e.sci, niveau: e.niveau, confiance: p.probability };
-      }
-    }
-  }
-  return null;
-}
 
-async function identifierLocal(blob, zone) {
-  const modele = await chargerModele();
-  const url = URL.createObjectURL(blob);
-  try {
-    const img = await new Promise((res, rej) => {
-      const i = new Image();
-      i.onload = () => res(i);
-      i.onerror = () => rej(new Error("image"));
-      i.src = url;
-    });
-    // Zone = { x, y, w, h } en fractions (0-1) de l'image. Si absente ou trop petite, image entière.
-    let cible = img;
-    if (zone && zone.w > 0.05 && zone.h > 0.05) {
-      const sx = Math.round(zone.x * img.naturalWidth);
-      const sy = Math.round(zone.y * img.naturalHeight);
-      const sw = Math.round(zone.w * img.naturalWidth);
-      const sh = Math.round(zone.h * img.naturalHeight);
-      const canvas = document.createElement("canvas");
-      canvas.width = sw;
-      canvas.height = sh;
-      canvas.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-      cible = canvas;
-    }
-    const preds = await modele.classify(cible, 10);
-    return { match: traduirePrediction(preds), brut: (preds || []).slice(0, 3) };
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 // ---------- Identification "cloud" précise (via la fonction serveur + Claude) ----------
 // Découpe éventuellement la zone ciblée, encode en base64, appelle /.netlify/functions/identifier.
@@ -1106,6 +1011,12 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.09", date: "2026-07", items: [
+    "📥 « À trier » repensé : importe d'un coup toutes tes photos de balade depuis la galerie ! Chaque photo garde sa propre date et sa position d'origine (lue dans l'image). Fini la caméra intégrée, place à ton appareil photo natif.",
+    "⚡ Appli plus légère et plus rapide : le « test local hors-ligne » (peu précis) a été retiré, ainsi qu'une ancienne caméra devenue inutile. Résultat : environ 1 Mo de moins à charger à chaque ouverture !"
+  ] },
+  { v: "1.08", date: "2026-07", items: ["💾 Suivi des sauvegardes : l'appli t'indique désormais clairement à quand remonte ta dernière sauvegarde (dans l'aide « ? » et dans la bannière de rappel), avec un code couleur — vert si c'est récent, ambre après 2 semaines, rouge après un mois. De quoi ne plus jamais risquer de perdre ta collection !"] },
+  { v: "1.07", date: "2026-07", items: ["👤 Profils publics : tape sur le nom de quelqu'un (sur le mur ou dans le classement) pour découvrir son profil — ses trouvailles, ses espèces, ses raretés, ses ordres favoris et sa boîte publique. Attention : seules les publications du mur y figurent, la collection personnelle de chacun reste privée."] },
   { v: "1.06", date: "2026-07", items: ["📊 Statistiques enrichies : découvre ton rythme d'observation (à quel moment de la journée tu trouves le plus), le classement de tes lieux favoris (quel spot est le plus riche en espèces) et tes conditions fétiches (température moyenne et ciel dominant de tes trouvailles)."] },
   { v: "1.05", date: "2026-07", items: ["🌅 Moment & lieu : tu peux désormais préciser le moment de la journée (matin, midi, après-midi, soir, nuit — pré-rempli automatiquement selon l'heure) et enregistrer tes lieux d'observation favoris pour les réutiliser d'un simple tap. De vraies données de naturaliste !"] },
   { v: "1.04", date: "2026-07", items: ["🔧 Correctif menu : le menu débordait de l'écran (la dernière entrée était coupée) et le défilement faisait bouger la page derrière au lieu du menu. C'est corrigé : le menu défile désormais correctement, tout en gardant son en-tête visible."] },
@@ -1596,195 +1507,6 @@ function Etiquette({ obs }) {
   );
 }
 
-// ---------- Caméra intégrée (évite de quitter l'appli → pas de redémarrage Android) ----------
-function CameraInterne({ onCapture, onFermer }) {
-  const videoRef = useRef(null);
-  const fluxRef = useRef(null);
-  const [erreur, setErreur] = useState("");
-  const [pret, setPret] = useState(false);
-  // Contrôles avancés (selon les capacités du téléphone)
-  const [zoomCaps, setZoomCaps] = useState(null); // { min, max, step }
-  const [zoomVal, setZoomVal] = useState(1);
-  const [torcheDispo, setTorcheDispo] = useState(false);
-  const [torcheOn, setTorcheOn] = useState(false);
-  const [focusPoint, setFocusPoint] = useState(null); // { x, y } en % pour l'animation
-
-  function pisteVideo() {
-    return fluxRef.current ? fluxRef.current.getVideoTracks()[0] : null;
-  }
-
-  useEffect(() => {
-    let annule = false;
-    (async () => {
-      try {
-        const flux = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment", width: { ideal: 4096 }, height: { ideal: 4096 } },
-          audio: false,
-        });
-        if (annule) { flux.getTracks().forEach((t) => t.stop()); return; }
-        fluxRef.current = flux;
-        if (videoRef.current) {
-          videoRef.current.srcObject = flux;
-          await videoRef.current.play();
-          setPret(true);
-        }
-        // Détecter les capacités du capteur (zoom, torche, mise au point)
-        try {
-          const piste = flux.getVideoTracks()[0];
-          const caps = piste.getCapabilities ? piste.getCapabilities() : {};
-          if (caps.zoom && typeof caps.zoom.min === "number") {
-            setZoomCaps({ min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 0.1 });
-            const reglages = piste.getSettings ? piste.getSettings() : {};
-            setZoomVal(reglages.zoom || caps.zoom.min);
-          }
-          if (caps.torch) setTorcheDispo(true);
-          // Mise au point continue si disponible (meilleure netteté par défaut)
-          if (caps.focusMode && caps.focusMode.includes && caps.focusMode.includes("continuous")) {
-            piste.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
-          }
-        } catch {}
-      } catch {
-        setErreur("Impossible d'accéder à la caméra. Vérifie l'autorisation, ou passe par la galerie après avoir photographié avec ton appli photo.");
-      }
-    })();
-    return () => {
-      annule = true;
-      if (fluxRef.current) fluxRef.current.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
-
-  async function changerZoom(v) {
-    setZoomVal(v);
-    const piste = pisteVideo();
-    if (piste) {
-      try { await piste.applyConstraints({ advanced: [{ zoom: v }] }); } catch {}
-    }
-  }
-
-  async function basculerTorche() {
-    const piste = pisteVideo();
-    if (!piste) return;
-    const prochain = !torcheOn;
-    try {
-      await piste.applyConstraints({ advanced: [{ torch: prochain }] });
-      setTorcheOn(prochain);
-    } catch {}
-  }
-
-  // Mise au point à l'endroit touché (si le téléphone le permet)
-  async function toucherPourNetete(e) {
-    const v = videoRef.current;
-    if (!v) return;
-    const rect = v.getBoundingClientRect();
-    const p = e.touches && e.touches[0] ? e.touches[0] : e;
-    const x = (p.clientX - rect.left) / rect.width;
-    const y = (p.clientY - rect.top) / rect.height;
-    setFocusPoint({ x: x * 100, y: y * 100 });
-    setTimeout(() => setFocusPoint(null), 900);
-    const piste = pisteVideo();
-    if (!piste) return;
-    try {
-      const caps = piste.getCapabilities ? piste.getCapabilities() : {};
-      const contraintes = [];
-      if (caps.pointsOfInterest) contraintes.push({ pointsOfInterest: [{ x, y }] });
-      if (caps.focusMode && caps.focusMode.includes) {
-        if (caps.focusMode.includes("single-shot")) contraintes.push({ focusMode: "single-shot" });
-        else if (caps.focusMode.includes("continuous")) contraintes.push({ focusMode: "continuous" });
-      }
-      if (contraintes.length) await piste.applyConstraints({ advanced: contraintes });
-    } catch {}
-  }
-
-  const [captureEnCours, setCaptureEnCours] = useState(false);
-
-  function captureCanvas() {
-    const v = videoRef.current;
-    if (!v || !v.videoWidth) return null;
-    let w = v.videoWidth, h = v.videoHeight;
-    const maxDim = 2560;
-    if (w > h && w > maxDim) { h = Math.round((h * maxDim) / w); w = maxDim; }
-    else if (h > maxDim) { w = Math.round((w * maxDim) / h); h = maxDim; }
-    const canvas = document.createElement("canvas");
-    canvas.width = w; canvas.height = h;
-    canvas.getContext("2d").drawImage(v, 0, 0, w, h);
-    return new Promise((res) => canvas.toBlob((b) => res(b), "image/jpeg", 0.85));
-  }
-
-  async function capturer() {
-    if (captureEnCours) return;
-    setCaptureEnCours(true);
-    try {
-      let blob = null;
-      // Méthode 1 : vraie photo pleine résolution du capteur (Chrome Android)
-      if (typeof ImageCapture !== "undefined" && fluxRef.current) {
-        try {
-          const piste = fluxRef.current.getVideoTracks()[0];
-          const brute = await new ImageCapture(piste).takePhoto();
-          blob = await compresserImage(brute, 2560, 0.85);
-        } catch { blob = null; }
-      }
-      // Méthode 2 (repli) : capture du flux vidéo
-      if (!blob) blob = await captureCanvas();
-      if (blob) onCapture(blob);
-    } finally {
-      setCaptureEnCours(false);
-    }
-  }
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 5000, display: "flex", flexDirection: "column" }}>
-      <div style={{ flex: 1, position: "relative", overflow: "hidden" }} onClick={toucherPourNetete}>
-        <video ref={videoRef} playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        {/* Carré de mise au point animé */}
-        {focusPoint && (
-          <div style={{ position: "absolute", left: `${focusPoint.x}%`, top: `${focusPoint.y}%`, width: 62, height: 62, transform: "translate(-50%, -50%)", border: `2px solid ${C.ambre}`, borderRadius: 8, pointerEvents: "none", boxShadow: "0 0 10px rgba(201,162,75,.5)", animation: "bdFade .2s ease both" }} />
-        )}
-        {/* Torche (si dispo) */}
-        {torcheDispo && pret && (
-          <button onClick={(e) => { e.stopPropagation(); basculerTorche(); }} aria-label="Torche"
-            style={{ position: "absolute", top: "calc(12px + env(safe-area-inset-top))", right: 12, width: 44, height: 44, borderRadius: "50%", border: "1px solid rgba(255,255,255,.4)", background: torcheOn ? C.ambre : "rgba(0,0,0,.5)", color: torcheOn ? "#2A2416" : "#EDE8DC", fontSize: 20, cursor: "pointer" }}>
-            {torcheOn ? "🔦" : "🔅"}
-          </button>
-        )}
-        {/* Astuce mise au point */}
-        {pret && (
-          <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, textAlign: "center", pointerEvents: "none", color: "rgba(237,232,220,.75)", fontFamily: sans, fontSize: 12, textShadow: "0 1px 3px rgba(0,0,0,.8)" }}>
-            Touche l'écran pour faire la mise au point
-          </div>
-        )}
-        {!pret && !erreur && (
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#EDE8DC", fontFamily: sans, fontSize: 15 }}>
-            Ouverture de la caméra…
-          </div>
-        )}
-        {erreur && (
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-            <div style={{ background: "#3A241C", color: "#E8A88F", fontFamily: sans, fontSize: 14, padding: "14px 16px", borderRadius: 10, lineHeight: 1.5 }}>
-              {erreur}
-            </div>
-          </div>
-        )}
-      </div>
-      {/* Zoom (si dispo) */}
-      {zoomCaps && pret && (
-        <div style={{ padding: "10px 20px 4px", background: "#0C0E0B", display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontFamily: sans, fontSize: 13, color: "#8A8065", flexShrink: 0 }}>🔍 {Number(zoomVal).toFixed(1)}×</span>
-          <input type="range" min={zoomCaps.min} max={zoomCaps.max} step={zoomCaps.step} value={zoomVal}
-            onChange={(e) => changerZoom(Number(e.target.value))}
-            style={{ flex: 1, accentColor: C.ambre }} />
-        </div>
-      )}
-      <div style={{ padding: "14px 16px calc(16px + env(safe-area-inset-bottom))", background: "#0C0E0B", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <Bouton onClick={onFermer}>Annuler</Bouton>
-        <button onClick={capturer} disabled={!pret} aria-label="Capturer"
-          style={{ width: 68, height: 68, borderRadius: "50%", border: "4px solid #EDE8DC", background: pret && !captureEnCours ? C.ambre : "#555", cursor: pret ? "pointer" : "not-allowed" }} />
-        <div style={{ width: 76 }} />
-      </div>
-    </div>
-  );
-}
-
-// Clé mois "AAAA-MM" et libellé lisible d'une observation
 function moisDe(iso) {
   return (iso || "").slice(0, 7); // "2026-07"
 }
@@ -2491,7 +2213,7 @@ function Confidentialite({ onFermer }) {
 
       <SectionPliable titre="🤖 L'identification par IA">
         <div style={p}>Quand tu lances une identification, <b style={{ color: C.papier }}>la photo est envoyée à un service d'IA</b> (l'API d'Anthropic) pour reconnaître l'insecte. Elle transite par un serveur intermédiaire qui <b style={{ color: C.papier }}>ne la conserve pas</b>.</div>
-        <div style={p}>Une alternative <b style={{ color: C.papier }}>entièrement locale</b> existe (« test local hors-ligne ») : moins précise, mais ta photo ne quitte jamais ton appareil.</div>
+        
         <div style={p}>L'appli interroge aussi iNaturalist pour estimer la rareté : seul le <b style={{ color: C.papier }}>nom scientifique</b> est transmis — jamais ta photo ni ta position.</div>
       </SectionPliable>
 
@@ -2640,7 +2362,194 @@ function Soutenir({ onFermer }) {
   );
 }
 
-function Classement({ onFermer }) {
+// Profil public d'un membre : construit à partir de ses publications sur le mur.
+// (Ne montre QUE ce que la personne a publié — sa collection perso reste privée.)
+function ProfilPublic({ auteur, onFermer }) {
+  const [posts, setPosts] = useState(null);
+  const [raretes, setRaretes] = useState({});
+  const [etat, setEtat] = useState("chargement");
+
+  useEffect(() => {
+    let vivant = true;
+    (async () => {
+      try {
+        const tous = await chargerMur(200);
+        if (!vivant) return;
+        const cible = (auteur || "").trim().toLowerCase();
+        const siens = tous.filter((p) => (p.auteur || "").trim().toLowerCase() === cible);
+        setPosts(siens);
+        setEtat("ok");
+        // Raretés (best effort)
+        const cles = [...new Set(siens.map(cleEspeceMur).filter(Boolean))];
+        const acc = {};
+        for (const c of cles.slice(0, 30)) {
+          const n = await chargerRareteInat(c);
+          if (!vivant) return;
+          if (n != null) { acc[c] = n; setRaretes({ ...acc }); }
+        }
+      } catch (e) {
+        if (vivant) setEtat("echec");
+      }
+    })();
+    return () => { vivant = false; };
+  }, [auteur]);
+
+  const carte = { background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 12, padding: 14 };
+  const titre = { fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen };
+
+  if (etat === "chargement") {
+    return (
+      <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+        <Bouton onClick={onFermer} style={{ marginBottom: 16 }}>← Retour</Bouton>
+        <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, fontStyle: "italic", textAlign: "center", padding: "30px 0" }}>Chargement du profil…</div>
+      </div>
+    );
+  }
+  if (etat === "echec") {
+    return (
+      <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+        <Bouton onClick={onFermer} style={{ marginBottom: 16 }}>← Retour</Bouton>
+        <div style={{ ...carte, textAlign: "center", color: C.papierSombre, fontFamily: sans, fontSize: 14 }}>Profil indisponible (réseau ?).</div>
+      </div>
+    );
+  }
+
+  const total = posts.length;
+  const especesSet = new Set(posts.map(cleEspeceMur).filter(Boolean));
+  const nbEspeces = especesSet.size;
+
+  // Ordres
+  const parOrdre = {};
+  posts.forEach((p) => { const id = deduireOrdre({ nom: p.espece, nomSci: p.espece_sci }); parOrdre[id] = (parOrdre[id] || 0) + 1; });
+  const ordresTri = Object.entries(parOrdre).sort((a, b) => b[1] - a[1]);
+  const maxOrdre = ordresTri.length ? ordresTri[0][1] : 0;
+  const nbOrdres = Object.keys(parOrdre).filter((id) => id !== "autres").length;
+
+  // Raretés
+  const raresSet = new Set();
+  posts.forEach((p) => {
+    const k = cleEspeceMur(p);
+    const niv = niveauRarete(raretes[k]);
+    if (k && niv && niv.bonus > 0) raresSet.add(k);
+  });
+
+  // Points (même barème que le classement)
+  const points = posts.reduce((s, p) => {
+    const niv = niveauRarete(raretes[cleEspeceMur(p)]);
+    return s + 1 + (niv ? niv.bonus : 0);
+  }, 0);
+
+  // Espèces uniques (une vignette par espèce, la plus récente)
+  const parEspece = {};
+  posts.forEach((p) => {
+    const k = cleEspeceMur(p);
+    if (!k) return;
+    if (!parEspece[k] || new Date(p.created_at) > new Date(parEspece[k].created_at)) parEspece[k] = p;
+  });
+  const vignettes = Object.values(parEspece).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const premier = posts.length ? posts.reduce((min, p) => (new Date(p.created_at) < new Date(min.created_at) ? p : min), posts[0]) : null;
+
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 16 }}>← Retour</Bouton>
+
+      {/* En-tête */}
+      <div style={{ textAlign: "center", marginBottom: 18 }}>
+        <div style={{ fontSize: 44 }}>🐛</div>
+        <div style={{ fontFamily: serif, fontSize: 26, fontWeight: 700, color: C.papier, marginTop: 2 }}>{auteur}</div>
+        <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginTop: 3 }}>
+          {total === 0 ? "Aucune trouvaille publiée pour l'instant" : `Chasseur d'insectes${premier ? " · depuis le " + new Date(premier.created_at).toLocaleDateString("fr-FR", { month: "long", year: "numeric" }) : ""}`}
+        </div>
+      </div>
+
+      {total === 0 ? (
+        <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 13.5, color: C.papierSombre, lineHeight: 1.6 }}>
+          Cette personne n'a encore rien publié sur le mur. 🐞<br />À suivre !
+        </div>
+      ) : (
+        <div>
+          {/* Tuiles */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9, marginBottom: 14 }}>
+            <div style={{ ...carte, textAlign: "center", padding: "13px 6px" }}>
+              <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.ambreClair }}>{total}</div>
+              <div style={{ fontFamily: sans, fontSize: 9.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Trouvailles</div>
+            </div>
+            <div style={{ ...carte, textAlign: "center", padding: "13px 6px" }}>
+              <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.ambreClair }}>{nbEspeces}</div>
+              <div style={{ fontFamily: sans, fontSize: 9.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Espèces</div>
+            </div>
+            <div style={{ ...carte, textAlign: "center", padding: "13px 6px" }}>
+              <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.ambreClair }}>{points}</div>
+              <div style={{ fontFamily: sans, fontSize: 9.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Points</div>
+            </div>
+          </div>
+
+          {/* Espèces rares */}
+          {raresSet.size > 0 && (
+            <div style={{ ...carte, marginBottom: 14, display: "flex", alignItems: "center", gap: 12, background: "linear-gradient(#2A2417, #201B12)", border: "1px solid #4A3E22" }}>
+              <span style={{ fontSize: 28 }}>🌟</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: "#D2A24A", letterSpacing: 0.5 }}>Espèces rares dénichées</div>
+                <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 2 }}>peu communes à très rares</div>
+              </div>
+              <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: "#E5B84B" }}>{raresSet.size}</div>
+            </div>
+          )}
+
+          {/* Par ordre */}
+          {ordresTri.length > 0 && (
+            <div style={{ ...carte, marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+                <span style={titre}>Ses ordres d'insectes</span>
+                <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{nbOrdres} ordre{nbOrdres > 1 ? "s" : ""}</span>
+              </div>
+              {ordresTri.map(([id, n]) => {
+                const info = ordreInfo(id);
+                return (
+                  <div key={id} style={{ marginBottom: 9 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 13, color: C.papier, marginBottom: 4 }}>
+                      <span>{info.emoji} {info.label}</span>
+                      <span style={{ color: C.papierSombre }}>{n} · {Math.round((n / total) * 100)}%</span>
+                    </div>
+                    <div style={{ height: 7, borderRadius: 4, background: "#0F130C", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${(n / maxOrdre) * 100}%`, borderRadius: 4, background: "linear-gradient(90deg, #6E8B4E, #A8C97E)" }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Sa boîte publique */}
+          <div style={{ ...carte }}>
+            <div style={{ marginBottom: 12 }}><span style={titre}>Sa boîte ({nbEspeces} espèce{nbEspeces > 1 ? "s" : ""})</span></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9 }}>
+              {vignettes.map((p) => {
+                const niv = niveauRarete(raretes[cleEspeceMur(p)]);
+                return (
+                  <div key={p.id} style={{ position: "relative" }}>
+                    {p.photo_url
+                      ? <img src={p.photo_url} alt={p.espece || ""} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 9, border: `1px solid ${C.bordure}`, display: "block" }} />
+                      : <div style={{ width: "100%", aspectRatio: "1", borderRadius: 9, border: `1px solid ${C.bordure}`, background: C.fond, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🐛</div>}
+                    {niv && niv.bonus > 0 && (
+                      <span style={{ position: "absolute", top: 5, right: 5, fontSize: 14, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.7))" }}>{niv.emoji}</span>
+                    )}
+                    <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papier, marginTop: 4, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {p.espece || "Spécimen"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Classement({ onFermer, onOuvrirProfil }) {
   const [periode, setPeriode] = useState("semaine");
   const [posts, setPosts] = useState(null);
   const [raretes, setRaretes] = useState({});
@@ -2720,7 +2629,8 @@ function Classement({ onFermer }) {
           {classement.map((c, i) => {
             const r = rangStyle(i);
             return (
-              <div key={c.auteur} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 11, background: i < 3 ? "linear-gradient(#20281A, #1A2015)" : C.panneau, border: `1px solid ${i < 3 ? "#3A4A2C" : C.bordure}` }}>
+              <div key={c.auteur} onClick={() => onOuvrirProfil && onOuvrirProfil(c.auteur)}
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 11, background: i < 3 ? "linear-gradient(#20281A, #1A2015)" : C.panneau, border: `1px solid ${i < 3 ? "#3A4A2C" : C.bordure}`, cursor: onOuvrirProfil ? "pointer" : "default" }}>
                 <div style={{ minWidth: 30, textAlign: "center", fontFamily: serif, fontSize: i < 3 ? 22 : 16, fontWeight: 700, color: r.coul }}>{r.emoji}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.auteur}</div>
@@ -2730,6 +2640,7 @@ function Classement({ onFermer }) {
                   <span style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambre }}>{c.points}</span>
                   <span style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}> pts</span>
                 </div>
+                {onOuvrirProfil && <span style={{ color: C.papierSombre, fontSize: 16 }}>›</span>}
               </div>
             );
           })}
@@ -3137,27 +3048,10 @@ function Presentation({ onCommencer }) {
 }
 
 function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
-  const [montrerCamera, setMontrerCamera] = useState(false);
   const [flash, setFlash] = useState("");
-  const inputRef = useRef(null);
+  const [enCours, setEnCours] = useState(null); // { fait, total }
 
-  function figerContexte() {
-    // Renvoie une promesse résolue avec { gps, gpsEtat } ; météo récupérée en différé si réseau.
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) { resolve({ gps: null }); return; }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ gps: {
-          lat: Math.round(pos.coords.latitude * 100000) / 100000,
-          lon: Math.round(pos.coords.longitude * 100000) / 100000,
-          precision: Math.round(pos.coords.accuracy),
-        } }),
-        () => resolve({ gps: null }),
-        { enableHighAccuracy: true, timeout: 12000 }
-      );
-    });
-  }
-
-  async function meteoPour(gps) {
+  async function meteoPour(gps, quand) {
     if (!gps) return null;
     try {
       const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${gps.lat}&longitude=${gps.lon}&current=temperature_2m,weather_code`);
@@ -3168,60 +3062,104 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
     } catch { return null; }
   }
 
-  async function traiterBlob(blob) {
-    const { gps } = await figerContexte();
-    const m = await meteoPour(gps); // null si hors réseau → météo récupérée au tri
-    const obs = {
-      id: `${Date.now()}-${Math.floor(Math.random() * 9999)}`,
-      statut: "a_trier",
-      nom: "", nomSci: "", biotope: "", notes: "",
-      ciel: m ? m.ciel : "", temp: m ? m.temp : "", meteoAuto: m ? true : false,
-      meteoARattraper: m ? false : !!gps, // à compléter au tri si on avait le GPS mais pas le réseau
-      gps: gps || null,
-      date: new Date().toISOString(),
-      photo: blob,
-    };
-    const ok = await onAjout(obs);
-    setFlash(ok ? "✓ Ajoutée à la file" + (gps ? " · position figée" : " · sans GPS") : "Échec de l'ajout");
-    setTimeout(() => setFlash(""), 2600);
+  // Position actuelle (repli si la photo n'a pas de GPS dans ses métadonnées)
+  function positionActuelle() {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) { resolve(null); return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({
+          lat: Math.round(pos.coords.latitude * 100000) / 100000,
+          lon: Math.round(pos.coords.longitude * 100000) / 100000,
+          precision: Math.round(pos.coords.accuracy),
+        }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
   }
 
-  async function choisirFichier(e) {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    try {
-      const blob = await compresserImage(f);
-      await traiterBlob(blob);
-    } catch {
-      setFlash("Image illisible");
-      setTimeout(() => setFlash(""), 2600);
+  // Importe plusieurs photos d'un coup : chacune garde SA date et SA position (via EXIF).
+  async function importerPhotos(e) {
+    const fichiers = Array.from(e.target.files || []);
+    if (!fichiers.length) return;
+    e.target.value = ""; // permet de réimporter les mêmes fichiers ensuite
+    setEnCours({ fait: 0, total: fichiers.length });
+    setFlash("");
+
+    let posSecours; // position actuelle, demandée une seule fois si besoin
+    let ajoutees = 0, echecs = 0, avecGps = 0;
+
+    for (let i = 0; i < fichiers.length; i++) {
+      const f = fichiers[i];
+      setEnCours({ fait: i, total: fichiers.length });
+      try {
+        // 1) GPS : d'abord celui de la photo (EXIF), sinon la position actuelle
+        let gps = null;
+        try { gps = await lireGpsExif(f); } catch {}
+        if (gps) avecGps++;
+        else {
+          if (posSecours === undefined) posSecours = await positionActuelle();
+          gps = posSecours;
+        }
+        // 2) Date : celle de la photo si connue, sinon maintenant
+        const quand = f.lastModified ? new Date(f.lastModified) : new Date();
+        // 3) Compression
+        const blob = await compresserImage(f);
+        // 4) Météo (best effort — actuelle, donc approximative pour une vieille photo)
+        const recente = (Date.now() - quand.getTime()) < 3 * 3600 * 1000;
+        const m = recente ? await meteoPour(gps) : null;
+
+        const obs = {
+          id: `${Date.now()}-${i}-${Math.floor(Math.random() * 9999)}`,
+          statut: "a_trier",
+          nom: "", nomSci: "", biotope: "", notes: "",
+          ciel: m ? m.ciel : "", temp: m ? m.temp : "", meteoAuto: !!m,
+          meteoARattraper: false,
+          moment: momentDepuisDate(quand),
+          gps: gps || null,
+          date: quand.toISOString(),
+          photo: blob,
+        };
+        const ok = await onAjout(obs);
+        if (ok) ajoutees++; else echecs++;
+      } catch {
+        echecs++;
+      }
     }
+
+    setEnCours(null);
+    const bits = [`${ajoutees} photo${ajoutees > 1 ? "s" : ""} ajoutée${ajoutees > 1 ? "s" : ""} à la file`];
+    if (avecGps > 0) bits.push(`${avecGps} avec position d'origine 📍`);
+    if (echecs > 0) bits.push(`${echecs} échec${echecs > 1 ? "s" : ""}`);
+    setFlash("✓ " + bits.join(" · "));
+    setTimeout(() => setFlash(""), 4500);
   }
 
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-      {montrerCamera && (
-        <CameraInterne
-          onCapture={async (blob) => { setMontrerCamera(false); await traiterBlob(blob); }}
-          onFermer={() => setMontrerCamera(false)}
-        />
-      )}
-
-      <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.5, marginBottom: 16 }}>
-        Photographie sans t'arrêter : la position et la météo sont <b style={{ color: C.papier }}>figées sur le moment</b>. Tu complèteras l'identification plus tard, au calme.
+      <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.55, marginBottom: 16 }}>
+        Reviens de balade avec plein de photos ? <b style={{ color: C.papier }}>Importe-les toutes d'un coup</b> : chacune garde sa date et sa position d'origine. Tu les identifieras ensuite tranquillement, une par une.
       </div>
 
-      <input ref={inputRef} type="file" accept="image/*" onChange={choisirFichier} style={{ display: "none" }} />
-      <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
-        <Bouton variante="primaire" onClick={() => setMontrerCamera(true)} style={{ flex: 2 }}>📷 Photo éclair</Bouton>
-        <div style={{ position: "relative", flex: 1 }}>
-          <Bouton onClick={() => {}} style={{ width: "100%" }}>🖼️ Galerie</Bouton>
-          <input type="file" accept="image/*" onChange={choisirFichier} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }} />
-        </div>
+      {/* Import multiple */}
+      <div style={{ position: "relative", marginBottom: 12 }}>
+        <button disabled={!!enCours}
+          style={{ width: "100%", boxSizing: "border-box", padding: "22px 16px", textAlign: "center", borderRadius: 12, cursor: enCours ? "default" : "pointer",
+            border: `2px dashed ${enCours ? C.bordure : C.ambre}`, background: enCours ? C.panneau : "linear-gradient(#2A2417, #201B12)",
+            color: enCours ? C.papierSombre : C.ambreClair, fontFamily: sans, fontSize: 15, fontWeight: 700 }}>
+          {enCours
+            ? `⏳ Import en cours… (${enCours.fait}/${enCours.total})`
+            : "🖼️ Importer des photos de la galerie"}
+          {!enCours && <div style={{ fontFamily: sans, fontSize: 11.5, fontWeight: 400, color: C.papierSombre, marginTop: 5 }}>Tu peux en sélectionner plusieurs à la fois</div>}
+        </button>
+        {!enCours && (
+          <input type="file" accept="image/*" multiple onChange={importerPhotos}
+            style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }} />
+        )}
       </div>
 
       {flash && (
-        <div style={{ fontFamily: sans, fontSize: 13, color: C.lichen, marginBottom: 12, padding: "8px 12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}` }}>{flash}</div>
+        <div style={{ fontFamily: sans, fontSize: 13, color: C.lichen, marginBottom: 12, padding: "9px 12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}`, lineHeight: 1.45 }}>{flash}</div>
       )}
 
       {/* File d'attente */}
@@ -3230,8 +3168,8 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
       </div>
 
       {aTrier.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "40px 24px", border: `1px solid ${C.bordure}`, borderRadius: 14, background: "linear-gradient(#191F15, #14180F)", fontFamily: sans, fontSize: 14, color: C.papierSombre }}>
-          Aucune photo en attente. Shoote une bestiole, elle apparaîtra ici.
+        <div style={{ textAlign: "center", padding: "40px 24px", border: `1px solid ${C.bordure}`, borderRadius: 14, background: "linear-gradient(#191F15, #14180F)", fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.6 }}>
+          Aucune photo en attente.<br />Importe tes photos de balade, elles apparaîtront ici. 🐞
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 14 }}>
@@ -3252,7 +3190,6 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
   );
 }
 
-// ---------- Vue : formulaire ----------
 function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) {
   const modeTri = !!base && mode !== "edition";
   const modeEdition = mode === "edition";
@@ -3276,11 +3213,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
   const [gpsEtat, setGpsEtat] = useState(base ? (base.gps ? "ok" : "refuse") : "attente");
   const [infoGpsPhoto, setInfoGpsPhoto] = useState(false);
   const [enregistrement, setEnregistrement] = useState(false);
-  const [montrerCamera, setMontrerCamera] = useState(false);
   const [erreur, setErreur] = useState("");
-  const [idEtat, setIdEtat] = useState(""); // "" | recherche | ok | rien | echec
-  const [idResultat, setIdResultat] = useState(null);
-  const [idBrut, setIdBrut] = useState(null);
   const [cloudEtat, setCloudEtat] = useState(""); // "" | recherche | ok | echec
   const [cloudResultat, setCloudResultat] = useState(null);
   const [cloudErreur, setCloudErreur] = useState("");
@@ -3418,7 +3351,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
       const gpsExif = await lireGpsExif(f);
       const blob = await compresserImage(f);
       setPhotoBlob(blob);
-      setIdEtat(""); setIdResultat(null); setIdBrut(null); setCiblage(false);
+      setCiblage(false);
       // Si la photo contient une position ET qu'on n'en a pas déjà une fiable, on la pré-remplit
       if (gpsExif && (!gps || gps.manuel || gpsEtat !== "ok")) {
         setGps({ lat: gpsExif.lat, lon: gpsExif.lon, precision: 0, depuisPhoto: true });
@@ -3429,32 +3362,6 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
     } catch {
       setErreur("Impossible de lire cette image. Essaie avec un autre fichier.");
     }
-  }
-
-  async function lancerIdentification() {
-    if (!photoBlob || idEtat === "recherche") return;
-    setIdEtat("recherche");
-    setIdResultat(null);
-    setIdBrut(null);
-    try {
-      const { match, brut } = await identifierLocal(photoBlob, ciblage ? zone : null);
-      setIdBrut(brut);
-      if (match) {
-        setIdResultat(match);
-        setIdEtat("ok");
-      } else {
-        setIdEtat("rien");
-      }
-    } catch (e) {
-      setIdEtat("echec");
-    }
-  }
-
-  function appliquerIdentification() {
-    if (!idResultat) return;
-    if (idResultat.nom) setNom(idResultat.nom);
-    if (idResultat.nomSci) setNomSci(idResultat.nomSci);
-    if (idResultat.confiance !== undefined) setConfiance(idResultat.confiance);
   }
 
   async function lancerIdentificationCloud(utiliserZone) {
@@ -3642,10 +3549,6 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
       )}
 
       {/* Photo */}
-      {montrerCamera && (
-        <CameraInterne
-          onCapture={(blob) => { setPhotoBlob(blob); setMontrerCamera(false); }}
-          onFermer={() => setMontrerCamera(false)}
         />
       )}
       <div style={{ marginBottom: 16 }}>
@@ -3858,54 +3761,6 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
             </div>
           )}
 
-          <SectionPliable titre="🔬 Test local hors-ligne (sans réseau ni compte)">
-
-          <Bouton onClick={lancerIdentification} disabled={idEtat === "recherche"} style={{ width: "100%" }}>
-            {idEtat === "recherche" ? "🔬 Analyse en cours…" : (idResultat || idEtat === "rien" || idEtat === "echec" ? "🔬 Relancer le test local" : "🔬 Identifier (test local)")}
-          </Bouton>
-          {ciblage && (
-            <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 6, fontStyle: "italic" }}>
-              Le ciblage s'applique aux deux analyses. Ta photo enregistrée reste entière.
-            </div>
-          )}
-
-          {idEtat === "recherche" && (
-            <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 8, fontStyle: "italic" }}>
-              Au premier lancement, le modèle (~15 Mo) se télécharge — ça peut prendre quelques secondes.
-            </div>
-          )}
-
-          {idEtat === "echec" && (
-            <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 10 }}>
-              Modèle indisponible (pas de réseau au premier chargement, ou bibliothèque non chargée). Tu peux renseigner le nom à la main.
-            </div>
-          )}
-
-          {idEtat === "rien" && (
-            <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginTop: 10, lineHeight: 1.5 }}>
-              Le modèle local ne reconnaît pas cet arthropode — il ne connaît qu'une trentaine de grands groupes courants. À renseigner à la main.
-              {idBrut && idBrut.length > 0 && (
-                <div style={{ marginTop: 6, fontSize: 11, color: "#7A7462" }}>
-                  Le modèle a « vu » : {idBrut.map((b) => b.className.split(",")[0]).join(", ")}.
-                </div>
-              )}
-            </div>
-          )}
-
-          {idResultat && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", color: C.lichen, marginBottom: 8 }}>
-                Proposition · {pourcentConfiance(idResultat.confiance)}% · {idResultat.niveau}
-              </div>
-              <div style={{ fontFamily: sans, fontSize: 16, fontWeight: 700, color: C.papier }}>{idResultat.nom}</div>
-              <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambre, marginBottom: 10 }}>{idResultat.nomSci}</div>
-              <Bouton variante="primaire" onClick={appliquerIdentification} style={{ width: "100%" }}>Utiliser ces noms</Bouton>
-              <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 8, fontStyle: "italic" }}>
-                ⚠️ Modèle généraliste, identification grossière (groupe, pas espèce) — à vérifier.
-              </div>
-            </div>
-          )}
-          </SectionPliable>
         </div>
       )}
 
@@ -5208,7 +5063,7 @@ function Carte({ observations, onOuvrirFiche }) {
         let urlPhoto = null;
         if (o.photo) { urlPhoto = URL.createObjectURL(o.photo); urls.push(urlPhoto); }
         conteneur.innerHTML =
-          (urlPhoto ? '<img src="' + urlPhoto + '" style="width:100%;border-radius:6px;display:block;margin-bottom:6px;" />' : "") +
+          (urlPhoto ? '<img src="' + urlPhoto + '" alt="Photo de l\'observation" style="width:100%;border-radius:6px;display:block;margin-bottom:6px;" />' : "") +
           '<div style="font-weight:700;font-size:13px;color:#2A2519;">' + (o.nom ? o.nom.replace(/</g, "&lt;") : "Spécimen non identifié") + "</div>" +
           '<div style="font-size:11px;color:#8A8065;margin-bottom:6px;">' +
           biotopeOf(o.biotope).emoji + " " + biotopeOf(o.biotope).label + " · " + new Date(o.date).toLocaleDateString("fr-FR") + "</div>";
@@ -5233,7 +5088,7 @@ function Carte({ observations, onOuvrirFiche }) {
         const conteneur = document.createElement("div");
         conteneur.style.width = "150px";
         conteneur.innerHTML =
-          (p.photo_url ? '<img src="' + p.photo_url + '" style="width:100%;border-radius:6px;display:block;margin-bottom:6px;" />' : "") +
+          (p.photo_url ? '<img src="' + p.photo_url + '" alt="Photo partagée" style="width:100%;border-radius:6px;display:block;margin-bottom:6px;" />' : "") +
           '<div style="font-weight:700;font-size:13px;color:#2A2519;">' + (p.espece ? String(p.espece).replace(/</g, "&lt;") : "Spécimen non identifié") + "</div>" +
           '<div style="font-size:11px;color:#8A8065;">' +
           "🐛 " + (p.auteur ? String(p.auteur).replace(/</g, "&lt;") : "Anonyme") + (p.lieu ? " · " + String(p.lieu).replace(/</g, "&lt;") : "") + "</div>" +
@@ -5308,11 +5163,40 @@ function SectionPliable({ titre, ouvertParDefaut, children }) {
   );
 }
 
+// État de la dernière sauvegarde (date relative + niveau d'alerte).
+function etatSauvegarde() {
+  try {
+    const iso = localStorage.getItem("biodex_derniere_sauvegarde");
+    if (!iso) return { jamais: true, texte: "Aucune sauvegarde effectuée", niveau: "alerte" };
+    const d = new Date(iso);
+    if (isNaN(d)) return { jamais: true, texte: "Aucune sauvegarde effectuée", niveau: "alerte" };
+    const jours = Math.floor((Date.now() - d.getTime()) / 864e5);
+    const dateLisible = d.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+    let quand;
+    if (jours <= 0) quand = "aujourd'hui";
+    else if (jours === 1) quand = "hier";
+    else if (jours < 7) quand = `il y a ${jours} jours`;
+    else if (jours < 31) { const s = Math.floor(jours / 7); quand = `il y a ${s} semaine${s > 1 ? "s" : ""}`; }
+    else { const m = Math.floor(jours / 30); quand = `il y a ${m} mois`; }
+    const niveau = jours >= 30 ? "alerte" : jours >= 14 ? "attention" : "ok";
+    const count = parseInt(localStorage.getItem("biodex_sauvegarde_count") || "0", 10) || 0;
+    return { jamais: false, jours, quand, dateLisible, niveau, count, texte: `Dernière sauvegarde : ${quand}` };
+  } catch {
+    return { jamais: true, texte: "Aucune sauvegarde effectuée", niveau: "alerte" };
+  }
+}
+
 function Aide({ onFermer, onImportTermine }) {
   const p = { fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.6, marginBottom: 12 };
   const t = { fontFamily: sans, fontSize: 15, fontWeight: 800, color: C.ambre, margin: "18px 0 6px" };
   const [exportEtat, setExportEtat] = useState("");
   const [importEtat, setImportEtat] = useState("");
+  const [sauve, setSauve] = useState(() => etatSauvegarde());
+  useEffect(() => {
+    const h = () => setSauve(etatSauvegarde());
+    window.addEventListener("biodex-sauvegarde-faite", h);
+    return () => window.removeEventListener("biodex-sauvegarde-faite", h);
+  }, []);
 
   async function exporter() {
     setExportEtat("Préparation de la sauvegarde…");
@@ -5402,21 +5286,17 @@ function Aide({ onFermer, onImportTermine }) {
         <p style={p}>
           En haut de ta collection, une carte affiche une anecdote fascinante sur les insectes — une nouvelle chaque jour, et le bouton « 🔀 Une autre » pour en piocher d'autres. Toutes les anecdotes sont des faits fiables. Tu peux masquer la carte avec la croix (elle réapparaîtra à la prochaine ouverture).
         </p>
-        <div style={t}>📥 À trier (capture rapide)</div>
+        <div style={t}>📥 À trier (import groupé)</div>
         <p style={p}>
-          Sur le terrain, l'onglet « À trier » te laisse photographier à la chaîne sans rien remplir : la position GPS et la météo sont figées au moment de la prise. Plus tard, au calme, touche une photo en attente pour compléter l'identification et la classer dans ta collection. Si tu shootes hors réseau, la position est quand même figée et la météo est rattrapée (au bon endroit) au moment du tri.
+          Tu reviens de balade avec plein de photos ? L'onglet « À trier » te permet de les <b>importer toutes d'un coup</b> depuis ta galerie. Chaque photo garde <b>sa propre date</b> et, si elle en contient une, <b>sa position d'origine</b> (lue dans les métadonnées de l'image) — sinon ta position actuelle sert de repli. Elles atterrissent dans une file d'attente : plus tard, au calme, touche une photo pour l'identifier et la classer dans ta collection.
         </p>
         <div style={t}>✨ Identification précise (Claude)</div>
         <p style={p}>
-          Le bouton « Identifier cette zone » envoie la photo à Claude via un petit serveur : bien plus fiable que le test local, il propose un nom français et latin avec un pourcentage de confiance. Avant chaque identification, un cadre s'affiche sur ta photo : place-le sur l'insecte pour que l'IA se concentre dessus — c'est surtout utile quand la bête est petite ou perdue dans le décor, et ça améliore nettement la précision. Si ta photo est déjà bien cadrée, un lien te permet d'identifier l'image entière directement. Le bouton « 🔍 Zoomer sur la photo » ouvre l'image en plein écran pour l'inspecter de près. Et « 📷 Appareil photo » ouvre directement l'appareil photo de ton téléphone, pour une meilleure qualité. L'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Nécessite le réseau. Chaque identification coûte une fraction de centime.
+          Le bouton « Identifier cette zone » envoie la photo à Claude via un petit serveur : il propose un nom français et latin avec un pourcentage de confiance. Avant chaque identification, un cadre s'affiche sur ta photo : place-le sur l'insecte pour que l'IA se concentre dessus — c'est surtout utile quand la bête est petite ou perdue dans le décor, et ça améliore nettement la précision. Si ta photo est déjà bien cadrée, un lien te permet d'identifier l'image entière directement. Le bouton « 🔍 Zoomer sur la photo » ouvre l'image en plein écran pour l'inspecter de près. Et « 📷 Appareil photo » ouvre directement l'appareil photo de ton téléphone, pour une meilleure qualité. L'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Nécessite le réseau. Chaque identification coûte une fraction de centime.
         </p>
         <div style={t}>🌿 Pourquoi il compte</div>
         <p style={p}>
           Chaque fiche naturaliste met en avant le rôle écologique de l'insecte (pollinisation, recyclage, régulation, nourriture pour d'autres animaux…) dans un encart « Pourquoi il compte », et propose un geste simple pour l'aider (« Un geste pour l'aider »). Une façon de rappeler que même la plus petite bestiole a son utilité — et qu'on peut agir à son échelle.
-        </p>
-        <div style={t}>🔬 Identification (test local)</div>
-        <p style={p}>
-          Après avoir ajouté une photo, appuie sur « Identifier (test local) » : une IA tourne directement dans ton navigateur (aucune donnée envoyée, aucun coût). C'est un modèle généraliste qui ne reconnaît qu'une trentaine de grands groupes (coccinelle, abeille, libellule, mante, araignée…) et reste au niveau du groupe, jamais de l'espèce précise. Astuce : recadrer sur l'insecte (le cadre proposé avant l'identification précise) aide aussi ce test à ignorer le décor quand la bête est petite dans l'image. Vois-le comme un jeu : parfois bluffant, souvent approximatif. Premier lancement : téléchargement du modèle (~15 Mo), réseau requis.
         </p>
         <div style={t}>✍️ Noms & autocomplétion</div>
         <p style={p}>
@@ -5518,6 +5398,28 @@ function Aide({ onFermer, onImportTermine }) {
         <p style={p}>
           Tes observations sont sauvegardées sur ton téléphone (photos jusqu'à 2560 px). Elles ne sont PAS synchronisées entre appareils, et vider les données du navigateur les efface : sauvegarde régulièrement ! L'appli te le rappelle avec une bannière 💾 quand ça fait un moment ou que tu as ajouté beaucoup d'observations. L'export crée un fichier .json à ranger à l'abri (Drive, PC…). L'import restaure une sauvegarde — les observations déjà présentes sont conservées, les doublons écrasés proprement.
         </p>
+        {/* État de la dernière sauvegarde */}
+        {(() => {
+          const coul = sauve.niveau === "alerte" ? { bord: "#8A4A2E", fond: "linear-gradient(#2E1F16, #241812)", txt: "#E8A07E", ico: "⚠️" }
+                     : sauve.niveau === "attention" ? { bord: "#8A7A2E", fond: "linear-gradient(#2A2417, #201B12)", txt: "#E4C878", ico: "💾" }
+                     : { bord: "#3E5A2E", fond: "linear-gradient(#1A2216, #161C12)", txt: "#A8C97E", ico: "✅" };
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 10, background: coul.fond, border: `1px solid ${coul.bord}`, marginTop: 12 }}>
+              <span style={{ fontSize: 19 }}>{coul.ico}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: coul.txt }}>
+                  {sauve.jamais ? "Aucune sauvegarde effectuée" : `Dernière sauvegarde : ${sauve.quand}`}
+                </div>
+                <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 2, lineHeight: 1.45 }}>
+                  {sauve.jamais
+                    ? "Ta collection n'existe que sur cet appareil. Exporte-la pour ne rien risquer !"
+                    : `Le ${sauve.dateLisible}${sauve.count ? ` · ${sauve.count} observation${sauve.count > 1 ? "s" : ""} sauvegardée${sauve.count > 1 ? "s" : ""}` : ""}.`}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         <div style={{ display: "flex", gap: 10, marginBottom: 8, marginTop: 10 }}>
           <Bouton variante="primaire" onClick={exporter} style={{ flex: 1 }}>📤 Exporter</Bouton>
           <div style={{ position: "relative", flex: 1 }}>
@@ -5804,7 +5706,7 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
 }
 
 // ---------- Détail d'un post du mur (modale enrichie) ----------
-function DetailPost({ post, reactions, onReagir, onFermer, monPrenom }) {
+function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirProfil }) {
   const p = post || {};
   const reacts = reactions || {};
   return (
@@ -5823,7 +5725,9 @@ function DetailPost({ post, reactions, onReagir, onFermer, monPrenom }) {
             {p.lieu && (
               <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, padding: "5px 11px", borderRadius: 20, background: C.panneau, border: `1px solid ${C.bordure}` }}>🌿 {p.lieu}</span>
             )}
-            <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, padding: "5px 11px", borderRadius: 20, background: C.panneau, border: `1px solid ${C.bordure}` }}>🐛 {p.auteur || "Anonyme"}</span>
+            {onOuvrirProfil && p.auteur
+              ? <button onClick={() => onOuvrirProfil(p.auteur)} style={{ fontFamily: sans, fontSize: 13, color: C.ambreClair, padding: "5px 11px", borderRadius: 20, background: C.panneau, border: `1px solid ${C.ambre}`, cursor: "pointer", fontWeight: 600 }}>🐛 {p.auteur} →</button>
+              : <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, padding: "5px 11px", borderRadius: 20, background: C.panneau, border: `1px solid ${C.bordure}` }}>🐛 {p.auteur || "Anonyme"}</span>}
             {p.created_at && (
               <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, padding: "5px 11px", borderRadius: 20, background: C.panneau, border: `1px solid ${C.bordure}` }}>📅 {new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</span>
             )}
@@ -5881,7 +5785,7 @@ function DetailPost({ post, reactions, onReagir, onFermer, monPrenom }) {
 }
 
 // ---------- Mur commun (vue) ----------
-function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues }) {
+function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirProfil }) {
   const [posts, setPosts] = useState([]);
   const [etat, setEtat] = useState("chargement"); // chargement | ok | echec | inactif
   const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
@@ -6031,7 +5935,13 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues }) {
               {p.espece_sci && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambre }}>{p.espece_sci}</div>}
               {p.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginTop: 6 }}>{p.note}</div>}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
-                <span>🐛 {p.auteur || "Anonyme"}{p.lieu ? ` · ${p.lieu}` : ""}</span>
+                <span>
+                  {onOuvrirProfil && p.auteur
+                    ? <button onClick={(e) => { e.stopPropagation(); onOuvrirProfil(p.auteur); }}
+                        style={{ background: "none", border: "none", padding: 0, font: "inherit", color: C.ambreClair, cursor: "pointer", textDecoration: "underline" }}>🐛 {p.auteur}</button>
+                    : <span>🐛 {p.auteur || "Anonyme"}</span>}
+                  {p.lieu ? ` · ${p.lieu}` : ""}
+                </span>
                 <span>{p.created_at ? new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
               </div>
               <div style={{ fontFamily: sans, fontSize: 11.5, color: C.ambre, marginTop: 6, opacity: 0.85 }}>Toucher pour en savoir plus →</div>
@@ -6086,7 +5996,7 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues }) {
           </div>
         </div>
       ))}
-      {postDetail && <DetailPost post={postDetail} reactions={reactions[postDetail.id] || {}} onReagir={(type) => surReaction(postDetail.id, type)} onFermer={() => setPostDetail(null)} monPrenom={prenom} />}
+      {postDetail && <DetailPost post={postDetail} reactions={reactions[postDetail.id] || {}} onReagir={(type) => surReaction(postDetail.id, type)} onFermer={() => setPostDetail(null)} monPrenom={prenom} onOuvrirProfil={onOuvrirProfil ? (nom) => { setPostDetail(null); onOuvrirProfil(nom); } : null} />}
     </div>
   );
 }
@@ -7071,6 +6981,15 @@ function BioDex() {
   const [centreOuvert, setCentreOuvert] = useState(false);
   const [menuOuvert, setMenuOuvert] = useState(false);
   const [montrerPresentation, setMontrerPresentation] = useState(() => { try { return !localStorage.getItem("biodex_presentation_vue"); } catch { return false; } });
+  const [profilVu, setProfilVu] = useState(null); // prénom du membre dont on regarde le profil
+  const [vueAvantProfil, setVueAvantProfil] = useState("mur");
+  const ouvrirProfil = (nom) => {
+    const n = (nom || "").trim();
+    if (!n || n.toLowerCase() === "anonyme") return;
+    setVueAvantProfil(vue);
+    setProfilVu(n);
+    setVue("profilpublic");
+  };
 
   // Pastille sur l'icône de l'appli installée (API Badging, si supportée)
   useEffect(() => {
@@ -7341,7 +7260,12 @@ function BioDex() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", boxShadow: "0 2px 8px rgba(0,0,0,.3)" }}>
             <span style={{ fontSize: 20, flexShrink: 0 }}>💾</span>
             <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, flex: 1, lineHeight: 1.4 }}>
-              Pense à sauvegarder ta collection ({observations.length} observation{observations.length > 1 ? "s" : ""}) — un fichier à garder à l'abri.
+              {(() => {
+                const s = etatSauvegarde();
+                return s.jamais
+                  ? <span>Ta collection ({observations.length} observation{observations.length > 1 ? "s" : ""}) n'a <b style={{ color: "#E4C878" }}>jamais été sauvegardée</b> — un fichier à garder à l'abri.</span>
+                  : <span>Dernière sauvegarde <b style={{ color: "#E4C878" }}>{s.quand}</b> · {observations.length} observation{observations.length > 1 ? "s" : ""} aujourd'hui. Pense à sauvegarder !</span>;
+              })()}
             </span>
             <button onClick={reporterRappel} aria-label="Plus tard"
               style={{ background: "none", border: "none", color: C.papierSombre, fontFamily: sans, fontSize: 12, cursor: "pointer", padding: "4px 6px", flexShrink: 0 }}>
@@ -7384,7 +7308,7 @@ function BioDex() {
         );
       })()}
 
-      {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} onMarquerReactionsVues={(total) => { try { localStorage.setItem("biodex_reactions_vues", String(total)); } catch {} setNotifs((n) => ({ ...n, reactionsRecues: 0, total: Math.max(0, (n.total || 0) - (n.reactionsRecues || 0)) })); }} />}
+      {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} onOuvrirProfil={ouvrirProfil} onMarquerReactionsVues={() => { setNotifs((n) => ({ ...n, reactionsRecues: 0, total: Math.max(0, (n.total || 0) - (n.reactionsRecues || 0)) })); }} />}
       {vue === "idees" && <BoiteIdees prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
       {vue === "missions" && <Missions observations={observations} prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
       {vue === "ligue" && (
@@ -7397,7 +7321,7 @@ function BioDex() {
         />
       )}
       {vue === "classement" && (
-        <Classement onFermer={() => setVue("collection")} />
+        <Classement onFermer={() => setVue("collection")} onOuvrirProfil={ouvrirProfil} />
       )}
       {vue === "soutenir" && (
         <Soutenir onFermer={() => setVue("collection")} />
@@ -7407,6 +7331,9 @@ function BioDex() {
       )}
       {vue === "confidentialite" && (
         <Confidentialite onFermer={() => setVue("collection")} />
+      )}
+      {vue === "profilpublic" && profilVu && (
+        <ProfilPublic auteur={profilVu} onFermer={() => { setProfilVu(null); setVue(vueAvantProfil || "mur"); }} />
       )}
       {vue === "defi" && carteDefiee && (
         <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>

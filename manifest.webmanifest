@@ -1,7 +1,7 @@
 {
   "name": "BioDex — Carnet entomologique",
   "short_name": "BioDex",
-  "description": "Collection interactive d'observations d'insectes : photo, GPS, biotope, météo.",
+  "description": "Carnet entomologique participatif : identifie les insectes par photo grâce à l'IA, monte ta collection, partage tes trouvailles avec ta bande, joue (cartes, combats, quiz) et contribue au recensement de la biodiversité (iNaturalist, enquêtes OPIE).",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
@@ -10,7 +10,17 @@
   "theme_color": "#141812",
   "lang": "fr",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }
