@@ -141,9 +141,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.25 (PWA) ============
+// ============ BioDex v1.26 (PWA) ============
 
-const VERSION = "v1.25";
+const VERSION = "v1.26";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1570,6 +1570,43 @@ function PhotoBlob({ blob, alt, style }) {
     );
   }
   return <img src={url} alt={alt} style={style} />;
+}
+
+// Vignette légère : génère une VRAIE miniature réduite (~150px) à partir du blob,
+// pour ne pas décoder l'image pleine taille une seconde fois (évite le pic mémoire / crash à la prise photo).
+function Miniature({ blob, alt, style, dim = 150 }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let revoque = null;
+    let annule = false;
+    if (!blob) { setUrl(null); return; }
+    const src = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > h && w > dim) { h = Math.round(h * dim / w); w = dim; }
+        else if (h > dim) { w = Math.round(w * dim / h); h = dim; }
+        const cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        cv.getContext("2d").drawImage(img, 0, 0, w, h);
+        cv.toBlob((b) => {
+          URL.revokeObjectURL(src);
+          if (!b || annule) return;
+          const u = URL.createObjectURL(b);
+          revoque = u;
+          setUrl(u);
+        }, "image/jpeg", 0.8);
+      } catch { URL.revokeObjectURL(src); }
+    };
+    img.onerror = () => URL.revokeObjectURL(src);
+    img.src = src;
+    return () => { annule = true; if (revoque) URL.revokeObjectURL(revoque); };
+  }, [blob, dim]);
+  if (url) return <img src={url} alt={alt} style={style} />;
+  return (
+    <div style={{ ...style, display: "flex", alignItems: "center", justifyContent: "center", background: C.panneauClair, color: C.papierSombre, fontSize: 20 }}>🐞</div>
+  );
 }
 
 // Photo recadrée sur une zone {x,y,w,h} normalisée (0..1). Sans zone : photo entière.
@@ -4911,7 +4948,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start", marginBottom: 8 }}>
               {/* Vignette principale (touche pour zoomer) */}
               <div style={{ position: "relative", width: 72, height: 72, cursor: "pointer" }} onClick={() => setMontrerZoom(true)}>
-                <img src={photoUrl} alt="Photo principale" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 9, border: `1px solid #A8863A`, display: "block" }} />
+                <Miniature blob={photoBlob} alt="Photo principale" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 9, border: `1px solid #A8863A`, display: "block" }} />
                 <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(20,24,16,0.78)", color: C.ambreClair, fontFamily: sans, fontSize: 9.5, fontWeight: 700, textAlign: "center", padding: "2px 0", borderRadius: "0 0 8px 8px", letterSpacing: 0.3 }}>★ PRINCIPALE</div>
               </div>
               {/* Vues complémentaires */}
