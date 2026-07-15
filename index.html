@@ -141,9 +141,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.23 (PWA) ============
+// ============ BioDex v1.24 (PWA) ============
 
-const VERSION = "v1.23";
+const VERSION = "v1.24";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -457,7 +457,7 @@ let _modelePromise = null;
 
 // ---------- Identification "cloud" précise (via la fonction serveur + Claude) ----------
 // Découpe éventuellement la zone ciblée, encode en base64, appelle /.netlify/functions/identifier.
-function blobVersCanvasBase64(blob, zone) {
+function blobVersCanvasBase64(blob, zone, dimMax, qualite) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
@@ -470,15 +470,15 @@ function blobVersCanvasBase64(blob, zone) {
           sw = Math.round(zone.w * img.naturalWidth);
           sh = Math.round(zone.h * img.naturalHeight);
         }
-        // On plafonne à 1024px pour limiter la taille envoyée (coût + rapidité)
-        const maxDim = 1024;
+        // On plafonne (1024px par défaut) pour limiter la taille envoyée (coût + rapidité)
+        const maxDim = dimMax || 1024;
         let dw = sw, dh = sh;
         if (dw > dh && dw > maxDim) { dh = Math.round(dh * maxDim / dw); dw = maxDim; }
         else if (dh > maxDim) { dw = Math.round(dw * maxDim / dh); dh = maxDim; }
         const canvas = document.createElement("canvas");
         canvas.width = dw; canvas.height = dh;
         canvas.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        const dataUrl = canvas.toDataURL("image/jpeg", qualite || 0.85);
         URL.revokeObjectURL(url);
         resolve(dataUrl.split(",")[1]); // base64 sans préfixe
       } catch (e) { URL.revokeObjectURL(url); reject(e); }
@@ -492,17 +492,22 @@ async function identifierCloud(blob, zone, contexte, blobsSupp) {
   // Photo principale (recadrée si une zone est fournie) + éventuelles vues complémentaires.
   const image = await blobVersCanvasBase64(blob, zone);
   const images = [{ data: image, media_type: "image/jpeg" }];
-  for (const b of (blobsSupp || []).slice(0, 3)) {
+  // Vues secondaires : on limite à 2 et on les compresse davantage (elles servent d'appoint).
+  for (const b of (blobsSupp || []).slice(0, 2)) {
     try {
-      const d = await blobVersCanvasBase64(b, null);
+      const d = await blobVersCanvasBase64(b, null, 768, 0.75);
       if (d) images.push({ data: d, media_type: "image/jpeg" });
     } catch {}
   }
+  // On n'envoie "images" QUE s'il y a plusieurs photos (sinon on garde l'ancien format,
+  // plus léger et compatible avec un serveur non mis à jour).
+  const corps = images.length > 1
+    ? { mode: "identification", images, media_type: "image/jpeg", contexte }
+    : { mode: "identification", image, media_type: "image/jpeg", contexte };
   const r = await fetch("/.netlify/functions/identifier", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    // On envoie "images" (nouveau) ET "image" (compat serveur non mis à jour).
-    body: JSON.stringify({ mode: "identification", images, image, media_type: "image/jpeg", contexte }),
+    body: JSON.stringify(corps),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.erreur) throw new Error(j.erreur || "Service indisponible");
@@ -1114,6 +1119,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.24", date: "2026-07", items: ["🐛 CORRECTIF IMPORTANT : l'appli pouvait redémarrer toute seule après une prise de photo (saturation de mémoire liée aux vues complémentaires). C'est corrigé : les photos d'appoint sont bien plus légères, limitées à 2, et le bloc est revenu à sa place — sous la photo, avant l'identification."] },
   { v: "1.23", date: "2026-07", items: ["🔐 Espace d'administration (réservé au créateur) : modération du mur et des idées, statistiques globales, liste des membres et outils de maintenance. L'accès est vérifié par le serveur — pas juste masqué dans l'appli."] },
   { v: "1.22", date: "2026-07", items: ["🔍 Filtres dans le suivi des espèces : filtre par ordre d'insecte (papillons, coléoptères…), n'affiche que les espèces rares 🌟, et trie la liste (les plus observées, les plus récentes, ou par ordre alphabétique). Pratique quand la liste s'allonge !"] },
   { v: "1.21", date: "2026-07", items: ["📸 Plusieurs photos pour identifier ! Ajoute jusqu'à 3 vues complémentaires du même insecte (dessus, profil, détail des ailes…) : l'IA les croise pour affiner son identification. Un critère invisible sur une vue peut être décisif sur une autre — comme le ferait un vrai entomologiste."] },
@@ -4505,6 +4511,19 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
   );
 }
 
+// Vignette d'une vue complémentaire (composant dédié : hooks React gérés proprement).
+function VignetteSupp({ blob, onRetirer }) {
+  return (
+    <div style={{ position: "relative", width: 72, height: 72 }}>
+      <PhotoBlob blob={blob} alt="Vue complémentaire" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 9, border: `1px solid ${C.bordure}`, display: "block" }} />
+      <button onClick={onRetirer} aria-label="Retirer cette vue"
+        style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: 11, border: `1px solid ${C.bordure}`, background: C.fond, color: C.papier, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>
+        ×
+      </button>
+    </div>
+  );
+}
+
 function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) {
   const modeTri = !!base && mode !== "edition";
   const modeEdition = mode === "edition";
@@ -4946,10 +4965,46 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
 
       {montrerZoom && photoUrl && <VisionneuseZoom url={photoUrl} onFermer={() => setMontrerZoom(false)} />}
 
+      {/* Vues complémentaires : d'autres angles aident beaucoup l'identification */}
+      {photoBlob && (
+        <div style={{ marginBottom: 16, padding: "12px 13px", borderRadius: 11, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: photosSupp.length ? 10 : 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.papier }}>📸 Autres angles <span style={{ fontWeight: 400, color: C.papierSombre }}>({photosSupp.length}/2)</span></div>
+              <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 2, lineHeight: 1.4 }}>Dessus, profil, détail des ailes… ça aide beaucoup l'IA !</div>
+            </div>
+            {photosSupp.length < 2 && (
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                <Bouton onClick={() => {}}>＋ Ajouter</Bouton>
+                <input type="file" accept="image/*"
+                  onChange={async (e) => {
+                    const f = e.target.files && e.target.files[0];
+                    e.target.value = "";
+                    if (!f || photosSupp.length >= 2) return;
+                    try {
+                      // Vue d'appoint : fortement compressée (1280px) pour ménager la mémoire du téléphone.
+                      const b = await compresserImage(f, 1280, 0.8);
+                      setPhotosSupp((p) => [...p, b].slice(0, 2));
+                    } catch {}
+                  }}
+                  style={inputOverlay} />
+              </div>
+            )}
+          </div>
+          {photosSupp.length > 0 && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {photosSupp.map((b, i) => (
+                <VignetteSupp key={i} blob={b} onRetirer={() => setPhotosSupp((p) => p.filter((_, j) => j !== i))} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Identification précise avec recadrage systématique (échappatoire possible) */}
       {photoBlob && (
         <div style={{ marginBottom: 16, padding: "12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}` }}>
-          {photoUrl && (
+      {photoUrl && (
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontFamily: sans, fontSize: 12.5, color: C.ambreClair, fontWeight: 700, marginBottom: 4 }}>
                 📷 Recadre sur l'insecte
@@ -5126,47 +5181,6 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
         <label style={libelle}>Nom scientifique (optionnel)</label>
         <input style={{ ...champ, fontFamily: serif, fontStyle: "italic" }} value={nomSci} onChange={(e) => setNomSci(e.target.value)} placeholder="ex : Lucanus cervus" />
       </div>
-
-      {/* Vues complémentaires : d'autres angles aident beaucoup l'identification */}
-      {photoBlob && (
-        <div style={{ marginBottom: 16, padding: "12px 13px", borderRadius: 11, background: C.panneau, border: `1px solid ${C.bordure}` }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: photosSupp.length ? 10 : 8 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.papier }}>📸 Autres angles <span style={{ fontWeight: 400, color: C.papierSombre }}>({photosSupp.length}/3)</span></div>
-              <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 2, lineHeight: 1.4 }}>Dessus, profil, détail des ailes… ça aide beaucoup l'IA !</div>
-            </div>
-            {photosSupp.length < 3 && (
-              <div style={{ position: "relative", flexShrink: 0 }}>
-                <Bouton onClick={() => {}}>＋ Ajouter</Bouton>
-                <input type="file" accept="image/*" multiple
-                  onChange={async (e) => {
-                    const fichiers = Array.from(e.target.files || []);
-                    e.target.value = "";
-                    const place = 3 - photosSupp.length;
-                    const ajout = [];
-                    for (const f of fichiers.slice(0, place)) {
-                      try { ajout.push(await compresserImage(f)); } catch {}
-                    }
-                    if (ajout.length) setPhotosSupp((p) => [...p, ...ajout].slice(0, 3));
-                  }}
-                  style={inputOverlay} />
-              </div>
-            )}
-          </div>
-          {photosSupp.length > 0 && (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {photosSupp.map((b, i) => (
-                <div key={i} style={{ position: "relative", width: 72, height: 72 }}>
-                  <PhotoBlob blob={b} alt={"vue " + (i + 2)} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 9, border: `1px solid ${C.bordure}`, display: "block" }} />
-                  <button onClick={() => setPhotosSupp((p) => p.filter((_, j) => j !== i))}
-                    aria-label="Retirer cette vue"
-                    style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: 11, border: `1px solid ${C.bordure}`, background: C.fond, color: C.papier, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>×</button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Indicateur : nouvelle espèce ou déjà photographiée */}
       {(() => {
