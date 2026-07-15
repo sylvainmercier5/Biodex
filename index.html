@@ -141,9 +141,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.24 (PWA) ============
+// ============ BioDex v1.25 (PWA) ============
 
-const VERSION = "v1.24";
+const VERSION = "v1.25";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -4901,19 +4901,55 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
       )}
 
       {/* Photo */}
-        />
-      )}
       <div style={{ marginBottom: 16 }}>
         {photoUrl ? (
-          // Photo choisie : barre d'actions compacte (l'aperçu est géré par l'outil de recadrage ci-dessous)
-          <div style={{ display: "flex", gap: 10 }}>
-            <div style={{ position: "relative", flex: 1 }}>
-              <Bouton onClick={() => {}} style={{ width: "100%" }}>📷 Reprendre</Bouton>
-              <input type="file" accept="image/*" capture="environment" onChange={choisirPhoto} style={inputOverlay} />
+          // Photo choisie : bandeau unifié (vignette principale + autres angles + ajout)
+          <div style={{ padding: "12px 13px", borderRadius: 11, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+            <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.papier, marginBottom: 8 }}>
+              📸 Photos <span style={{ fontWeight: 400, color: C.papierSombre }}>({1 + photosSupp.length}/3)</span>
             </div>
-            <div style={{ position: "relative", flex: 1 }}>
-              <Bouton onClick={() => {}} style={{ width: "100%" }}>🖼️ Galerie</Bouton>
-              <input type="file" accept="image/*" onChange={choisirPhoto} style={inputOverlay} />
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start", marginBottom: 8 }}>
+              {/* Vignette principale (touche pour zoomer) */}
+              <div style={{ position: "relative", width: 72, height: 72, cursor: "pointer" }} onClick={() => setMontrerZoom(true)}>
+                <img src={photoUrl} alt="Photo principale" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 9, border: `1px solid #A8863A`, display: "block" }} />
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(20,24,16,0.78)", color: C.ambreClair, fontFamily: sans, fontSize: 9.5, fontWeight: 700, textAlign: "center", padding: "2px 0", borderRadius: "0 0 8px 8px", letterSpacing: 0.3 }}>★ PRINCIPALE</div>
+              </div>
+              {/* Vues complémentaires */}
+              {photosSupp.map((b, i) => (
+                <VignetteSupp key={i} blob={b} onRetirer={() => setPhotosSupp((p) => p.filter((_, j) => j !== i))} />
+              ))}
+              {/* Tuile d'ajout */}
+              {photosSupp.length < 2 && (
+                <div style={{ position: "relative", width: 72, height: 72, boxSizing: "border-box", border: `2px dashed ${C.bordure}`, borderRadius: 9, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.papierSombre, fontFamily: sans, fontSize: 10.5, textAlign: "center", lineHeight: 1.25 }}>
+                  <span style={{ fontSize: 20, lineHeight: 1 }}>＋</span>
+                  <span style={{ marginTop: 3 }}>Autre<br />angle</span>
+                  <input type="file" accept="image/*"
+                    onChange={async (e) => {
+                      const f = e.target.files && e.target.files[0];
+                      e.target.value = "";
+                      if (!f || photosSupp.length >= 2) return;
+                      try {
+                        // Vue d'appoint : fortement compressée (1280px) pour ménager la mémoire du téléphone.
+                        const b = await compresserImage(f, 1280, 0.8);
+                        setPhotosSupp((p) => [...p, b].slice(0, 2));
+                      } catch {}
+                    }}
+                    style={inputOverlay} />
+                </div>
+              )}
+            </div>
+            <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, lineHeight: 1.4, marginBottom: 10 }}>
+              D'autres angles (dessus, profil, détail des ailes…) aident beaucoup l'IA. Touche la vignette ★ pour zoomer.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ position: "relative", flex: 1 }}>
+                <Bouton onClick={() => {}} style={{ width: "100%" }}>📷 Reprendre</Bouton>
+                <input type="file" accept="image/*" capture="environment" onChange={choisirPhoto} style={inputOverlay} />
+              </div>
+              <div style={{ position: "relative", flex: 1 }}>
+                <Bouton onClick={() => {}} style={{ width: "100%" }}>🖼️ Galerie</Bouton>
+                <input type="file" accept="image/*" onChange={choisirPhoto} style={inputOverlay} />
+              </div>
             </div>
           </div>
         ) : (
@@ -4964,42 +5000,6 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
       </div>
 
       {montrerZoom && photoUrl && <VisionneuseZoom url={photoUrl} onFermer={() => setMontrerZoom(false)} />}
-
-      {/* Vues complémentaires : d'autres angles aident beaucoup l'identification */}
-      {photoBlob && (
-        <div style={{ marginBottom: 16, padding: "12px 13px", borderRadius: 11, background: C.panneau, border: `1px solid ${C.bordure}` }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: photosSupp.length ? 10 : 8 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.papier }}>📸 Autres angles <span style={{ fontWeight: 400, color: C.papierSombre }}>({photosSupp.length}/2)</span></div>
-              <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 2, lineHeight: 1.4 }}>Dessus, profil, détail des ailes… ça aide beaucoup l'IA !</div>
-            </div>
-            {photosSupp.length < 2 && (
-              <div style={{ position: "relative", flexShrink: 0 }}>
-                <Bouton onClick={() => {}}>＋ Ajouter</Bouton>
-                <input type="file" accept="image/*"
-                  onChange={async (e) => {
-                    const f = e.target.files && e.target.files[0];
-                    e.target.value = "";
-                    if (!f || photosSupp.length >= 2) return;
-                    try {
-                      // Vue d'appoint : fortement compressée (1280px) pour ménager la mémoire du téléphone.
-                      const b = await compresserImage(f, 1280, 0.8);
-                      setPhotosSupp((p) => [...p, b].slice(0, 2));
-                    } catch {}
-                  }}
-                  style={inputOverlay} />
-              </div>
-            )}
-          </div>
-          {photosSupp.length > 0 && (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {photosSupp.map((b, i) => (
-                <VignetteSupp key={i} blob={b} onRetirer={() => setPhotosSupp((p) => p.filter((_, j) => j !== i))} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Identification précise avec recadrage systématique (échappatoire possible) */}
       {photoBlob && (
@@ -6960,7 +6960,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>✨ Identification précise (Claude)</div>
         <p style={p}>
-          Tu peux ajouter jusqu'à 3 vues complémentaires (dessus, profil, détail des ailes…) : l'IA les croise pour affiner son identification, exactement comme le ferait un entomologiste. Le bouton « Identifier cette zone » envoie la ou les photos à Claude via un petit serveur : il propose un nom français et latin avec un pourcentage de confiance. Avant chaque identification, un cadre s'affiche sur ta photo : place-le sur l'insecte pour que l'IA se concentre dessus — c'est surtout utile quand la bête est petite ou perdue dans le décor, et ça améliore nettement la précision. Si ta photo est déjà bien cadrée, un lien te permet d'identifier l'image entière directement. Le bouton « 🔍 Zoomer sur la photo » ouvre l'image en plein écran pour l'inspecter de près. Et « 📷 Appareil photo » ouvre directement l'appareil photo de ton téléphone, pour une meilleure qualité. L'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Nécessite le réseau. Chaque identification coûte une fraction de centime.
+          Une fois ta photo choisie, un bandeau « 📸 Photos » regroupe toutes tes vues : la vignette ★ Principale (touche-la pour zoomer), et une tuile « ＋ Autre angle » pour ajouter jusqu'à 2 vues complémentaires (dessus, profil, détail des ailes…) — soit 3 photos au total. Chaque vue complémentaire se retire d'une touche sur sa croix. L'IA croise toutes les vues pour affiner son identification, exactement comme le ferait un entomologiste. Le bouton « Identifier cette zone » envoie la ou les photos à Claude via un petit serveur : il propose un nom français et latin avec un pourcentage de confiance. Avant chaque identification, un cadre s'affiche sur ta photo : place-le sur l'insecte pour que l'IA se concentre dessus — c'est surtout utile quand la bête est petite ou perdue dans le décor, et ça améliore nettement la précision. Si ta photo est déjà bien cadrée, un lien te permet d'identifier l'image entière directement. Le bouton « 🔍 Zoomer sur la photo » ouvre l'image en plein écran pour l'inspecter de près. Et « 📷 Appareil photo » ouvre directement l'appareil photo de ton téléphone, pour une meilleure qualité. L'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Nécessite le réseau. Chaque identification coûte une fraction de centime.
         </p>
         <div style={t}>🌿 Pourquoi il compte</div>
         <p style={p}>
