@@ -141,9 +141,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.32 (PWA) ============
+// ============ BioDex v1.35 (PWA) ============
 
-const VERSION = "v1.32";
+const VERSION = "v1.35";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1335,15 +1335,87 @@ async function chargerReactionsRaw() {
   } catch { return []; }
 }
 
+// ── Commentaires du mur ──
+// Filtre d'insultes : liste courte encodée (pas en clair dans le source), ciblée sur
+// les insultes franches. Faillible par nature (contournable, faux positifs possibles) :
+// masque les mots repérés par des étoiles. La suppression reste le vrai filet (admin).
+const _GROS_MOTS = (() => {
+  try { return atob("Y29ubmFyZHxjb25uYXNzZXxjb25hcmR8c2Fsb3BlfHNhbGF1ZHxlbmN1bMOpfGVuY3VsZXxwdXRlfHB1dGFpbnxwZHx0YXBldHRlfGJhdGFyZHxiw6J0YXJkfHRhIGd1ZXVsZXxmZXJtZSB0YXxhYnJ1dGl8ZMOpYmlsZXxkZWJpbGV8Y3LDqXRpbnxjcmV0aW58dHJvdSBkdSBjdWx8ZHVjb258ZmFjZSBkZXxmaWxzIGRlIHB1dGV8ZmRwfG50bXxuaXF1ZSB0YXxuaXF1ZSB0YXxlbmZvaXLDqXxlbmZvaXJlfHBhdXZyZSB0eXBlfGdyb3MgcG9yY3xzYWMgw6AgbWVyZGV8dG9jYXJkfGJyYW5sZXVyfHDDqXRhc3NlfHBldGFzc2V8Z3Jvc3NlIG1lcmRl").split("|"); }
+  catch { return []; }
+})();
+// Remplace chaque insulte repérée par sa 1re lettre + étoiles. Tolère espaces/points entre lettres.
+function masquerInsultes(texte) {
+  if (!texte) return texte;
+  let out = texte;
+  for (const mot of _GROS_MOTS) {
+    if (!mot) continue;
+    // Autorise séparateurs (espace, point, tiret, *) entre les lettres pour attraper les contournements simples.
+    const motif = mot.split("").map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s.*_-]{0,2}");
+    try {
+      const re = new RegExp(motif, "gi");
+      out = out.replace(re, (m) => m[0] + "*".repeat(Math.max(1, m.length - 1)));
+    } catch {}
+  }
+  return out;
+}
+
+async function chargerCommentaires(postId) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { data, error } = await sb.from("commentaires").select("*").eq("post_id", postId).order("created_at", { ascending: true });
+  if (error) throw new Error("Lecture des commentaires impossible");
+  return data || [];
+}
+
+async function ajouterCommentaire(postId, auteur, texte) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const propre = masquerInsultes((texte || "").trim()).slice(0, 400);
+  if (!propre) throw new Error("Commentaire vide");
+  const { data, error } = await sb.from("commentaires").insert({ post_id: postId, auteur: (auteur || "Anonyme").slice(0, 40), texte: propre }).select();
+  if (error) throw new Error("Envoi impossible");
+  return data && data[0];
+}
+
+async function supprimerCommentaire(id) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { error } = await sb.from("commentaires").delete().eq("id", id);
+  if (error) throw new Error(error.message || "Suppression refusée par le serveur");
+  return true;
+}
+
+// Compte les commentaires par post (pour afficher un badge sur le fil).
+async function compterCommentaires() {
+  const sb = clientSupabase();
+  if (!sb) return {};
+  try {
+    const { data, error } = await sb.from("commentaires").select("post_id");
+    if (error || !data) return {};
+    const map = {};
+    data.forEach((c) => { map[c.post_id] = (map[c.post_id] || 0) + 1; });
+    return map;
+  } catch { return {}; }
+}
+
+// Tous les commentaires (modération admin).
+async function chargerTousCommentaires() {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { data, error } = await sb.from("commentaires").select("*").order("created_at", { ascending: false }).limit(300);
+  if (error) throw new Error("Lecture impossible");
+  return data || [];
+}
+
 async function calculerNotifications(prenom) {
   const sb = clientSupabase();
-  const vide = { total: 0, murNouveaux: 0, ideesNouvelles: 0, reactionsRecues: 0, murDetail: [], ideesDetail: [], reactionsDetail: [] };
+  const vide = { total: 0, murNouveaux: 0, ideesNouvelles: 0, reactionsRecues: 0, commentairesRecus: 0, murDetail: [], ideesDetail: [], reactionsDetail: [], commentairesDetail: [] };
   if (!sb) return vide;
 
   const lire = (cle) => { try { return localStorage.getItem(cle); } catch { return null; } };
   const ecrire = (cle, v) => { try { localStorage.setItem(cle, v); } catch {} };
-  let murNouveaux = 0, ideesNouvelles = 0, reactionsRecues = 0;
-  let murDetail = [], ideesDetail = [], reactionsDetail = [];
+  let murNouveaux = 0, ideesNouvelles = 0, reactionsRecues = 0, commentairesRecus = 0;
+  let murDetail = [], ideesDetail = [], reactionsDetail = [], commentairesDetail = [];
 
   try {
     const posts = await chargerMur(200);
@@ -1367,6 +1439,16 @@ async function calculerNotifications(prenom) {
         reactionsRecues = nouvelles.length;
         reactionsDetail = nouvelles.slice(0, 6).map((r) => ({ qui: r.auteur || "Quelqu'un", emoji: (REACTIONS.find((x) => x.type === r.type) || {}).emoji || "❤️", espece: mapEspece[r.post_id] || "ta trouvaille" }));
       }
+
+      // 2 bis) Commentaires reçus sur MES posts (nouveaux, écrits par quelqu'un d'autre)
+      if (idsMoi.size > 0) {
+        const tousComs = await chargerTousCommentaires().catch(() => []);
+        let vuComDate = lire("biodex_commentaires_vu_date");
+        if (!vuComDate) { vuComDate = new Date().toISOString(); ecrire("biodex_commentaires_vu_date", vuComDate); }
+        const nouvComs = tousComs.filter((c) => idsMoi.has(c.post_id) && (c.auteur || "").trim().toLowerCase() !== moi && c.created_at && new Date(c.created_at) > new Date(vuComDate));
+        commentairesRecus = nouvComs.length;
+        commentairesDetail = nouvComs.slice(0, 6).map((c) => ({ qui: c.auteur || "Quelqu'un", espece: mapEspece[c.post_id] || "ta trouvaille", extrait: (c.texte || "").slice(0, 60) }));
+      }
     }
   } catch {}
 
@@ -1384,8 +1466,8 @@ async function calculerNotifications(prenom) {
   const versionRecente = NOUVEAUTES.length ? NOUVEAUTES[0].v : "";
   const nouvelleVersion = versionRecente && vuVersion !== versionRecente ? 1 : 0;
 
-  const total = murNouveaux + ideesNouvelles + reactionsRecues + nouvelleVersion;
-  return { total, murNouveaux, ideesNouvelles, reactionsRecues, nouvelleVersion, versionRecente, murDetail, ideesDetail, reactionsDetail };
+  const total = murNouveaux + ideesNouvelles + reactionsRecues + commentairesRecus + nouvelleVersion;
+  return { total, murNouveaux, ideesNouvelles, reactionsRecues, commentairesRecus, nouvelleVersion, versionRecente, murDetail, ideesDetail, reactionsDetail, commentairesDetail };
 }
 
 // Récupère la date de création du post le plus récent (léger, pour la pastille "nouveau")
@@ -3242,6 +3324,7 @@ function Administration({ onFermer }) {
   const [posts, setPosts] = useState([]);
   const [idees, setIdees] = useState([]);
   const [avis, setAvis] = useState([]);
+  const [coms, setComs] = useState([]);
   const [etat, setEtat] = useState("chargement");
   const [message, setMessage] = useState("");
   const [occupe, setOccupe] = useState(null);
@@ -3249,10 +3332,11 @@ function Administration({ onFermer }) {
   const recharger = async () => {
     setEtat("chargement");
     try {
-      const [p, i, a] = await Promise.all([chargerMur(300), chargerIdees().catch(() => []), chargerAvis().catch(() => [])]);
+      const [p, i, a, com] = await Promise.all([chargerMur(300), chargerIdees().catch(() => []), chargerAvis().catch(() => []), chargerTousCommentaires().catch(() => [])]);
       setPosts(p);
       setIdees(Array.isArray(i) ? i : []);
       setAvis(Array.isArray(a) ? a : []);
+      setComs(Array.isArray(com) ? com : []);
       setEtat("ok");
     } catch { setEtat("echec"); }
   };
@@ -3288,6 +3372,18 @@ function Administration({ onFermer }) {
       await adminSupprimerAvis(a.id);
       setAvis((l) => l.filter((x) => x.id !== a.id));
       setMessage("✓ Avis supprimé.");
+    } catch (e) { setMessage("❌ " + (e.message || "Échec")); }
+    setOccupe(null);
+    setTimeout(() => setMessage(""), 3500);
+  };
+
+  const supprimerUnCommentaire = async (c) => {
+    if (!window.confirm("Supprimer définitivement ce commentaire ?\n\nCette action est irréversible.")) return;
+    setOccupe(c.id);
+    try {
+      await supprimerCommentaire(c.id);
+      setComs((l) => l.filter((x) => x.id !== c.id));
+      setMessage("✓ Commentaire supprimé.");
     } catch (e) { setMessage("❌ " + (e.message || "Échec")); }
     setOccupe(null);
     setTimeout(() => setMessage(""), 3500);
@@ -3336,6 +3432,7 @@ function Administration({ onFermer }) {
         {ongletBtn("idees", "💡 Idées " + idees.length)}
         {ongletBtn("membres", "👥 Membres " + membresTri.length)}
         {ongletBtn("avis", "😊 Avis " + avis.length)}
+        {ongletBtn("commentaires", "💬 Comm. " + coms.length)}
         {ongletBtn("maintenance", "🧹 Maintenance")}
       </div>
 
@@ -3471,6 +3568,29 @@ function Administration({ onFermer }) {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {etat === "ok" && onglet === "commentaires" && (
+        <div style={{ display: "grid", gap: 9 }}>
+          {coms.length === 0 && <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>Aucun commentaire pour l'instant.</div>}
+          {coms.map((c) => {
+            const post = posts.find((x) => x.id === c.post_id);
+            return (
+              <div key={c.id} style={{ padding: "11px 13px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+                <div style={{ fontFamily: sans, fontSize: 13.5, color: C.papier, lineHeight: 1.5, marginBottom: 7, whiteSpace: "pre-wrap" }}>{c.texte}</div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre }}>
+                    💬 {c.auteur || "?"} · {c.created_at ? new Date(c.created_at).toLocaleDateString("fr-FR") : ""}{post ? ` · sur « ${post.espece || "À identifier"} »` : ""}
+                  </span>
+                  <button onClick={() => supprimerUnCommentaire(c)} disabled={occupe === c.id}
+                    style={{ flexShrink: 0, fontFamily: sans, fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 8, cursor: "pointer", border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, opacity: occupe === c.id ? 0.5 : 1 }}>
+                    {occupe === c.id ? "…" : "🗑️"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -5638,6 +5758,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
   const [avertAuth, setAvertAuth] = useState("");
   const [murEtat, setMurEtat] = useState(""); // "" | envoi | ok | echec
   const [murErreur, setMurErreur] = useState("");
+  const [confirmSansNom, setConfirmSansNom] = useState(false);
   const [prenomSaisi, setPrenomSaisi] = useState(prenom || "");
   const [precisionPos, setPrecisionPos] = useState(() => {
     try { return localStorage.getItem("biodex_precision_pos") || "approx"; } catch { return "approx"; }
@@ -5698,6 +5819,8 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
     if (murEtat === "envoi") return;
     const auteur = (prenomSaisi || "").trim();
     if (!auteur) { setMurErreur("Indique ton prénom avant de partager."); return; }
+    // Avertissement doux : pas de nom d'espèce → on propose d'identifier d'abord OU de partager pour demander de l'aide.
+    if (!identifie && !confirmSansNom) { setConfirmSansNom(true); return; }
     onDefinirPrenom(auteur);
     setMurEtat("envoi");
     setMurErreur("");
@@ -5705,6 +5828,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
       await publierAuMur(obs, auteur, precisionPos, cadreMur);
       try { localStorage.setItem("biodex_precision_pos", precisionPos); } catch {}
       setMurEtat("ok");
+      setConfirmSansNom(false);
     } catch (e) {
       setMurErreur(String(e.message || "Partage impossible") + ".");
       setMurEtat("echec");
@@ -6027,8 +6151,21 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
                 </div>
               )}
 
+              {confirmSansNom && !identifie && (
+                <div style={{ marginBottom: 10, padding: "12px 14px", borderRadius: 10, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E" }}>
+                  <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: "#E4C878", marginBottom: 5 }}>❓ Cette observation n'a pas encore de nom</div>
+                  <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papier, lineHeight: 1.5, marginBottom: 11 }}>
+                    Tu peux l'identifier d'abord (bouton d'identification plus haut), ou la partager telle quelle pour demander un coup de main à la bande — elle apparaîtra avec un badge « À identifier ».
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Bouton onClick={() => setConfirmSansNom(false)} style={{ flex: 1 }}>Je l'identifie d'abord</Bouton>
+                    <Bouton variante="primaire" onClick={partagerAuMur} disabled={murEtat === "envoi"} style={{ flex: 1 }}>Demander de l'aide</Bouton>
+                  </div>
+                </div>
+              )}
+
               <Bouton variante="primaire" onClick={partagerAuMur} disabled={murEtat === "envoi"} style={{ width: "100%" }}>
-                {murEtat === "envoi" ? "📤 Partage en cours…" : "📤 Partager au mur"}
+                {murEtat === "envoi" ? "📤 Partage en cours…" : (identifie ? "📤 Partager au mur" : "📤 Partager (demander de l'aide)")}
               </Bouton>
               {murErreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 8 }}>{murErreur}</div>}
               <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 8, fontStyle: "italic" }}>
@@ -6139,9 +6276,10 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
   useEffect(() => {
     try { if (NOUVEAUTES.length) localStorage.setItem("biodex_nouveautes_vu", NOUVEAUTES[0].v); } catch {}
     try { localStorage.setItem("biodex_reactions_vu_date", new Date().toISOString()); } catch {}
+    try { localStorage.setItem("biodex_commentaires_vu_date", new Date().toISOString()); } catch {}
   }, []);
 
-  const rien = (n.murNouveaux || 0) === 0 && (n.ideesNouvelles || 0) === 0 && (n.reactionsRecues || 0) === 0;
+  const rien = (n.murNouveaux || 0) === 0 && (n.ideesNouvelles || 0) === 0 && (n.reactionsRecues || 0) === 0 && (n.commentairesRecus || 0) === 0;
 
   return (
     <div onClick={onFermer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 1200, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
@@ -6180,6 +6318,19 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
                   <span key={i} style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5 }}><b style={{ color: C.papier, fontWeight: 600 }}>{d.qui}</b> {d.emoji} sur {d.espece}</span>
                 ))}
                 {n.reactionsRecues > (n.reactionsDetail || []).length && <span style={{ display: "block", fontFamily: sans, fontSize: 12, color: C.papierSombre, fontStyle: "italic", marginTop: 2 }}>…et {n.reactionsRecues - (n.reactionsDetail || []).length} autre{n.reactionsRecues - (n.reactionsDetail || []).length > 1 ? "s" : ""}</span>}
+              </span>
+            </button>
+          )}
+
+          {(n.commentairesRecus || 0) > 0 && (
+            <button onClick={onAllerMur} style={{ width: "100%", display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", marginBottom: 8, borderRadius: 10, border: "1px solid #6F9450", background: "linear-gradient(#1E2A18, #182213)", cursor: "pointer", textAlign: "left" }}>
+              <span style={{ fontSize: 22 }}>💬</span>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: "#A6CC82", marginBottom: 4 }}>{n.commentairesRecus} commentaire{n.commentairesRecus > 1 ? "s" : ""} sur tes trouvailles</span>
+                {(n.commentairesDetail || []).map((d, i) => (
+                  <span key={i} style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5 }}><b style={{ color: C.papier, fontWeight: 600 }}>{d.qui}</b> sur {d.espece}{d.extrait ? ` : « ${d.extrait}${d.extrait.length >= 60 ? "…" : ""} »` : ""}</span>
+                ))}
+                {n.commentairesRecus > (n.commentairesDetail || []).length && <span style={{ display: "block", fontFamily: sans, fontSize: 12, color: C.papierSombre, fontStyle: "italic", marginTop: 2 }}>…et {n.commentairesRecus - (n.commentairesDetail || []).length} autre{n.commentairesRecus - (n.commentairesDetail || []).length > 1 ? "s" : ""}</span>}
               </span>
             </button>
           )}
@@ -7233,7 +7384,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🌐 Mur commun</div>
         <p style={p}>
-          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection. Indique ton prénom une fois, il est mémorisé. Tu peux aussi personnaliser ton profil (menu ☰ → 🎨 Mon profil) : choisis ton emblème, écris ta devise, indique ton secteur de chasse et ton insecte fétiche — toute la bande le verra sur le mur, dans le classement et sur ton profil. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
+          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Tu peux aussi partager une observation <b>pas encore identifiée</b> : elle apparaît alors avec un badge « ❓ À identifier », une façon de demander un coup de main à la bande (l'entraide fait partie du jeu !). Sous chaque publication, un bouton « 🤔 Je doute de l'ID » permet d'exprimer poliment un doute sur l'identification proposée : le compteur est visible par tous et ouvre la discussion, sans rien supprimer — l'idée est d'affiner ensemble, comme entre naturalistes. Tu peux aussi laisser un commentaire (en ouvrant une publication) : un conseil pour la prochaine photo, une autre hypothèse d'identification… Reste bienveillant : un filtre masque automatiquement les insultes, mais l'esprit du mur, c'est l'entraide. Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection. Indique ton prénom une fois, il est mémorisé. Tu peux aussi personnaliser ton profil (menu ☰ → 🎨 Mon profil) : choisis ton emblème, écris ta devise, indique ton secteur de chasse et ton insecte fétiche — toute la bande le verra sur le mur, dans le classement et sur ton profil. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
         </p>
         <div style={t}>📖 Posts détaillés</div>
         <p style={p}>
@@ -7652,16 +7803,48 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
 }
 
 // ---------- Détail d'un post du mur (modale enrichie) ----------
-function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirProfil }) {
+function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirProfil, onDefinirPrenom }) {
   const p = post || {};
   const reacts = reactions || {};
+  const [coms, setComs] = useState([]);
+  const [comsEtat, setComsEtat] = useState("chargement"); // chargement | ok | echec
+  const [comTexte, setComTexte] = useState("");
+  const [comSaisiePrenom, setComSaisiePrenom] = useState(monPrenom || "");
+  const [comEnvoi, setComEnvoi] = useState(false);
+  const [comErreur, setComErreur] = useState("");
+
+  useEffect(() => {
+    let vivant = true;
+    if (!p.id) return;
+    setComsEtat("chargement");
+    chargerCommentaires(p.id).then((l) => { if (vivant) { setComs(l); setComsEtat("ok"); } }).catch(() => { if (vivant) setComsEtat("echec"); });
+    return () => { vivant = false; };
+  }, [p.id]);
+
+  async function envoyerCommentaire() {
+    const auteur = (comSaisiePrenom || monPrenom || "").trim();
+    const txt = comTexte.trim();
+    if (!txt) { setComErreur("Écris ton commentaire."); return; }
+    if (!auteur) { setComErreur("Indique ton prénom."); return; }
+    if (onDefinirPrenom) onDefinirPrenom(auteur);
+    setComEnvoi(true); setComErreur("");
+    try {
+      const nouv = await ajouterCommentaire(p.id, auteur, txt);
+      if (nouv) setComs((l) => [...l, nouv]);
+      setComTexte("");
+    } catch (e) {
+      setComErreur(String(e.message || "Envoi impossible") + ".");
+    }
+    setComEnvoi(false);
+  }
+
   return (
     <div onClick={onFermer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 560, maxHeight: "92vh", overflowY: "auto", background: C.fond, borderRadius: "16px 16px 0 0", border: `1px solid ${C.bordure}`, borderBottom: "none" }}>
         {p.photo_url && <img src={p.photo_url} alt={p.espece} style={{ width: "100%", maxHeight: 380, objectFit: "cover", display: "block", borderRadius: "16px 16px 0 0" }} />}
         <div style={{ padding: 18 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier, lineHeight: 1.2 }}>{p.espece || "Spécimen non identifié"}</span>
+            <span style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier, lineHeight: 1.2 }}>{p.espece || "❓ À identifier"}</span>
             <BadgePourcent confiance={p.confiance} style={{ fontSize: 13, padding: "2px 9px" }} />
             {(() => { const c = litCacheRarete(cleEspeceMur(p)); return c && typeof c.count === "number" ? <BadgeRarete count={c.count} style={{ fontSize: 11.5, padding: "2px 8px" }} /> : null; })()}
           </div>
@@ -7716,12 +7899,70 @@ function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirPr
             );
           })()}
 
+          {/* Doute sur l'identification (uniquement si la publi a un nom à contester) */}
+          {p.espece && (() => {
+            const liste = reacts["doute"] || [];
+            const n = liste.length;
+            const jeDoute = monPrenom && liste.map((x) => x.toLowerCase()).includes(monPrenom.trim().toLowerCase());
+            return (
+              <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 10, background: n > 0 ? "linear-gradient(#2A2316, #221C12)" : C.panneau, border: `1px solid ${n > 0 ? "#8A6A3A" : C.bordure}` }}>
+                <button onClick={() => onReagir && onReagir("doute")}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 22, cursor: "pointer", fontFamily: sans, fontSize: 13.5,
+                    border: `1px solid ${jeDoute ? "#C98A4B" : C.bordure}`, background: jeDoute ? "linear-gradient(#3A2E1C, #2C2316)" : C.panneauClair, color: jeDoute ? "#E0B074" : C.papier }}>
+                  <span style={{ fontSize: 16 }}>🤔</span>
+                  {jeDoute ? "Je doute de cette identification" : "Je doute de l'identification"}
+                </button>
+                {n > 0 && (
+                  <div style={{ fontFamily: sans, fontSize: 12.5, color: "#E0B074", marginTop: 8, lineHeight: 1.5 }}>
+                    {liste.join(", ")} {n > 1 ? "doutent" : "doute"} de l'identification. Si tu as une autre hypothèse, propose-la à l'auteur !
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {p.espece_sci && (
             <a href={lienINaturalist(p.espece_sci, p.espece)} target="_blank" rel="noopener noreferrer"
               style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 16, padding: "11px", borderRadius: 10, background: "linear-gradient(#2C3623, #232B1D)", border: `1px solid #A8863A`, color: C.ambreClair, fontFamily: sans, fontSize: 14, fontWeight: 600, textDecoration: "none" }}>
               🔍 En savoir plus sur cette espèce
             </a>
           )}
+
+          {/* Commentaires : entraide et conseils photo. Filtre d'insultes (masquage) à l'envoi. */}
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.bordure}` }}>
+            <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 10 }}>
+              💬 Commentaires{coms.length > 0 ? ` (${coms.length})` : ""}
+            </div>
+
+            {comsEtat === "chargement" && <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, fontStyle: "italic", marginBottom: 10 }}>Chargement…</div>}
+            {comsEtat === "echec" && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginBottom: 10 }}>Impossible de charger les commentaires.</div>}
+            {comsEtat === "ok" && coms.length === 0 && (
+              <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5 }}>
+                Pas encore de commentaire. Un conseil pour la prochaine photo, une autre idée d'identification ?
+              </div>
+            )}
+            {comsEtat === "ok" && coms.map((c) => (
+              <div key={c.id} style={{ marginBottom: 9, padding: "9px 12px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 9 }}>
+                <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{c.texte}</div>
+                <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 4 }}>
+                  {emblemeDe(c.auteur, {})} {c.auteur || "Anonyme"} · {c.created_at ? new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}
+                </div>
+              </div>
+            ))}
+
+            <div style={{ marginTop: 10 }}>
+              {!(monPrenom || "").trim() && (
+                <input value={comSaisiePrenom} onChange={(e) => setComSaisiePrenom(e.target.value)} placeholder="Ton prénom" maxLength={40}
+                  style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 13.5, outline: "none", marginBottom: 7 }} />
+              )}
+              <textarea value={comTexte} onChange={(e) => setComTexte(e.target.value)} placeholder="Ajoute un commentaire (conseil photo, autre hypothèse…)" maxLength={400} rows={2}
+                style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "9px 11px", fontFamily: sans, fontSize: 13.5, outline: "none", resize: "vertical", marginBottom: 7 }} />
+              <Bouton variante="primaire" onClick={envoyerCommentaire} disabled={comEnvoi} style={{ width: "100%" }}>
+                {comEnvoi ? "Envoi…" : "💬 Commenter"}
+              </Bouton>
+              {comErreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 7 }}>{comErreur}</div>}
+            </div>
+          </div>
 
           <Bouton onClick={onFermer} style={{ width: "100%", marginTop: 10 }}>Fermer</Bouton>
         </div>
@@ -7741,6 +7982,7 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
   const [supprEnCours, setSupprEnCours] = useState(null); // id du post en cours de suppression
   const [postDetail, setPostDetail] = useState(null); // post ouvert en détail
   const [reactions, setReactions] = useState({}); // { post_id: { type: compteur } }
+  const [comptesCom, setComptesCom] = useState({}); // { post_id: nb commentaires }
   const [raretes, setRaretes] = useState({}); // { cleEspece: count|null }
   const [besoinPrenom, setBesoinPrenom] = useState(false); // true si on tente de réagir sans prénom
 
@@ -7779,6 +8021,7 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
       const p = await chargerMur(50);
       setPosts(p);
       chargerRaretes(p);
+      compterCommentaires().then(setComptesCom).catch(() => {});
       chargerReactions().then((r) => {
         setReactions(r);
         // Marque les réactions reçues comme vues, à partir des données déjà chargées (pas de requête en plus)
@@ -7876,7 +8119,9 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
             {p.photo_url && <img src={p.photo_url} alt={p.espece} loading="lazy" style={{ width: "100%", maxHeight: 360, objectFit: "cover", display: "block" }} />}
             <div style={{ padding: "10px 14px 4px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier }}>{p.espece || "Spécimen non identifié"}</span>
+                {p.espece
+                  ? <span style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier }}>{p.espece}</span>
+                  : <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: sans, fontSize: 13, fontWeight: 700, padding: "3px 10px", borderRadius: 16, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", color: "#E4C878" }}>❓ À identifier</span>}
                 <BadgePourcent confiance={p.confiance} />
                 <BadgeRarete count={raretes[cleEspeceMur(p)]} />
               </div>
@@ -7892,7 +8137,9 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
                 </span>
                 <span>{p.created_at ? new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
               </div>
-              <div style={{ fontFamily: sans, fontSize: 11.5, color: C.ambre, marginTop: 6, opacity: 0.85 }}>Toucher pour en savoir plus →</div>
+              <div style={{ fontFamily: sans, fontSize: 11.5, color: C.ambre, marginTop: 6, opacity: 0.85 }}>
+                {comptesCom[p.id] > 0 ? `💬 ${comptesCom[p.id]} commentaire${comptesCom[p.id] > 1 ? "s" : ""} · ` : ""}Toucher pour en savoir plus →
+              </div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 6, padding: "8px 14px 2px", flexWrap: "wrap" }}>
@@ -7924,6 +8171,30 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
               </div>
             );
           })()}
+          {/* Doute sur l'identification : réaction spéciale, séparée des réactions positives.
+              Ouvre la discussion sans dénoncer. Masqué si la publication n'a pas de nom (rien à contester). */}
+          {p.espece && (() => {
+            const liste = (reactions[p.id] && reactions[p.id]["doute"]) || [];
+            const n = liste.length;
+            const jeDoute = prenom && liste.map((x) => x.toLowerCase()).includes(prenom.trim().toLowerCase());
+            return (
+              <div style={{ padding: "2px 14px 6px" }}>
+                <button onClick={() => surReaction(p.id, "doute")} title={n > 0 ? liste.join(", ") : "Signaler un doute sur l'identification"}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 20, cursor: "pointer", fontFamily: sans, fontSize: 12.5,
+                    border: `1px solid ${jeDoute ? "#C98A4B" : (n > 0 ? "#8A6A3A" : C.bordure)}`,
+                    background: jeDoute ? "linear-gradient(#3A2E1C, #2C2316)" : (n > 0 ? "linear-gradient(#2A2316, #221C12)" : C.panneauClair),
+                    color: n > 0 ? "#E0B074" : C.papierSombre }}>
+                  <span style={{ fontSize: 14 }}>🤔</span>
+                  {n > 0 ? <span style={{ fontWeight: 700 }}>{n} doute{n > 1 ? "nt" : ""} de l'ID</span> : <span>Je doute de l'ID</span>}
+                </button>
+                {n > 0 && (
+                  <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 4, fontStyle: "italic" }}>
+                    Une autre idée d'identification ? Ouvre la publication pour en discuter.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div style={{ padding: "0 14px 10px" }}>
             {confirmSuppr === p.id ? (
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, paddingTop: 10, borderTop: `1px solid ${C.bordure}` }}>
@@ -7944,7 +8215,7 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
           </div>
         </div>
       ))}
-      {postDetail && <DetailPost post={postDetail} reactions={reactions[postDetail.id] || {}} onReagir={(type) => surReaction(postDetail.id, type)} onFermer={() => setPostDetail(null)} monPrenom={prenom} onOuvrirProfil={onOuvrirProfil ? (nom) => { setPostDetail(null); onOuvrirProfil(nom); } : null} />}
+      {postDetail && <DetailPost post={postDetail} reactions={reactions[postDetail.id] || {}} onReagir={(type) => surReaction(postDetail.id, type)} onFermer={() => setPostDetail(null)} monPrenom={prenom} onOuvrirProfil={onOuvrirProfil ? (nom) => { setPostDetail(null); onOuvrirProfil(nom); } : null} onDefinirPrenom={onDefinirPrenom} />}
     </div>
   );
 }
