@@ -60,6 +60,7 @@ exports.handler = async (event) => {
     if (c.biotope) ctx.push("Biotope observé : " + String(c.biotope).slice(0, 60));
     if (c.mois) ctx.push("Mois d'observation : " + String(c.mois).slice(0, 20));
     if (c.region) ctx.push("Région approximative : " + String(c.region).slice(0, 60));
+    if (c.taille) ctx.push("Taille réelle estimée du spécimen : " + String(c.taille).slice(0, 30) + " (critère morphométrique fort — écarte les espèces dont la taille adulte est incompatible avec cette fourchette)");
     if (c.indice) ctx.push("Nom supposé par l'observateur : " + String(c.indice).slice(0, 120));
   }
   const blocCtx = ctx.length ? "\n\nContexte de terrain (à exploiter, sans le sur-interpréter) :\n- " + ctx.join("\n- ") : "";
@@ -184,6 +185,7 @@ exports.handler = async (event) => {
       '"confiance":un nombre entier de 0 à 100 exprimant ton pourcentage de certitude réel dans cette identification (100 = certitude absolue, 50 = hésitation, 20 = très incertain),' +
       '"niveau":"espèce|genre|famille|ordre",' +
       '"note":"justification courte : critères visuels décisifs, ou pourquoi l\'ID reste incertaine",' +
+      '"role":"UNE phrase courte et concrète (max ~15 mots) sur le rôle écologique / l\'utilité de cet arthropode : pollinisation, recyclage de matière, régulation d\'autres espèces, maillon alimentaire, aération du sol, etc. Formulation grand public, sans jargon. Vide si vraiment inconnu.",' +
       '"inhabituel":"vide si de présence normale pour la zone ; SINON une phrase expliquant pourquoi cette observation est notable (ex : espèce invasive en expansion, hors de son aire habituelle, échappée...)",' +
       '"alternatives":[{"nom":"","nomSci":"","pourquoi":"ce qui distinguerait cette hypothèse"}]}. ' +
       "Le tableau alternatives contient 0 à 2 hypothèses secondaires (vide si tu es très sûr).";
