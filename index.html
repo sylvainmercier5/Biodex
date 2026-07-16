@@ -141,9 +141,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.28 (PWA) ============
+// ============ BioDex v1.32 (PWA) ============
 
-const VERSION = "v1.28";
+const VERSION = "v1.32";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1223,6 +1223,66 @@ const IDEE_REACTIONS = [
 // Les réactions d'idées sont stockées dans reactions_detail avec un post_id préfixé.
 function cleReactionIdee(id) { return "idee:" + id; }
 
+// Étoiles de notation. Interactif si onNote fourni, sinon affichage seul.
+function Etoiles({ note = 0, onNote, taille = 26 }) {
+  return (
+    <div style={{ display: "inline-flex", gap: 3 }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <span key={n}
+          onClick={onNote ? () => onNote(n) : undefined}
+          style={{ fontSize: taille, lineHeight: 1, cursor: onNote ? "pointer" : "default", filter: n <= note ? "none" : "grayscale(1)", opacity: n <= note ? 1 : 0.35, transition: "opacity .1s, filter .1s", userSelect: "none" }}>
+          ⭐
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ── Sollicitation d'avis : compte les identifications réussies et déclenche
+//    le pop-up au bon palier. 1er à 15, puis +20 à chaque fois qu'on ferme
+//    sans répondre. Si l'avis est donné, on ne represente plus jamais.
+const AVIS_PREMIER_SEUIL = 15;
+const AVIS_RELANCE = 20;
+function signalerIdentificationReussie() {
+  try {
+    if (localStorage.getItem("biodex_avis_donne") === "1") return;
+    const n = (parseInt(localStorage.getItem("biodex_ident_count") || "0", 10) || 0) + 1;
+    localStorage.setItem("biodex_ident_count", String(n));
+    const seuil = parseInt(localStorage.getItem("biodex_avis_prochain_seuil") || String(AVIS_PREMIER_SEUIL), 10) || AVIS_PREMIER_SEUIL;
+    if (n >= seuil) {
+      window.dispatchEvent(new CustomEvent("biodex-proposer-avis"));
+    }
+  } catch {}
+}
+
+// ── Taille du spécimen ──
+// Tranches envoyées au modèle (critère souvent décisif, absent de l'image seule).
+const TAILLES = [
+  { id: "xs", label: "< 5 mm", desc: "minuscule", exemple: "fourmi, puceron", mm: 4 },
+  { id: "s", label: "5 – 15 mm", desc: "petit", exemple: "coccinelle, mouche", mm: 10 },
+  { id: "m", label: "15 – 30 mm", desc: "moyen", exemple: "abeille, guêpe", mm: 22 },
+  { id: "l", label: "30 – 50 mm", desc: "grand", exemple: "frelon, sauterelle", mm: 40 },
+  { id: "xl", label: "> 50 mm", desc: "très grand", exemple: "grand papillon, mante", mm: 60 },
+];
+function tailleOf(id) { return TAILLES.find((t) => t.id === id) || null; }
+
+// Calibration écran : combien de pixels CSS pour 1 mm réel sur CET appareil.
+// Le web n'expose pas le PPI physique → on calibre une fois avec une pièce (Ø connu).
+// Pièces euro (diamètres officiels, en mm) :
+const PIECES = [
+  { id: "2e", label: "2 €", mm: 25.75 },
+  { id: "1e", label: "1 €", mm: 23.25 },
+  { id: "50c", label: "50 cent", mm: 24.25 },
+  { id: "20c", label: "20 cent", mm: 22.25 },
+  { id: "10c", label: "10 cent", mm: 19.75 },
+];
+function lirePxParMm() {
+  try { const v = parseFloat(localStorage.getItem("biodex_px_par_mm")); return v > 0 ? v : 0; } catch { return 0; }
+}
+function ecrirePxParMm(v) {
+  try { if (v > 0) localStorage.setItem("biodex_px_par_mm", String(v)); } catch {}
+}
+
 // Somme le nombre de réactions d'un objet { type: [auteurs] } OU { type: compteur } (rétro-compat).
 function nbReacts(parType) {
   if (!parType) return 0;
@@ -1370,6 +1430,33 @@ async function marquerIdeeRealisee(id, realisee) {
   if (!sb) throw new Error("Service non configuré");
   const { error } = await sb.from("idees").update({ realisee: !!realisee }).eq("id", id);
   if (error) throw new Error("Mise à jour impossible");
+  return true;
+}
+
+// ── Enquête de satisfaction (nominative ou anonyme, au choix de l'auteur) ──
+async function chargerAvis() {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { data, error } = await sb.from("satisfaction").select("*").order("created_at", { ascending: false }).limit(100);
+  if (error) throw new Error("Lecture des avis impossible");
+  return data || [];
+}
+
+async function envoyerAvis(auteur, note, commentaire, anonyme) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const n = Math.max(1, Math.min(5, parseInt(note, 10) || 0));
+  const nom = anonyme ? "Anonyme" : (auteur || "Anonyme").slice(0, 40);
+  const { error } = await sb.from("satisfaction").insert({ auteur: nom, note: n, commentaire: (commentaire || "").slice(0, 500) });
+  if (error) throw new Error("Envoi impossible");
+  return true;
+}
+
+async function adminSupprimerAvis(id) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { error } = await sb.from("satisfaction").delete().eq("id", id);
+  if (error) throw new Error(error.message || "Suppression refusée par le serveur");
   return true;
 }
 
@@ -3151,9 +3238,10 @@ function SuiviEspeces({ onFermer }) {
 // Panneau d'administration. L'affichage est conditionné par le serveur,
 // et CHAQUE action est re-vérifiée par Supabase (RLS) : pas de fausse sécurité.
 function Administration({ onFermer }) {
-  const [onglet, setOnglet] = useState("stats"); // stats | mur | idees | membres | maintenance
+  const [onglet, setOnglet] = useState("stats"); // stats | mur | idees | membres | avis | maintenance
   const [posts, setPosts] = useState([]);
   const [idees, setIdees] = useState([]);
+  const [avis, setAvis] = useState([]);
   const [etat, setEtat] = useState("chargement");
   const [message, setMessage] = useState("");
   const [occupe, setOccupe] = useState(null);
@@ -3161,9 +3249,10 @@ function Administration({ onFermer }) {
   const recharger = async () => {
     setEtat("chargement");
     try {
-      const [p, i] = await Promise.all([chargerMur(300), chargerIdees().catch(() => [])]);
+      const [p, i, a] = await Promise.all([chargerMur(300), chargerIdees().catch(() => []), chargerAvis().catch(() => [])]);
       setPosts(p);
       setIdees(Array.isArray(i) ? i : []);
+      setAvis(Array.isArray(a) ? a : []);
       setEtat("ok");
     } catch { setEtat("echec"); }
   };
@@ -3192,6 +3281,18 @@ function Administration({ onFermer }) {
     setTimeout(() => setMessage(""), 3500);
   };
 
+  const supprimerUnAvis = async (a) => {
+    if (!window.confirm("Supprimer définitivement cet avis ?\n\nCette action est irréversible.")) return;
+    setOccupe(a.id);
+    try {
+      await adminSupprimerAvis(a.id);
+      setAvis((l) => l.filter((x) => x.id !== a.id));
+      setMessage("✓ Avis supprimé.");
+    } catch (e) { setMessage("❌ " + (e.message || "Échec")); }
+    setOccupe(null);
+    setTimeout(() => setMessage(""), 3500);
+  };
+
   // ── Stats globales
   const especes = new Set(posts.map(cleEspeceMur).filter(Boolean));
   const membres = {};
@@ -3202,6 +3303,8 @@ function Administration({ onFermer }) {
   const posts30j = posts.filter((p) => now - new Date(p.created_at).getTime() < 30 * 864e5).length;
   const actifs7j = new Set(posts.filter((p) => now - new Date(p.created_at).getTime() < 7 * 864e5).map((p) => p.auteur)).size;
   const idesNonRealisees = idees.filter((i) => !i.realisee).length;
+  const avisAvecNote = avis.filter((a) => a.note > 0);
+  const noteMoyenne = avisAvecNote.length ? (avisAvecNote.reduce((s, a) => s + a.note, 0) / avisAvecNote.length) : 0;
 
   const carte = { background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 12, padding: 14 };
   const ongletBtn = (id, label) => (
@@ -3232,6 +3335,7 @@ function Administration({ onFermer }) {
         {ongletBtn("mur", "🌐 Mur " + posts.length)}
         {ongletBtn("idees", "💡 Idées " + idees.length)}
         {ongletBtn("membres", "👥 Membres " + membresTri.length)}
+        {ongletBtn("avis", "😊 Avis " + avis.length)}
         {ongletBtn("maintenance", "🧹 Maintenance")}
       </div>
 
@@ -3332,6 +3436,41 @@ function Administration({ onFermer }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {etat === "ok" && onglet === "avis" && (
+        <div>
+          <div style={{ ...carte, display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
+            <div style={{ textAlign: "center", flexShrink: 0 }}>
+              <div style={{ fontFamily: serif, fontSize: 30, fontWeight: 700, color: C.ambreClair, lineHeight: 1 }}>{noteMoyenne ? noteMoyenne.toFixed(1) : "—"}</div>
+              <div style={{ fontFamily: sans, fontSize: 10, textTransform: "uppercase", color: C.papierSombre, marginTop: 3 }}>sur 5</div>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Etoiles note={Math.round(noteMoyenne)} taille={18} />
+              <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 5 }}>
+                {avisAvecNote.length} avis noté{avisAvecNote.length > 1 ? "s" : ""}{avis.length > avisAvecNote.length ? ` · ${avis.length - avisAvecNote.length} sans note` : ""}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "grid", gap: 9 }}>
+            {avis.length === 0 && <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>Aucun avis pour l'instant.</div>}
+            {avis.map((a) => (
+              <div key={a.id} style={{ padding: "11px 13px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: a.commentaire ? 7 : 0 }}>
+                  <Etoiles note={a.note} taille={15} />
+                  <button onClick={() => supprimerUnAvis(a)} disabled={occupe === a.id}
+                    style={{ flexShrink: 0, fontFamily: sans, fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 8, cursor: "pointer", border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, opacity: occupe === a.id ? 0.5 : 1 }}>
+                    {occupe === a.id ? "…" : "🗑️"}
+                  </button>
+                </div>
+                {a.commentaire && <div style={{ fontFamily: sans, fontSize: 13.5, color: C.papier, lineHeight: 1.5, marginBottom: 7, whiteSpace: "pre-wrap" }}>{a.commentaire}</div>}
+                <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre }}>
+                  {a.auteur === "Anonyme" ? "🕶️ Anonyme" : "😊 " + (a.auteur || "?")} · {a.created_at ? new Date(a.created_at).toLocaleDateString("fr-FR") : ""}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -4533,8 +4672,10 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
   const [nomSci, setNomSci] = useState(base ? base.nomSci || "" : "");
   const [confiance, setConfiance] = useState(base ? (base.confiance !== undefined ? base.confiance : null) : null);
   const [notable, setNotable] = useState(base ? base.notable || "" : "");
+  const [role, setRole] = useState(base ? base.role || "" : "");
   const [biotope, setBiotope] = useState(base ? base.biotope || "" : "");
   const [moment, setMoment] = useState(base ? (base.moment || momentDepuisDate(base.date || Date.now())) : momentDepuisDate(new Date()));
+  const [taille, setTaille] = useState(base ? base.taille || "" : "");
   const [spots, setSpots] = useState(() => lireSpots());
   const [spot, setSpot] = useState(base ? base.spot || "" : "");
   const [nouveauSpot, setNouveauSpot] = useState("");
@@ -4753,6 +4894,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
       const res = await identifierCloud(photoBlob, utiliserZone ? zone : null, contexte, photosSupp);
       setCloudResultat(res);
       setCloudEtat("ok");
+      signalerIdentificationReussie();
     } catch (e) {
       setCloudErreur(String(e.message || e).includes("configur") ? "Clé API non configurée sur le serveur (voir réglages Netlify)." : "Identification précise indisponible (réseau, ou service non configuré).");
       setCloudEtat("echec");
@@ -4766,6 +4908,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
     if (res.nomSci) setNomSci(res.nomSci);
     if (res.confiance !== undefined) setConfiance(res.confiance);
     if (res.inhabituel && String(res.inhabituel).trim().length > 3) setNotable(String(res.inhabituel).trim());
+    if (res.role && String(res.role).trim().length > 3) setRole(String(res.role).trim());
   }
 
   function contexteTerrain() {
@@ -4774,6 +4917,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
       mois: new Date().toLocaleDateString("fr-FR", { month: "long" }),
       region: regionApprox(gps),
       indice: nom || "",
+      taille: taille ? tailleOf(taille).label : "",
     };
   }
 
@@ -4849,12 +4993,14 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           confiance: confiance,
           biotope: biotope || "autre",
           moment: moment || "",
+          taille: taille || "",
           spot: spot || "",
           ciel: ciel || "",
           temp: temp.trim(),
           meteoAuto,
           notes: notes.trim(),
           notable: notable || "",
+          role: role || "",
           gps: gpsEtat === "ok" ? gps : null,
           photo: photoBlob,
           photosSupp: photosSupp,
@@ -4868,6 +5014,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           confiance: confiance,
           biotope: biotope || "autre",
           moment: moment || "",
+          taille: taille || "",
           spot: spot || "",
           ciel: ciel || "",
           temp: temp.trim(),
@@ -4875,6 +5022,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           meteoARattraper: false,
           notes: notes.trim(),
           notable: notable || "",
+          role: role || "",
           photo: photoBlob,
           photosSupp: photosSupp,
           // id, date, gps d'origine conservés via ...base
@@ -4886,12 +5034,14 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           confiance: confiance,
           biotope: biotope || "autre",
           moment: moment || "",
+          taille: taille || "",
           spot: spot || "",
           ciel: ciel || "",
           temp: temp.trim(),
           meteoAuto,
           notes: notes.trim(),
           notable: notable || "",
+          role: role || "",
           gps: gpsEtat === "ok" ? gps : null,
           date: new Date().toISOString(),
           photo: photoBlob,
@@ -5042,6 +5192,15 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
               <div style={{ fontFamily: sans, fontSize: 16, fontWeight: 700, color: C.papier }}>{cloudResultat.nom || "—"}</div>
               <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambreClair, marginBottom: 6 }}>{cloudResultat.nomSci || ""}</div>
               {cloudResultat.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginBottom: 10 }}>{cloudResultat.note}</div>}
+              {cloudResultat.role && String(cloudResultat.role).trim().length > 3 && (
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "10px 12px", marginBottom: 10, borderRadius: 9, background: "linear-gradient(#1E2A18, #182213)", border: "1px solid #6F9450" }}>
+                  <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.2 }}>🌿</span>
+                  <div>
+                    <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#A6CC82", marginBottom: 2 }}>À quoi il sert</div>
+                    <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.45 }}>{cloudResultat.role}</div>
+                  </div>
+                </div>
+              )}
               {cloudResultat.inhabituel && String(cloudResultat.inhabituel).trim().length > 3 && (
                 <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "10px 12px", marginBottom: 10, borderRadius: 9, background: "linear-gradient(#2E2410, #241C0C)", border: "1px solid #B8862E" }}>
                   <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.2 }}>🌟</span>
@@ -5279,6 +5438,12 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Taille du spécimen */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={libelle}>Taille du spécimen <span style={{ fontWeight: 400, color: C.papierSombre }}>(optionnel, aide l'identification)</span></label>
+        <ChoixTaille valeur={taille} onChange={setTaille} />
       </div>
 
       {/* Lieu d'observation (spot favori) */}
@@ -5616,6 +5781,9 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
       {obs.moment && momentOf(obs.moment) && (
         <div style={ligne}><span style={cle}>Moment</span><span style={val}>{momentOf(obs.moment).emoji} {momentOf(obs.moment).label}</span></div>
       )}
+      {obs.taille && tailleOf(obs.taille) && (
+        <div style={ligne}><span style={cle}>Taille</span><span style={val}>📏 {tailleOf(obs.taille).label}</span></div>
+      )}
       {obs.spot && (
         <div style={ligne}><span style={cle}>Lieu</span><span style={val}>📍 {obs.spot}</span></div>
       )}
@@ -5641,6 +5809,16 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
         </div>
       )}
 
+      {obs.role && String(obs.role).trim().length > 3 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "12px 14px", marginTop: 8, borderRadius: 10, background: "linear-gradient(#1E2A18, #182213)", border: "1px solid #6F9450" }}>
+          <span style={{ fontSize: 17, flexShrink: 0, lineHeight: 1.3 }}>🌿</span>
+          <div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#A6CC82", marginBottom: 3 }}>À quoi il sert</div>
+            <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.55 }}>{obs.role}</div>
+          </div>
+        </div>
+      )}
+
       {/* Passerelle science participative (OPIE + iNaturalist), repliable */}
       {identifie && (
         <div style={{ marginTop: 16 }}>
@@ -5653,7 +5831,11 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
       {/* Fiche naturaliste */}
       <div style={{ marginTop: 18 }}>
         {!fiche && identifie && (
-          <div>
+          <div style={{ padding: "14px 16px", background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid ${C.bordure}`, borderRadius: 12 }}>
+            <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.ambreClair, marginBottom: 4 }}>📖 En savoir plus sur cette espèce</div>
+            <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, lineHeight: 1.5, marginBottom: 12 }}>
+              Génère une fiche complète : description, alimentation, période d'apparition, habitat, répartition, statut de conservation, rôle écologique et un geste pour l'aider.
+            </div>
             <Bouton variante="primaire" onClick={lancerFiche} disabled={ficheEtat === "recherche"} style={{ width: "100%" }}>
               {ficheEtat === "recherche" ? "📖 Génération de la fiche…" : "📖 Générer la fiche naturaliste"}
             </Bouton>
@@ -7001,11 +7183,11 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>✨ Identification précise (Claude)</div>
         <p style={p}>
-          Une seule photo suffit pour démarrer : « 📷 Appareil photo » ouvre directement l'appareil de ton téléphone pour une meilleure qualité, ou « 🖼️ Galerie » pour reprendre un ou plusieurs clichés existants — tu peux en sélectionner plusieurs d'un coup dans ta galerie : le premier devient la photo principale, les suivants (jusqu'à 2) des vues complémentaires que l'IA croisera. Le bouton « Identifier cette zone » envoie ta photo à Claude via un petit serveur : il propose un nom français et latin avec un pourcentage de confiance. Avant chaque identification, un cadre s'affiche sur ta photo : place-le sur l'insecte pour que l'IA se concentre dessus — c'est surtout utile quand la bête est petite ou perdue dans le décor, et ça améliore nettement la précision. Si ta photo est déjà bien cadrée, un lien te permet d'identifier l'image entière directement. Le bouton « 🔍 Zoomer sur la photo » ouvre l'image en plein écran pour l'inspecter de près. Après une première proposition, si l'IA hésite, tu peux l'affiner de deux façons : « 📸 Ajouter une vue » te laisse importer depuis ta galerie un autre angle (dessus, profil, détail des ailes… jusqu'à 2 vues) que l'IA croise avec la première, exactement comme le ferait un entomologiste ; ou « 🔍 Affiner l'identification » te pose des questions ciblées. L'appli transmet aussi le contexte (biotope, saison, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Nécessite le réseau. Chaque identification coûte une fraction de centime.
+          Une seule photo suffit pour démarrer : « 📷 Appareil photo » ouvre directement l'appareil de ton téléphone pour une meilleure qualité, ou « 🖼️ Galerie » pour reprendre un ou plusieurs clichés existants — tu peux en sélectionner plusieurs d'un coup dans ta galerie : le premier devient la photo principale, les suivants (jusqu'à 2) des vues complémentaires que l'IA croisera. Le bouton « Identifier cette zone » envoie ta photo à Claude via un petit serveur : il propose un nom français et latin avec un pourcentage de confiance. Avant chaque identification, un cadre s'affiche sur ta photo : place-le sur l'insecte pour que l'IA se concentre dessus — c'est surtout utile quand la bête est petite ou perdue dans le décor, et ça améliore nettement la précision. Si ta photo est déjà bien cadrée, un lien te permet d'identifier l'image entière directement. Le bouton « 🔍 Zoomer sur la photo » ouvre l'image en plein écran pour l'inspecter de près. Après une première proposition, si l'IA hésite, tu peux l'affiner de deux façons : « 📸 Ajouter une vue » te laisse importer depuis ta galerie un autre angle (dessus, profil, détail des ailes… jusqu'à 2 vues) que l'IA croise avec la première, exactement comme le ferait un entomologiste ; ou « 🔍 Affiner l'identification » te pose des questions ciblées. L'appli transmet aussi le contexte (biotope, saison, la taille estimée que tu as indiquée, et une zone géographique large déduite du GPS — jamais ta position exacte), ce qui aide à privilégier la faune locale, partout dans le monde. La taille est un critère précieux car la photo seule ne donne pas l'échelle : indique la tranche qui correspond (deux insectes identiques à l'écran mais de tailles très différentes sont souvent des espèces distinctes). Pour t'aider à bien l'estimer, tu peux régler une fois l'échelle réelle de ton écran en posant une pièce de monnaie dessus — ensuite l'appli t'affiche la taille en vrai, grandeur nature. Le niveau de certitude est affiché sous forme de pourcentage coloré (du rouge pour incertain au vert pour fiable), pour savoir d'un coup d'œil à quel point se fier à la proposition. Ce pourcentage apparaît aussi sur tes publications du mur. Si tu observes une espèce inattendue pour la zone (invasive, échappée, en expansion...), un encart 🌟 « Observation notable » le signale — c'est souvent une belle trouvaille ! Nécessite le réseau. Chaque identification coûte une fraction de centime.
         </p>
         <div style={t}>🌿 Pourquoi il compte</div>
         <p style={p}>
-          Chaque fiche naturaliste met en avant le rôle écologique de l'insecte (pollinisation, recyclage, régulation, nourriture pour d'autres animaux…) dans un encart « Pourquoi il compte », et propose un geste simple pour l'aider (« Un geste pour l'aider »). Une façon de rappeler que même la plus petite bestiole a son utilité — et qu'on peut agir à son échelle.
+          Dès qu'une espèce est identifiée, un encart vert « 🌿 À quoi il sert » apparaît automatiquement sous la proposition : une phrase sur son rôle écologique (pollinisation, recyclage, régulation…), sans rien à cliquer. Pour aller plus loin, le bouton « 📖 Générer la fiche naturaliste » (sur la fiche du spécimen) produit une fiche complète : description, alimentation, période, habitat, répartition, statut de conservation, rôle détaillé et un geste simple pour l'aider (« Un geste pour l'aider »). Une façon de rappeler que même la plus petite bestiole a son utilité — et qu'on peut agir à son échelle.
         </p>
         <div style={t}>✍️ Noms & autocomplétion</div>
         <p style={p}>
@@ -7079,7 +7261,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>💡 Boîte à idées</div>
         <p style={p}>
-          Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Réagis aux idées (👍 bonne idée, ❤️ coup de cœur, 🚀 vivement !) pour montrer lesquelles t'emballent — ça aide à voir ce qui suscite le plus d'intérêt. Une idée réalisée peut être cochée « ✅ Réalisée » (visible par tous). Les meilleures finiront peut-être dans une prochaine version !
+          Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Réagis aux idées (👍 bonne idée, ❤️ coup de cœur, 🚀 vivement !) pour montrer lesquelles t'emballent — ça aide à voir ce qui suscite le plus d'intérêt. Une idée réalisée peut être cochée « ✅ Réalisée » (visible par tous). Les meilleures finiront peut-être dans une prochaine version ! En haut de cet écran, tu peux aussi laisser un avis global sur l'appli : une note en étoiles (1 à 5) et un commentaire facultatif. Tu choisis de le signer ou de le publier anonymement en cochant la case prévue. Ces avis aident à savoir ce qui plaît et ce qui manque. Après plusieurs identifications, un petit encart peut aussi te proposer spontanément de donner ton avis — tu peux répondre ou choisir « Plus tard ».
         </p>
       </SectionPliable>
 
@@ -7254,6 +7436,12 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
   const [envoiEtat, setEnvoiEtat] = useState(""); // "" | envoi | echec
   const [erreur, setErreur] = useState("");
   const [confirmSuppr, setConfirmSuppr] = useState(null);
+  // Satisfaction
+  const [note, setNote] = useState(0);
+  const [avisTexte, setAvisTexte] = useState("");
+  const [avisAnonyme, setAvisAnonyme] = useState(false);
+  const [avisEtat, setAvisEtat] = useState(""); // "" | envoi | envoye | echec
+  const [avisErreur, setAvisErreur] = useState("");
 
   async function rafraichir() {
     if (!MUR_ACTIF) { setEtat("inactif"); return; }
@@ -7319,6 +7507,23 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
     setConfirmSuppr(null);
   }
 
+  async function envoyerMonAvis() {
+    if (!note) { setAvisErreur("Choisis une note (1 à 5 étoiles)."); return; }
+    const auteur = (saisiePrenom || prenom || "").trim();
+    if (!avisAnonyme && !auteur) { setAvisErreur("Indique ton prénom, ou coche « anonyme »."); return; }
+    if (!avisAnonyme && auteur) onDefinirPrenom(auteur);
+    setAvisEtat("envoi");
+    setAvisErreur("");
+    try {
+      await envoyerAvis(auteur, note, avisTexte, avisAnonyme);
+      setAvisEtat("envoye");
+      setNote(0); setAvisTexte(""); setAvisAnonyme(false);
+    } catch (e) {
+      setAvisErreur(String(e.message || "Envoi impossible") + ".");
+      setAvisEtat("echec");
+    }
+  }
+
   if (!MUR_ACTIF) {
     return (
       <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
@@ -7338,6 +7543,38 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
       <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 14, lineHeight: 1.5 }}>
         Une envie, une amélioration, un bug à signaler ? Partage-la avec la bande — les meilleures idées finiront peut-être dans l'appli !
       </div>
+
+      {/* Enquête de satisfaction */}
+      <div style={{ padding: "13px 14px", background: "linear-gradient(#1E2617, #181E12)", border: `1px solid ${note ? "#A8863A" : C.bordure}`, borderRadius: 10, marginBottom: 18 }}>
+        {avisEtat === "envoye" ? (
+          <div style={{ textAlign: "center", padding: "6px 0" }}>
+            <div style={{ fontSize: 30, marginBottom: 6 }}>🙏</div>
+            <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier, marginBottom: 4 }}>Merci pour ton retour !</div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 10 }}>Ton avis aide à faire grandir BioDex.</div>
+            <button onClick={() => setAvisEtat("")} style={{ background: "none", border: `1px solid ${C.bordure}`, color: C.papierSombre, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 14, cursor: "pointer" }}>Donner un autre avis</button>
+          </div>
+        ) : (
+          <div>
+            <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, marginBottom: 2 }}>😊 Ton avis sur BioDex</div>
+            <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 10, lineHeight: 1.5 }}>Comment tu trouves l'appli dans l'ensemble ?</div>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+              <Etoiles note={note} onNote={setNote} taille={30} />
+            </div>
+            <textarea value={avisTexte} onChange={(e) => setAvisTexte(e.target.value)} placeholder="Un commentaire (optionnel) : ce qui te plaît, ce qui manque…" maxLength={500} rows={2}
+              style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "9px 11px", fontFamily: sans, fontSize: 13.5, outline: "none", resize: "vertical", marginBottom: 9 }} />
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 10, fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>
+              <input type="checkbox" checked={avisAnonyme} onChange={(e) => setAvisAnonyme(e.target.checked)} style={{ width: 16, height: 16, accentColor: C.ambre, cursor: "pointer" }} />
+              Publier mon avis anonymement
+            </label>
+            <Bouton variante="primaire" onClick={envoyerMonAvis} disabled={avisEtat === "envoi"} style={{ width: "100%" }}>
+              {avisEtat === "envoi" ? "Envoi…" : "Envoyer mon avis"}
+            </Bouton>
+            {avisErreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 8 }}>{avisErreur}</div>}
+          </div>
+        )}
+      </div>
+
+      <div style={{ fontFamily: sans, fontSize: 13, fontWeight: 700, color: C.lichen, marginBottom: 10, letterSpacing: 0.3 }}>💡 OU PROPOSE UNE IDÉE</div>
 
       {/* Formulaire */}
       <div style={{ padding: "12px 14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10, marginBottom: 18 }}>
@@ -8537,6 +8774,197 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi }) {
 
 
 
+// Sélecteur de taille du spécimen : tranches (pour le modèle) + échelle réelle
+// à l'écran si l'appareil est calibré. Sinon, repères comparatifs textuels.
+function ChoixTaille({ valeur, onChange }) {
+  const [pxParMm, setPxParMm] = useState(() => lirePxParMm());
+  const [calibrer, setCalibrer] = useState(false);
+  const sel = tailleOf(valeur);
+  // Largeur réelle à afficher pour la tranche sélectionnée (plafonnée pour rester à l'écran).
+  const largeurReelle = sel && pxParMm > 0 ? Math.min(sel.mm * pxParMm, 340) : 0;
+  const tronquee = sel && pxParMm > 0 && sel.mm * pxParMm > 340;
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        {TAILLES.map((t) => {
+          const actif = valeur === t.id;
+          return (
+            <button key={t.id} onClick={() => onChange(actif ? "" : t.id)}
+              style={{ flex: "1 1 auto", minWidth: 88, fontFamily: sans, padding: "8px 10px", borderRadius: 10, cursor: "pointer", textAlign: "center",
+                border: `1px solid ${actif ? C.ambre : C.bordure}`, background: actif ? "linear-gradient(#3A4A2C, #2C3623)" : C.panneau, color: C.papier }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: actif ? C.ambreClair : C.papier }}>{t.label}</div>
+              <div style={{ fontSize: 10, color: C.papierSombre, marginTop: 2 }}>{t.exemple}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      {sel && (
+        <div style={{ padding: "12px 13px", borderRadius: 10, background: "linear-gradient(#1E2617, #181E12)", border: `1px solid ${C.bordure}` }}>
+          {pxParMm > 0 ? (
+            <div>
+              <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginBottom: 8 }}>
+                Aperçu à l'échelle réelle {tronquee ? "(dépasse l'écran, tronqué)" : "sur ton écran"} :
+              </div>
+              <div style={{ display: "flex", alignItems: "center", height: 26, marginBottom: 6 }}>
+                <div style={{ position: "relative", width: largeurReelle, height: 3, background: C.ambreClair, borderRadius: 2 }}>
+                  <span style={{ position: "absolute", left: 0, top: -5, width: 2, height: 13, background: C.ambreClair }} />
+                  {!tronquee && <span style={{ position: "absolute", right: 0, top: -5, width: 2, height: 13, background: C.ambreClair }} />}
+                </div>
+                {tronquee && <span style={{ fontFamily: sans, fontSize: 16, color: C.ambreClair, marginLeft: 4 }}>→</span>}
+              </div>
+              <button onClick={() => setCalibrer(true)} style={{ background: "none", border: "none", color: C.lichen, fontFamily: sans, fontSize: 11.5, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+                Réajuster l'échelle
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontFamily: sans, fontSize: 12, color: C.papier, marginBottom: 3 }}>Tranche : <b style={{ color: C.ambreClair }}>{sel.desc}</b> — ex. {sel.exemple}</div>
+              <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginBottom: 9, lineHeight: 1.4 }}>
+                Envie de voir la taille en vrai sur ton écran ? Règle l'échelle une fois avec une pièce.
+              </div>
+              <button onClick={() => setCalibrer(true)} style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, padding: "6px 12px", borderRadius: 8, cursor: "pointer", border: `1px solid ${C.ambre}`, background: "transparent", color: C.ambreClair }}>
+                📏 Régler l'échelle réelle
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {calibrer && (
+        <CalibrationEcran
+          onFini={(v) => { setPxParMm(v); setCalibrer(false); }}
+          onAnnuler={() => setCalibrer(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Calibration de l'échelle écran à l'aide d'une pièce de monnaie (Ø officiel connu).
+// Résultat : pixels CSS par mm réel, stocké pour tout l'appareil. Réutilisable partout.
+function CalibrationEcran({ onFini, onAnnuler }) {
+  const [piece, setPiece] = useState(PIECES[0]);
+  const [diamPx, setDiamPx] = useState(() => { const p = lirePxParMm(); return p > 0 ? Math.round(p * PIECES[0].mm) : 150; });
+
+  function valider() {
+    const pxParMm = diamPx / piece.mm;
+    ecrirePxParMm(pxParMm);
+    onFini(pxParMm);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 4200, background: "rgba(10,13,8,0.82)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}
+      onClick={(e) => { if (e.target === e.currentTarget) onAnnuler(); }}>
+      <div style={{ width: "100%", maxWidth: 400, background: "linear-gradient(#20281A, #171D11)", border: `1px solid ${C.ambre}`, borderRadius: 16, padding: 20, textAlign: "center" }}>
+        <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 700, color: C.papier, marginBottom: 6 }}>📏 Régler l'échelle</div>
+        <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5 }}>
+          Pose une pièce sur l'écran et ajuste le cercle jusqu'à ce qu'il épouse exactement son contour. Ça règle l'échelle réelle de ton téléphone, une fois pour toutes.
+        </div>
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap", marginBottom: 14 }}>
+          {PIECES.map((p) => (
+            <button key={p.id} onClick={() => setPiece(p)}
+              style={{ fontFamily: sans, fontSize: 12.5, fontWeight: piece.id === p.id ? 700 : 400, padding: "6px 12px", borderRadius: 16, cursor: "pointer",
+                border: `1px solid ${piece.id === p.id ? C.ambre : C.bordure}`, background: piece.id === p.id ? C.ambre : C.panneau, color: piece.id === p.id ? C.encre : C.papier }}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: Math.max(diamPx + 20, 120), marginBottom: 8 }}>
+          <div style={{ width: diamPx, height: diamPx, borderRadius: "50%", border: `3px solid ${C.ambreClair}`, background: "radial-gradient(rgba(212,168,58,0.15), rgba(212,168,58,0.04))", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <span style={{ fontFamily: sans, fontSize: 12, color: C.ambreClair, fontWeight: 700 }}>{piece.label}</span>
+          </div>
+        </div>
+        <input type="range" min={60} max={480} value={diamPx} onChange={(e) => setDiamPx(parseInt(e.target.value, 10))}
+          style={{ width: "100%", accentColor: C.ambre, marginBottom: 16 }} />
+        <div style={{ display: "flex", gap: 8 }}>
+          <Bouton onClick={onAnnuler} style={{ flex: 1 }}>Annuler</Bouton>
+          <Bouton variante="primaire" onClick={valider} style={{ flex: 1 }}>✓ C'est calé</Bouton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Pop-up de sollicitation d'avis, affiché par-dessus tout après N identifications.
+// Réutilise le même formulaire que la Boîte à idées (étoiles + commentaire + anonyme).
+function PopupAvis({ prenom, onDefinirPrenom, onFermer }) {
+  const [note, setNote] = useState(0);
+  const [texte, setTexte] = useState("");
+  const [anonyme, setAnonyme] = useState(false);
+  const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
+  const [etat, setEtat] = useState(""); // "" | envoi | envoye | echec
+  const [erreur, setErreur] = useState("");
+
+  // Ferme sans répondre : on repousse le prochain déclenchement de AVIS_RELANCE identifications.
+  function reporter() {
+    try {
+      const n = parseInt(localStorage.getItem("biodex_ident_count") || "0", 10) || 0;
+      localStorage.setItem("biodex_avis_prochain_seuil", String(n + AVIS_RELANCE));
+    } catch {}
+    onFermer();
+  }
+
+  async function envoyer() {
+    if (!note) { setErreur("Choisis une note (1 à 5 étoiles)."); return; }
+    const auteur = (saisiePrenom || prenom || "").trim();
+    if (!anonyme && !auteur) { setErreur("Indique ton prénom, ou coche « anonyme »."); return; }
+    if (!anonyme && auteur) onDefinirPrenom(auteur);
+    setEtat("envoi"); setErreur("");
+    try {
+      await envoyerAvis(auteur, note, texte, anonyme);
+      // Avis donné : on ne represente plus jamais.
+      try { localStorage.setItem("biodex_avis_donne", "1"); } catch {}
+      setEtat("envoye");
+      setTimeout(onFermer, 1400);
+    } catch (e) {
+      setErreur(String(e.message || "Envoi impossible") + ".");
+      setEtat("echec");
+    }
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(10,13,8,0.72)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}
+      onClick={(e) => { if (e.target === e.currentTarget) reporter(); }}>
+      <div style={{ width: "100%", maxWidth: 380, background: "linear-gradient(#20281A, #171D11)", border: `1px solid ${C.ambre}`, borderRadius: 16, padding: 20, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
+        {etat === "envoye" ? (
+          <div style={{ textAlign: "center", padding: "18px 0" }}>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>🙏</div>
+            <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 700, color: C.papier }}>Merci pour ton retour !</div>
+          </div>
+        ) : (
+          <div>
+            <div style={{ textAlign: "center", marginBottom: 4 }}>
+              <span style={{ fontSize: 34 }}>🐞</span>
+            </div>
+            <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 700, color: C.papier, textAlign: "center", marginBottom: 4 }}>Tu aimes BioDex ?</div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, textAlign: "center", marginBottom: 14, lineHeight: 1.5 }}>
+              Tu l'utilises pas mal en ce moment 🙂 Un petit avis aiderait à améliorer l'appli.
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+              <Etoiles note={note} onNote={setNote} taille={34} />
+            </div>
+            <textarea value={texte} onChange={(e) => setTexte(e.target.value)} placeholder="Un mot (optionnel) : ce qui te plaît, ce qui manque…" maxLength={500} rows={2}
+              style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "9px 11px", fontFamily: sans, fontSize: 13.5, outline: "none", resize: "vertical", marginBottom: 9 }} />
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 14, fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>
+              <input type="checkbox" checked={anonyme} onChange={(e) => setAnonyme(e.target.checked)} style={{ width: 16, height: 16, accentColor: C.ambre, cursor: "pointer" }} />
+              Publier mon avis anonymement
+            </label>
+            {erreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginBottom: 10 }}>{erreur}</div>}
+            <Bouton variante="primaire" onClick={envoyer} disabled={etat === "envoi"} style={{ width: "100%", marginBottom: 8 }}>
+              {etat === "envoi" ? "Envoi…" : "Envoyer mon avis"}
+            </Bouton>
+            <button onClick={reporter} style={{ width: "100%", background: "none", border: "none", color: C.papierSombre, fontFamily: sans, fontSize: 12.5, padding: "6px 0", cursor: "pointer" }}>
+              Plus tard
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BioDex() {
   const [vue, setVue] = useState("collection");
   const [observations, setObservations] = useState([]);
@@ -8696,6 +9124,14 @@ function BioDex() {
     setPrenom(v);
     try { localStorage.setItem("biodex_prenom", v); } catch {}
   }
+
+  // Pop-up d'avis : armé par l'événement émis après N identifications réussies.
+  const [popupAvis, setPopupAvis] = useState(false);
+  useEffect(() => {
+    const h = () => { try { if (localStorage.getItem("biodex_avis_donne") !== "1") setPopupAvis(true); } catch { setPopupAvis(true); } };
+    window.addEventListener("biodex-proposer-avis", h);
+    return () => window.removeEventListener("biodex-proposer-avis", h);
+  }, []);
 
   const [notifs, setNotifs] = useState({ total: 0 });
   const [centreOuvert, setCentreOuvert] = useState(false);
@@ -9037,6 +9473,10 @@ function BioDex() {
             <Bouton variante="primaire" onClick={exporterMaintenant} disabled={exportEnCours}>{exportEnCours ? "…" : "Sauvegarder"}</Bouton>
           </div>
         </div>
+      )}
+
+      {popupAvis && MUR_ACTIF && (vue === "collection" || vue === "carte" || vue === "stats" || vue === "mur" || vue === "cartes") && (
+        <PopupAvis prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setPopupAvis(false)} />
       )}
 
       {(() => {
