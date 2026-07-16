@@ -141,9 +141,9 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.35 (PWA) ============
+// ============ BioDex v1.36 (PWA) ============
 
-const VERSION = "v1.35";
+const VERSION = "v1.36";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -7384,7 +7384,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🌐 Mur commun</div>
         <p style={p}>
-          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Tu peux aussi partager une observation <b>pas encore identifiée</b> : elle apparaît alors avec un badge « ❓ À identifier », une façon de demander un coup de main à la bande (l'entraide fait partie du jeu !). Sous chaque publication, un bouton « 🤔 Je doute de l'ID » permet d'exprimer poliment un doute sur l'identification proposée : le compteur est visible par tous et ouvre la discussion, sans rien supprimer — l'idée est d'affiner ensemble, comme entre naturalistes. Tu peux aussi laisser un commentaire (en ouvrant une publication) : un conseil pour la prochaine photo, une autre hypothèse d'identification… Reste bienveillant : un filtre masque automatiquement les insultes, mais l'esprit du mur, c'est l'entraide. Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection. Indique ton prénom une fois, il est mémorisé. Tu peux aussi personnaliser ton profil (menu ☰ → 🎨 Mon profil) : choisis ton emblème, écris ta devise, indique ton secteur de chasse et ton insecte fétiche — toute la bande le verra sur le mur, dans le classement et sur ton profil. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
+          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Tu peux aussi partager une observation <b>pas encore identifiée</b> : elle apparaît alors avec un badge « ❓ À identifier », une façon de demander un coup de main à la bande (l'entraide fait partie du jeu !). Sous chaque publication, un bouton « 🤔 Je doute de l'ID » permet d'exprimer poliment un doute sur l'identification proposée : le compteur est visible par tous et ouvre la discussion, sans rien supprimer — l'idée est d'affiner ensemble, comme entre naturalistes. Tu peux aussi commenter une publication directement depuis le mur grâce au bouton « 💬 Commenter » (sous chaque trouvaille) : un conseil pour la prochaine photo, une autre hypothèse d'identification… Reste bienveillant : un filtre masque automatiquement les insultes, mais l'esprit du mur, c'est l'entraide. L'auteur reçoit une notification quand on commente sa trouvaille. Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection. Indique ton prénom une fois, il est mémorisé. Tu peux aussi personnaliser ton profil (menu ☰ → 🎨 Mon profil) : choisis ton emblème, écris ta devise, indique ton secteur de chasse et ton insecte fétiche — toute la bande le verra sur le mur, dans le classement et sur ton profil. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
         </p>
         <div style={t}>📖 Posts détaillés</div>
         <p style={p}>
@@ -7803,7 +7803,7 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
 }
 
 // ---------- Détail d'un post du mur (modale enrichie) ----------
-function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirProfil, onDefinirPrenom }) {
+function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirProfil, onDefinirPrenom, focusCommentaire }) {
   const p = post || {};
   const reacts = reactions || {};
   const [coms, setComs] = useState([]);
@@ -7812,6 +7812,8 @@ function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirPr
   const [comSaisiePrenom, setComSaisiePrenom] = useState(monPrenom || "");
   const [comEnvoi, setComEnvoi] = useState(false);
   const [comErreur, setComErreur] = useState("");
+  const refCommentaires = useRef(null);
+  const refTextarea = useRef(null);
 
   useEffect(() => {
     let vivant = true;
@@ -7820,6 +7822,18 @@ function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirPr
     chargerCommentaires(p.id).then((l) => { if (vivant) { setComs(l); setComsEtat("ok"); } }).catch(() => { if (vivant) setComsEtat("echec"); });
     return () => { vivant = false; };
   }, [p.id]);
+
+  // Si on a ouvert le détail via « Commenter », on amène directement à la zone de saisie.
+  useEffect(() => {
+    if (!focusCommentaire) return;
+    const t = setTimeout(() => {
+      try {
+        if (refCommentaires.current) refCommentaires.current.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (refTextarea.current) refTextarea.current.focus({ preventScroll: true });
+      } catch {}
+    }, 250);
+    return () => clearTimeout(t);
+  }, [focusCommentaire, comsEtat]);
 
   async function envoyerCommentaire() {
     const auteur = (comSaisiePrenom || monPrenom || "").trim();
@@ -7929,7 +7943,7 @@ function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirPr
           )}
 
           {/* Commentaires : entraide et conseils photo. Filtre d'insultes (masquage) à l'envoi. */}
-          <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.bordure}` }}>
+          <div ref={refCommentaires} style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.bordure}` }}>
             <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 10 }}>
               💬 Commentaires{coms.length > 0 ? ` (${coms.length})` : ""}
             </div>
@@ -7955,7 +7969,7 @@ function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirPr
                 <input value={comSaisiePrenom} onChange={(e) => setComSaisiePrenom(e.target.value)} placeholder="Ton prénom" maxLength={40}
                   style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 13.5, outline: "none", marginBottom: 7 }} />
               )}
-              <textarea value={comTexte} onChange={(e) => setComTexte(e.target.value)} placeholder="Ajoute un commentaire (conseil photo, autre hypothèse…)" maxLength={400} rows={2}
+              <textarea ref={refTextarea} value={comTexte} onChange={(e) => setComTexte(e.target.value)} placeholder="Ajoute un commentaire (conseil photo, autre hypothèse…)" maxLength={400} rows={2}
                 style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "9px 11px", fontFamily: sans, fontSize: 13.5, outline: "none", resize: "vertical", marginBottom: 7 }} />
               <Bouton variante="primaire" onClick={envoyerCommentaire} disabled={comEnvoi} style={{ width: "100%" }}>
                 {comEnvoi ? "Envoi…" : "💬 Commenter"}
@@ -7981,6 +7995,7 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
   const [confirmSuppr, setConfirmSuppr] = useState(null); // id du post en attente de confirmation
   const [supprEnCours, setSupprEnCours] = useState(null); // id du post en cours de suppression
   const [postDetail, setPostDetail] = useState(null); // post ouvert en détail
+  const [detailFocusCom, setDetailFocusCom] = useState(false); // ouvrir directement sur la zone commentaire
   const [reactions, setReactions] = useState({}); // { post_id: { type: compteur } }
   const [comptesCom, setComptesCom] = useState({}); // { post_id: nb commentaires }
   const [raretes, setRaretes] = useState({}); // { cleEspece: count|null }
@@ -8137,10 +8152,20 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
                 </span>
                 <span>{p.created_at ? new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
               </div>
-              <div style={{ fontFamily: sans, fontSize: 11.5, color: C.ambre, marginTop: 6, opacity: 0.85 }}>
-                {comptesCom[p.id] > 0 ? `💬 ${comptesCom[p.id]} commentaire${comptesCom[p.id] > 1 ? "s" : ""} · ` : ""}Toucher pour en savoir plus →
-              </div>
             </div>
+          </div>
+          {/* Barre d'actions : commenter directement (ouvre le détail focalisé sur la zone commentaire) */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px 4px" }}>
+            <button onClick={() => { setDetailFocusCom(true); setPostDetail(p); }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 20, cursor: "pointer", fontFamily: sans, fontSize: 13, fontWeight: 600,
+                border: `1px solid ${comptesCom[p.id] > 0 ? "#6F9450" : C.bordure}`, background: comptesCom[p.id] > 0 ? "linear-gradient(#1E2A18, #182213)" : C.panneauClair, color: comptesCom[p.id] > 0 ? "#A6CC82" : C.papier }}>
+              <span style={{ fontSize: 15 }}>💬</span>
+              {comptesCom[p.id] > 0 ? `Commenter (${comptesCom[p.id]})` : "Commenter"}
+            </button>
+            <button onClick={() => { setDetailFocusCom(false); setPostDetail(p); }}
+              style={{ background: "none", border: "none", fontFamily: sans, fontSize: 11.5, color: C.ambre, cursor: "pointer", opacity: 0.85, padding: "6px 0" }}>
+              En savoir plus →
+            </button>
           </div>
           <div style={{ display: "flex", gap: 6, padding: "8px 14px 2px", flexWrap: "wrap" }}>
             {REACTIONS.map((r) => {
@@ -8215,7 +8240,7 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
           </div>
         </div>
       ))}
-      {postDetail && <DetailPost post={postDetail} reactions={reactions[postDetail.id] || {}} onReagir={(type) => surReaction(postDetail.id, type)} onFermer={() => setPostDetail(null)} monPrenom={prenom} onOuvrirProfil={onOuvrirProfil ? (nom) => { setPostDetail(null); onOuvrirProfil(nom); } : null} onDefinirPrenom={onDefinirPrenom} />}
+      {postDetail && <DetailPost post={postDetail} reactions={reactions[postDetail.id] || {}} onReagir={(type) => surReaction(postDetail.id, type)} onFermer={() => { setPostDetail(null); setDetailFocusCom(false); }} monPrenom={prenom} onOuvrirProfil={onOuvrirProfil ? (nom) => { setPostDetail(null); onOuvrirProfil(nom); } : null} onDefinirPrenom={onDefinirPrenom} focusCommentaire={detailFocusCom} />}
     </div>
   );
 }
