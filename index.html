@@ -141,9 +141,49 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
-// ============ BioDex v1.36 (PWA) ============
+// ── Registre central du bouton/geste RETOUR système ────────────────────────
+// Un seul point de gestion pour tout l'appli (évite les listeners popstate concurrents).
+// Chaque overlay ouvert s'enregistre avec une priorité + une fonction de fermeture.
+// Au "retour" système, on ferme la couche de plus haute priorité. Tant qu'il reste des
+// couches, on garde une entrée d'historique tampon. Si plus rien : le navigateur quitte
+// normalement. Le bouton retour de l'appli reste en place en parallèle (filet de sécurité).
+const bdRetour = (() => {
+  let seq = 0;
+  const couches = new Map(); // id -> { priorite, fermer }
+  let tampon = false; // a-t-on une entrée d'historique tampon en place ?
 
-const VERSION = "v1.36";
+  function assurerTampon() {
+    if (!tampon && couches.size > 0) {
+      try { window.history.pushState({ bd: true }, ""); tampon = true; } catch {}
+    }
+  }
+  function enregistrer(priorite, fermer) {
+    const id = ++seq;
+    couches.set(id, { priorite, fermer });
+    assurerTampon();
+    // Fonction de désinscription (à retourner dans un useEffect cleanup)
+    return () => { couches.delete(id); };
+  }
+  function onPop() {
+    if (couches.size === 0) { tampon = false; return; } // rien à fermer → quitte normalement
+    // Trouver la couche de plus haute priorité
+    let cible = null;
+    couches.forEach((c, id) => { if (!cible || c.priorite > cible.c.priorite) cible = { id, c }; });
+    if (cible) {
+      couches.delete(cible.id);
+      try { cible.c.fermer(); } catch {}
+    }
+    tampon = false;
+    // S'il reste des couches, on remet un tampon pour rester capturé.
+    if (couches.size > 0) assurerTampon();
+  }
+  if (typeof window !== "undefined") window.addEventListener("popstate", onPop);
+  return { enregistrer };
+})();
+
+// ============ BioDex v1.40 (PWA) ============
+
+const VERSION = "v1.40";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1119,6 +1159,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.40", date: "2026-07", items: ["🏅 Badges par catégorie : dans l'onglet Stats, gagne un badge par grand groupe d'arthropodes (🕷️ araignées, 🪲 coléoptères, 🦋 papillons...) qui monte en niveau selon le nombre d'espèces différentes que tu observes. 5 niveaux à débloquer, de 3 à 50 espèces. Ta collection existante compte déjà !"] },
   { v: "1.24", date: "2026-07", items: ["🐛 CORRECTIF IMPORTANT : l'appli pouvait redémarrer toute seule après une prise de photo (saturation de mémoire liée aux vues complémentaires). C'est corrigé : les photos d'appoint sont bien plus légères, limitées à 2, et le bloc est revenu à sa place — sous la photo, avant l'identification."] },
   { v: "1.23", date: "2026-07", items: ["🔐 Espace d'administration (réservé au créateur) : modération du mur et des idées, statistiques globales, liste des membres et outils de maintenance. L'accès est vérifié par le serveur — pas juste masqué dans l'appli."] },
   { v: "1.22", date: "2026-07", items: ["🔍 Filtres dans le suivi des espèces : filtre par ordre d'insecte (papillons, coléoptères…), n'affiche que les espèces rares 🌟, et trie la liste (les plus observées, les plus récentes, ou par ordre alphabétique). Pratique quand la liste s'allonge !"] },
@@ -1564,6 +1605,21 @@ async function supprimerPost(post) {
   return true;
 }
 
+// Modifie les détails d'une publication (nom, nom scientifique, biotope, note) — jamais la photo.
+async function modifierPost(id, champs) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Mur non configuré");
+  const maj = {
+    espece: (champs.espece || "").slice(0, 120),
+    espece_sci: (champs.espece_sci || "").slice(0, 120),
+    lieu: (champs.lieu || "").slice(0, 60),
+    note: (champs.note || "").slice(0, 500),
+  };
+  const { error } = await sb.from("posts").update(maj).eq("id", id);
+  if (error) throw new Error("Modification impossible");
+  return true;
+}
+
 // ---------- Sélecteur de zone (cadre tactile sur la photo) ----------
 // Visionneuse plein écran avec zoom (boutons +/− et déplacement au doigt).
 function VisionneuseZoom({ url, onFermer }) {
@@ -1924,6 +1980,28 @@ function Stats({ observations, raretes, onFermer }) {
   const ordresTri = Object.entries(parOrdre).sort((a, b) => b[1] - a[1]);
   const maxOrdre = ordresTri.length ? ordresTri[0][1] : 0;
   const nbOrdres = Object.keys(parOrdre).filter((id) => id !== "autres").length;
+
+  // Espèces UNIQUES par ordre (badges de catégorie : "N espèces d'araignées différentes")
+  const especesParOrdre = {};
+  observations.forEach((o) => {
+    const cle = cleEspece(o);
+    if (!cle) return;
+    const id = deduireOrdre(o);
+    if (id === "autres") return;
+    if (!especesParOrdre[id]) especesParOrdre[id] = new Set();
+    especesParOrdre[id].add(cle);
+  });
+  const PALIERS_CAT = [3, 8, 15, 30, 50];
+  function niveauPour(n) { let niv = 0; for (const s of PALIERS_CAT) { if (n >= s) niv++; else break; } return niv; }
+  const badgesCategorie = ORDRES
+    .map((ord) => {
+      const n = especesParOrdre[ord.id] ? especesParOrdre[ord.id].size : 0;
+      const niveau = niveauPour(n);
+      const prochainSeuil = niveau < PALIERS_CAT.length ? PALIERS_CAT[niveau] : null;
+      return { id: ord.id, label: ord.court, emoji: ord.emoji, n, niveau, prochainSeuil };
+    })
+    .filter((b) => b.n > 0)
+    .sort((a, b) => (b.niveau - a.niveau) || (b.n - a.n));
 
   // Confiance moyenne d'identification (sur les observations qui ont un pourcentage)
   const confiances = observations.map((o) => pourcentConfiance(o.confiance)).filter((v) => v !== null && v !== undefined);
@@ -2294,6 +2372,43 @@ function Stats({ observations, raretes, onFermer }) {
           ))}
         </div>
       </div>
+
+      {/* Badges par catégorie (ordres d'arthropodes) */}
+      {badgesCategorie.length > 0 && (
+        <div style={{ ...carte, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+            <span style={titre}>Badges par catégorie</span>
+            <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{badgesCategorie.filter((b) => b.niveau > 0).length}/{badgesCategorie.length}</span>
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginBottom: 12, lineHeight: 1.4 }}>
+            Un badge par groupe d'arthropodes, qui monte en niveau selon le nombre d'espèces différentes observées.
+          </div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {badgesCategorie.map((b) => (
+              <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 11px", borderRadius: 10, background: b.niveau > 0 ? "linear-gradient(#212A1B, #1A2015)" : C.panneau, border: `1px solid ${b.niveau > 0 ? "#6F8A4A" : C.bordure}`, opacity: b.niveau > 0 ? 1 : 0.7 }}>
+                <div style={{ fontSize: 26, lineHeight: 1, filter: b.niveau > 0 ? "none" : "grayscale(0.6)" }}>{b.emoji}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <span style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: C.papier }}>{b.label}</span>
+                    {b.niveau > 0 && (
+                      <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, color: C.encre, background: C.ambreClair, padding: "2px 7px", borderRadius: 10 }}>NIV. {b.niveau}</span>
+                    )}
+                  </div>
+                  {/* Barre de progression vers le prochain palier */}
+                  <div style={{ marginTop: 5 }}>
+                    <div style={{ height: 5, borderRadius: 3, background: C.fond, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${b.prochainSeuil ? Math.min(100, Math.round(b.n / b.prochainSeuil * 100)) : 100}%`, background: b.niveau >= PALIERS_CAT.length ? "#C9A24B" : "#7FA658", borderRadius: 3 }} />
+                    </div>
+                    <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, marginTop: 3 }}>
+                      {b.n} espèce{b.n > 1 ? "s" : ""}{b.prochainSeuil ? ` · ${b.prochainSeuil - b.n} avant niv. ${b.niveau + 1}` : " · niveau max 🏆"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Répartition par biotope */}
       {biotopesTri.length > 0 && (
@@ -4637,9 +4752,10 @@ async function meteoHistorique(gps, quand) {
   } catch { return null; }
 }
 
-function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
+function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir, onSupprimer }) {
   const [flash, setFlash] = useState("");
   const [enCours, setEnCours] = useState(null); // { fait, total }
+  const [confirmSuppr, setConfirmSuppr] = useState(null); // id de la photo en attente de confirmation
 
   // Position actuelle (repli si la photo n'a pas de GPS dans ses métadonnées)
   function positionActuelle() {
@@ -4754,14 +4870,33 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir }) {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 14 }}>
           {aTrier.map((o) => (
-            <div key={o.id} className="bd-card" onClick={() => onOuvrir(o.id)}
-              style={{ background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid ${C.bordure}`, borderRadius: 11, overflow: "hidden", cursor: "pointer", position: "relative" }}>
-              <PhotoBlob blob={o.photo} alt="à trier" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }} />
-              <div style={{ padding: "8px 10px", fontFamily: sans, fontSize: 11, color: C.papierSombre, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>{new Date(o.date).toLocaleDateString("fr-FR")}</span>
-                <span>{o.gps ? "📍" : "—"}</span>
+            <div key={o.id} className="bd-card"
+              style={{ background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid ${C.bordure}`, borderRadius: 11, overflow: "hidden", position: "relative" }}>
+              <div onClick={() => confirmSuppr === o.id ? null : onOuvrir(o.id)} style={{ cursor: "pointer" }}>
+                <PhotoBlob blob={o.photo} alt="à trier" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }} />
+                <div style={{ padding: "8px 10px", fontFamily: sans, fontSize: 11, color: C.papierSombre, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>{new Date(o.date).toLocaleDateString("fr-FR")}</span>
+                  <span>{o.gps ? "📍" : "—"}</span>
+                </div>
               </div>
-              <div style={{ position: "absolute", top: 8, right: 8, background: "rgba(201,162,75,.92)", color: C.encre, fontFamily: sans, fontSize: 10, fontWeight: 700, padding: "3px 7px", borderRadius: 12 }}>À trier</div>
+              <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(201,162,75,.92)", color: C.encre, fontFamily: sans, fontSize: 10, fontWeight: 700, padding: "3px 7px", borderRadius: 12 }}>À trier</div>
+              {/* Bouton supprimer */}
+              {onSupprimer && confirmSuppr !== o.id && (
+                <button onClick={(e) => { e.stopPropagation(); setConfirmSuppr(o.id); }} aria-label="Supprimer cette photo" title="Supprimer"
+                  style={{ position: "absolute", top: 6, right: 6, width: 26, height: 26, borderRadius: 13, border: "none", background: "rgba(20,24,16,.78)", color: "#E8A88F", fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 1 }}>🗑️</button>
+              )}
+              {/* Confirmation de suppression, en surimpression */}
+              {confirmSuppr === o.id && (
+                <div style={{ position: "absolute", inset: 0, background: "rgba(12,15,9,.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 12, textAlign: "center" }}>
+                  <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.4 }}>Supprimer cette photo ?</span>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={(e) => { e.stopPropagation(); setConfirmSuppr(null); }}
+                      style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>Non</button>
+                    <button onClick={(e) => { e.stopPropagation(); onSupprimer(o.id); setConfirmSuppr(null); }}
+                      style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, cursor: "pointer" }}>Supprimer</button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -4793,6 +4928,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
   const [confiance, setConfiance] = useState(base ? (base.confiance !== undefined ? base.confiance : null) : null);
   const [notable, setNotable] = useState(base ? base.notable || "" : "");
   const [role, setRole] = useState(base ? base.role || "" : "");
+  const [ordreIA, setOrdreIA] = useState(base ? base.ordre || "" : "");
   const [biotope, setBiotope] = useState(base ? base.biotope || "" : "");
   const [moment, setMoment] = useState(base ? (base.moment || momentDepuisDate(base.date || Date.now())) : momentDepuisDate(new Date()));
   const [taille, setTaille] = useState(base ? base.taille || "" : "");
@@ -5029,6 +5165,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
     if (res.confiance !== undefined) setConfiance(res.confiance);
     if (res.inhabituel && String(res.inhabituel).trim().length > 3) setNotable(String(res.inhabituel).trim());
     if (res.role && String(res.role).trim().length > 3) setRole(String(res.role).trim());
+    if (res.ordre && String(res.ordre).trim()) setOrdreIA(String(res.ordre).trim().toLowerCase());
   }
 
   function contexteTerrain() {
@@ -5121,6 +5258,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           notes: notes.trim(),
           notable: notable || "",
           role: role || "",
+          ordre: ordreIA || "",
           gps: gpsEtat === "ok" ? gps : null,
           photo: photoBlob,
           photosSupp: photosSupp,
@@ -5143,6 +5281,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           notes: notes.trim(),
           notable: notable || "",
           role: role || "",
+          ordre: ordreIA || "",
           photo: photoBlob,
           photosSupp: photosSupp,
           // id, date, gps d'origine conservés via ...base
@@ -5162,6 +5301,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           notes: notes.trim(),
           notable: notable || "",
           role: role || "",
+          ordre: ordreIA || "",
           gps: gpsEtat === "ok" ? gps : null,
           date: new Date().toISOString(),
           photo: photoBlob,
@@ -7384,7 +7524,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🌐 Mur commun</div>
         <p style={p}>
-          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Tu peux aussi partager une observation <b>pas encore identifiée</b> : elle apparaît alors avec un badge « ❓ À identifier », une façon de demander un coup de main à la bande (l'entraide fait partie du jeu !). Sous chaque publication, un bouton « 🤔 Je doute de l'ID » permet d'exprimer poliment un doute sur l'identification proposée : le compteur est visible par tous et ouvre la discussion, sans rien supprimer — l'idée est d'affiner ensemble, comme entre naturalistes. Tu peux aussi commenter une publication directement depuis le mur grâce au bouton « 💬 Commenter » (sous chaque trouvaille) : un conseil pour la prochaine photo, une autre hypothèse d'identification… Reste bienveillant : un filtre masque automatiquement les insultes, mais l'esprit du mur, c'est l'entraide. L'auteur reçoit une notification quand on commente sa trouvaille. Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection. Indique ton prénom une fois, il est mémorisé. Tu peux aussi personnaliser ton profil (menu ☰ → 🎨 Mon profil) : choisis ton emblème, écris ta devise, indique ton secteur de chasse et ton insecte fétiche — toute la bande le verra sur le mur, dans le classement et sur ton profil. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
+          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Tu peux aussi partager une observation <b>pas encore identifiée</b> : elle apparaît alors avec un badge « ❓ À identifier », une façon de demander un coup de main à la bande (l'entraide fait partie du jeu !). Sous chaque publication, un bouton « 🤔 Je doute de l'ID » permet d'exprimer poliment un doute sur l'identification proposée : le compteur est visible par tous et ouvre la discussion, sans rien supprimer — l'idée est d'affiner ensemble, comme entre naturalistes. Tu peux aussi commenter une publication directement depuis le mur grâce au bouton « 💬 Commenter » (sous chaque trouvaille) : un conseil pour la prochaine photo, une autre hypothèse d'identification… Reste bienveillant : un filtre masque automatiquement les insultes, mais l'esprit du mur, c'est l'entraide. L'auteur reçoit une notification quand on commente sa trouvaille. L'auteur d'une publication peut aussi la modifier (bouton ✏️ Modifier sous sa trouvaille) pour corriger le nom, le nom scientifique, le biotope ou la note — pratique quand la discussion précise l'identification. La photo, elle, ne se change pas : pour ça, mieux vaut republier. Chacun ne peut modifier ou supprimer que ses propres publications. Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection. Indique ton prénom une fois, il est mémorisé. Tu peux aussi personnaliser ton profil (menu ☰ → 🎨 Mon profil) : choisis ton emblème, écris ta devise, indique ton secteur de chasse et ton insecte fétiche — toute la bande le verra sur le mur, dans le classement et sur ton profil. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
         </p>
         <div style={t}>📖 Posts détaillés</div>
         <p style={p}>
@@ -7994,10 +8134,27 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
   const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
   const [confirmSuppr, setConfirmSuppr] = useState(null); // id du post en attente de confirmation
   const [supprEnCours, setSupprEnCours] = useState(null); // id du post en cours de suppression
+  const [editionId, setEditionId] = useState(null); // id du post en cours d'édition
+  const [editChamps, setEditChamps] = useState({ espece: "", espece_sci: "", lieu: "", note: "" });
+  const [editEnCours, setEditEnCours] = useState(false);
   const [postDetail, setPostDetail] = useState(null); // post ouvert en détail
   const [detailFocusCom, setDetailFocusCom] = useState(false); // ouvrir directement sur la zone commentaire
   const [reactions, setReactions] = useState({}); // { post_id: { type: compteur } }
   const [comptesCom, setComptesCom] = useState({}); // { post_id: nb commentaires }
+
+  // Retour système : le détail post s'inscrit dans le registre central de fermeture
+  // (voir bdRetour plus bas). Priorité haute : il se ferme avant la sous-vue "mur".
+  useEffect(() => {
+    if (!postDetail) return;
+    const fermer = () => { setPostDetail(null); setDetailFocusCom(false); };
+    return bdRetour.enregistrer(100, fermer); // priorité 100 = très haut
+  }, [postDetail]);
+
+  // Retour système ferme aussi le formulaire d'édition inline s'il est ouvert.
+  useEffect(() => {
+    if (editionId === null) return;
+    return bdRetour.enregistrer(105, () => setEditionId(null));
+  }, [editionId]);
   const [raretes, setRaretes] = useState({}); // { cleEspece: count|null }
   const [besoinPrenom, setBesoinPrenom] = useState(false); // true si on tente de réagir sans prénom
 
@@ -8027,6 +8184,29 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
     }
     setSupprEnCours(null);
     setConfirmSuppr(null);
+  }
+
+  // Ma publication ? Basé sur le prénom (garde-fou d'interface : pas d'auth réelle derrière).
+  function estMaPubli(p) {
+    return prenom && (p.auteur || "").trim().toLowerCase() === prenom.trim().toLowerCase();
+  }
+
+  function ouvrirEdition(p) {
+    setEditChamps({ espece: p.espece || "", espece_sci: p.espece_sci || "", lieu: p.lieu || "", note: p.note || "" });
+    setEditionId(p.id);
+    setConfirmSuppr(null);
+  }
+
+  async function enregistrerEdition(post) {
+    setEditEnCours(true);
+    try {
+      await modifierPost(post.id, editChamps);
+      setPosts((prev) => prev.map((x) => x.id === post.id ? { ...x, ...editChamps } : x));
+      setEditionId(null);
+    } catch (e) {
+      rafraichir(true);
+    }
+    setEditEnCours(false);
   }
 
   async function rafraichir(silencieux = false) {
@@ -8221,7 +8401,29 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
             );
           })()}
           <div style={{ padding: "0 14px 10px" }}>
-            {confirmSuppr === p.id ? (
+            {editionId === p.id ? (
+              <div style={{ marginTop: 6, paddingTop: 10, borderTop: `1px solid ${C.bordure}` }}>
+                <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.lichen, marginBottom: 8 }}>✏️ Modifier ma publication</div>
+                <input value={editChamps.espece} onChange={(e) => setEditChamps((c) => ({ ...c, espece: e.target.value }))} placeholder="Nom (ex : Lucane cerf-volant)" maxLength={120}
+                  style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 13.5, outline: "none", marginBottom: 7 }} />
+                <input value={editChamps.espece_sci} onChange={(e) => setEditChamps((c) => ({ ...c, espece_sci: e.target.value }))} placeholder="Nom scientifique (ex : Lucanus cervus)" maxLength={120}
+                  style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.ambre, fontStyle: "italic", border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: serif, fontSize: 13.5, outline: "none", marginBottom: 7 }} />
+                <select value={editChamps.lieu} onChange={(e) => setEditChamps((c) => ({ ...c, lieu: e.target.value }))}
+                  style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 13.5, outline: "none", marginBottom: 7 }}>
+                  <option value="">— Biotope —</option>
+                  {BIOTOPES.map((b) => <option key={b.id} value={b.label}>{b.emoji} {b.label}</option>)}
+                </select>
+                <textarea value={editChamps.note} onChange={(e) => setEditChamps((c) => ({ ...c, note: e.target.value }))} placeholder="Note (optionnel)" maxLength={500} rows={2}
+                  style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 13.5, outline: "none", resize: "vertical", marginBottom: 8 }} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setEditionId(null)} disabled={editEnCours}
+                    style={{ flex: 1, fontFamily: sans, fontSize: 13, fontWeight: 600, padding: "8px 10px", borderRadius: 8, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>Annuler</button>
+                  <button onClick={() => enregistrerEdition(p)} disabled={editEnCours}
+                    style={{ flex: 1, fontFamily: sans, fontSize: 13, fontWeight: 700, padding: "8px 10px", borderRadius: 8, border: `1px solid ${C.ambre}`, background: C.ambre, color: C.encre, cursor: "pointer" }}>
+                    {editEnCours ? "Enregistrement…" : "✓ Enregistrer"}</button>
+                </div>
+              </div>
+            ) : confirmSuppr === p.id ? (
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6, paddingTop: 10, borderTop: `1px solid ${C.bordure}` }}>
                 <span style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, flex: 1 }}>Supprimer cette publication ?</span>
                 <button onClick={() => setConfirmSuppr(null)} disabled={supprEnCours === p.id}
@@ -8231,11 +8433,16 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
                   {supprEnCours === p.id ? "Suppression…" : "Oui, supprimer"}</button>
               </div>
             ) : (
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button onClick={() => setConfirmSuppr(p.id)}
-                  style={{ fontFamily: sans, fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "none", background: "transparent", color: C.papierSombre, cursor: "pointer" }}
-                  title="Supprimer cette publication" aria-label="Supprimer">🗑️</button>
-              </div>
+              estMaPubli(p) && (
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                  <button onClick={() => ouvrirEdition(p)}
+                    style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: "transparent", color: C.papierSombre, cursor: "pointer" }}
+                    title="Modifier ma publication">✏️ Modifier</button>
+                  <button onClick={() => setConfirmSuppr(p.id)}
+                    style={{ fontFamily: sans, fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "none", background: "transparent", color: C.papierSombre, cursor: "pointer" }}
+                    title="Supprimer cette publication" aria-label="Supprimer">🗑️</button>
+                </div>
+              )
             )}
           </div>
         </div>
@@ -9525,6 +9732,20 @@ function BioDex() {
   const [montrerFiltres, setMontrerFiltres] = useState(false);
   const raretesGlobal = useRaretes(observations); // rareté iNaturalist globale (cache + arrière-plan)
 
+  // ── Bouton/geste retour du système : inscriptions au registre central bdRetour ──
+  // Chaque couche ouverte s'enregistre avec une priorité (plus haut = fermé en premier).
+  // Le bouton retour de l'appli reste en place en parallèle (rien n'est retiré).
+  useEffect(() => { if (menuOuvert) return bdRetour.enregistrer(90, () => setMenuOuvert(false)); }, [menuOuvert]);
+  useEffect(() => { if (centreOuvert) return bdRetour.enregistrer(90, () => setCentreOuvert(false)); }, [centreOuvert]);
+  useEffect(() => { if (profilVu) return bdRetour.enregistrer(80, () => setProfilVu(null)); }, [profilVu]);
+  useEffect(() => { if (popupAvis) return bdRetour.enregistrer(95, () => setPopupAvis(false)); }, [popupAvis]);
+  useEffect(() => { if (inviteProfil) return bdRetour.enregistrer(85, () => setInviteProfil(false)); }, [inviteProfil]);
+  // Sous-vues profondes (mur, admin, idées, fiche détail…) → retour à la collection. Priorité basse.
+  useEffect(() => {
+    if (vue !== "collection") return bdRetour.enregistrer(10, () => { setVue("collection"); setSelectionId(null); });
+  }, [vue]);
+
+
   function changerTri(t) {
     setTri(t);
     try { localStorage.setItem("biodex:tri", t); } catch {}
@@ -9896,6 +10117,7 @@ function BioDex() {
       {vue === "atrier" && (
         <CaptureRapide aTrier={aTrier} onAjout={ajouterATrier}
           onOuvrir={(id) => { setSelectionId(id); setVue("completer"); }}
+          onSupprimer={async (id) => { try { await dbSupprimer(id); } catch {} setObservations((prev) => prev.filter((o) => o.id !== id)); }}
           onFermer={() => setVue("collection")} />
       )}
       {vue === "completer" && selection && (
