@@ -30,6 +30,9 @@
   * { -webkit-tap-highlight-color: transparent; }
   input, textarea, button { font-size: 16px; } /* évite le zoom auto iOS */
   .leaflet-popup-content { margin: 10px 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  /* Bulles de regroupement (clustering) aux couleurs BioDex */
+  .marker-cluster { background: rgba(201,162,75,0.25); }
+  .marker-cluster div { background: rgba(201,162,75,0.92); color: #2A2416; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   .bd-card { transition: transform .16s ease, box-shadow .16s ease; }
   .bd-card:active { transform: scale(.975); }
   .bd-press { transition: transform .12s ease, box-shadow .12s ease, filter .12s ease; }
@@ -130,6 +133,9 @@
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
@@ -212,9 +218,9 @@ const bdRetour = (() => {
   return { enregistrer, definirGardeSortie, quitterVraiment };
 })();
 
-// ============ BioDex v1.42 (PWA) ============
+// ============ BioDex v1.43 (PWA) ============
 
-const VERSION = "v1.42";
+const VERSION = "v1.43";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1190,6 +1196,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.43", date: "2026-07", items: ["🗺️ Cartes plus lisibles : quand plusieurs trouvailles sont au même endroit, elles se regroupent maintenant en une bulle avec un compteur (le nombre de points). Zoome pour les séparer. Fini les points qui se cachent les uns sous les autres, sur ta carte comme sur celle de la bande !"] },
   { v: "1.42", date: "2026-07", items: ["📋 Historique complété : cette rubrique « Quoi de neuf » avait oublié plusieurs mises à jour en route — les voici toutes rassemblées ci-dessous. Bonne lecture, et merci pour vos idées qui font grandir BioDex ! 🐞"] },
   { v: "1.41", date: "2026-07", items: ["🚪 Confirmation avant de quitter : un appui de trop sur le bouton retour ne ferme plus l'appli par surprise. Une petite fenêtre « Quitter BioDex ? » te demande confirmation."] },
   { v: "1.40", date: "2026-07", items: ["🏅 Badges par catégorie : dans l'onglet Stats, gagne un badge par grand groupe d'arthropodes (🕷️ araignées, 🪲 coléoptères, 🦋 papillons...) qui monte en niveau selon le nombre d'espèces différentes que tu observes. 5 niveaux à débloquer, de 3 à 50 espèces. Ta collection existante compte déjà !"] },
@@ -7207,13 +7214,24 @@ function Carte({ observations, onOuvrirFiche }) {
 
     const urls = [];
     const points = [];
+    // Groupe de clustering : regroupe les points proches en bulles avec compteur,
+    // et se dégroupe automatiquement au zoom. S'applique aux deux cartes.
+    const clusterDispo = typeof L.markerClusterGroup === "function";
+    const cluster = clusterDispo
+      ? L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false, spiderfyOnMaxZoom: true, chunkedLoading: true })
+      : null;
+    // Cercles de zone (approximatifs) : dans un layer à part, affiché seulement quand
+    // on est assez zoomé (sinon ils s'empilent sous les bulles et brouillent la carte).
+    const cerclesZone = L.layerGroup();
+    const infosCercles = []; // { lat, lon }
+    function ajouterMarqueur(m) { if (cluster) cluster.addLayer(m); else m.addTo(carte); }
 
     if (mode === "moi") {
       // Mes observations (position précise, photo locale)
       avecGps.forEach((o) => {
         const pt = [o.gps.lat, o.gps.lon];
         points.push(pt);
-        const m = L.circleMarker(pt, { radius: 9, color: "#2A2519", weight: 2, fillColor: "#C9A24B", fillOpacity: 0.95 }).addTo(carte);
+        const m = L.circleMarker(pt, { radius: 9, color: "#2A2519", weight: 2, fillColor: "#C9A24B", fillOpacity: 0.95 });
         const conteneur = document.createElement("div");
         conteneur.style.width = "150px";
         let urlPhoto = null;
@@ -7229,6 +7247,7 @@ function Carte({ observations, onOuvrirFiche }) {
         btn.addEventListener("click", () => onOuvrirFiche(o.id));
         conteneur.appendChild(btn);
         m.bindPopup(conteneur);
+        ajouterMarqueur(m);
       });
     } else {
       // Carte de la bande (photo distante). Chaque point respecte le niveau de précision choisi par son auteur.
@@ -7236,11 +7255,9 @@ function Carte({ observations, onOuvrirFiche }) {
         const pt = [p.lat, p.lon];
         points.push(pt);
         const exacte = p.precision === "exacte";
-        // Cercle de zone seulement si la position est approximative
-        if (!exacte) {
-          L.circle(pt, { radius: 900, color: "#8AAE6B", weight: 1, fillColor: "#8AAE6B", fillOpacity: 0.08 }).addTo(carte);
-        }
-        const m = L.circleMarker(pt, { radius: 8, color: "#2A2519", weight: 2, fillColor: exacte ? "#C9A24B" : "#8AAE6B", fillOpacity: 0.95 }).addTo(carte);
+        // Cercle de zone (approximatif) : géré à part, affiché selon le zoom.
+        if (!exacte) infosCercles.push({ lat: p.lat, lon: p.lon });
+        const m = L.circleMarker(pt, { radius: 8, color: "#2A2519", weight: 2, fillColor: exacte ? "#C9A24B" : "#8AAE6B", fillOpacity: 0.95 });
         const conteneur = document.createElement("div");
         conteneur.style.width = "150px";
         conteneur.innerHTML =
@@ -7250,8 +7267,23 @@ function Carte({ observations, onOuvrirFiche }) {
           "🐛 " + (p.auteur ? String(p.auteur).replace(/</g, "&lt;") : "Anonyme") + (p.lieu ? " · " + String(p.lieu).replace(/</g, "&lt;") : "") + "</div>" +
           '<div style="font-size:10px;color:#A89A78;margin-top:4px;">' + (exacte ? "📍 Position exacte" : "🌫️ Zone approximative") + "</div>";
         m.bindPopup(conteneur);
+        ajouterMarqueur(m);
       });
     }
+
+    if (cluster) carte.addLayer(cluster);
+    cerclesZone.addTo(carte);
+    // Affiche les cercles de zone seulement quand on est assez zoomé (points dégroupés).
+    function majCercles() {
+      cerclesZone.clearLayers();
+      if (carte.getZoom() >= 12 && infosCercles.length) {
+        infosCercles.forEach((c) => {
+          L.circle([c.lat, c.lon], { radius: 900, color: "#8AAE6B", weight: 1, fillColor: "#8AAE6B", fillOpacity: 0.08 }).addTo(cerclesZone);
+        });
+      }
+    }
+    carte.on("zoomend", majCercles);
+    majCercles();
 
     if (points.length > 0) {
       carte.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: mode === "bande" ? 12 : 15 });
@@ -7553,7 +7585,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🗺️ La carte</div>
         <p style={p}>
-          L'onglet Carte affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, chaque personne choisit au moment de partager le niveau de précision de sa position : exacte (point ambré), approximative (~1 km, zone verte) ou masquée (pas de point). Chacun est ainsi libre de montrer ou non l'endroit exact de sa trouvaille. La carte nécessite du réseau.
+          L'onglet Carte affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. Quand plusieurs trouvailles sont proches, elles se regroupent en une bulle avec un compteur — touche-la ou zoome pour les séparer. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, chaque personne choisit au moment de partager le niveau de précision de sa position : exacte (point ambré), approximative (~1 km, zone verte visible en zoomant) ou masquée (pas de point). Chacun est ainsi libre de montrer ou non l'endroit exact de sa trouvaille. La carte nécessite du réseau.
         </p>
         <div style={t}>📝 Brouillon automatique</div>
         <p style={p}>
