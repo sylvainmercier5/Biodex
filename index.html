@@ -151,6 +151,8 @@ const bdRetour = (() => {
   let seq = 0;
   const couches = new Map(); // id -> { priorite, fermer }
   let tampon = false; // a-t-on une entrée d'historique tampon en place ?
+  let gardeSortie = null; // callback appelé quand un retour "à vide" surviendrait (pour confirmer avant de quitter)
+  let sortieAutorisee = false; // quand true, le prochain retour à vide quitte réellement
 
   function assurerTampon() {
     if (!tampon && couches.size > 0) {
@@ -161,12 +163,36 @@ const bdRetour = (() => {
     const id = ++seq;
     couches.set(id, { priorite, fermer });
     assurerTampon();
-    // Fonction de désinscription (à retourner dans un useEffect cleanup)
     return () => { couches.delete(id); };
   }
+  // L'app fournit une fonction qui affiche la confirmation "quitter ?".
+  function definirGardeSortie(fn) {
+    gardeSortie = fn;
+    // On pose une entrée tampon dès maintenant : sans ça, le tout premier retour
+    // (aucune couche ouverte) quitterait l'appli sans passer par notre confirmation.
+    if (fn && !tampon) {
+      try { window.history.pushState({ bd: true }, ""); tampon = true; } catch {}
+    }
+  }
+  // Appelé par l'app quand l'utilisateur confirme "Quitter" : on laisse vraiment partir.
+  function quitterVraiment() {
+    sortieAutorisee = true;
+    try { window.history.back(); } catch {}
+  }
   function onPop() {
-    if (couches.size === 0) { tampon = false; return; } // rien à fermer → quitte normalement
-    // Trouver la couche de plus haute priorité
+    if (couches.size === 0) {
+      // Plus aucune couche : ce retour quitterait l'appli.
+      if (sortieAutorisee) { sortieAutorisee = false; tampon = false; return; } // on laisse partir
+      if (gardeSortie) {
+        // On ré-empile une entrée pour NE PAS quitter, puis on demande confirmation.
+        try { window.history.pushState({ bd: true }, ""); tampon = true; } catch {}
+        try { gardeSortie(); } catch {}
+        return;
+      }
+      tampon = false;
+      return; // pas de garde définie → quitte normalement
+    }
+    // Sinon : fermer la couche de plus haute priorité
     let cible = null;
     couches.forEach((c, id) => { if (!cible || c.priorite > cible.c.priorite) cible = { id, c }; });
     if (cible) {
@@ -174,16 +200,21 @@ const bdRetour = (() => {
       try { cible.c.fermer(); } catch {}
     }
     tampon = false;
-    // S'il reste des couches, on remet un tampon pour rester capturé.
-    if (couches.size > 0) assurerTampon();
+    if (couches.size > 0) {
+      assurerTampon();
+    } else if (gardeSortie) {
+      // Plus de couches mais garde active : on garde un tampon pour intercepter
+      // le prochain retour (celui qui voudrait quitter) et montrer la confirmation.
+      try { window.history.pushState({ bd: true }, ""); tampon = true; } catch {}
+    }
   }
   if (typeof window !== "undefined") window.addEventListener("popstate", onPop);
-  return { enregistrer };
+  return { enregistrer, definirGardeSortie, quitterVraiment };
 })();
 
-// ============ BioDex v1.40 (PWA) ============
+// ============ BioDex v1.41 (PWA) ============
 
-const VERSION = "v1.40";
+const VERSION = "v1.41";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -9745,6 +9776,12 @@ function BioDex() {
     if (vue !== "collection") return bdRetour.enregistrer(10, () => { setVue("collection"); setSelectionId(null); });
   }, [vue]);
 
+  // Confirmation avant de quitter l'appli (quand un retour surviendrait alors que tout est fermé).
+  const [confirmQuitter, setConfirmQuitter] = useState(false);
+  useEffect(() => {
+    bdRetour.definirGardeSortie(() => setConfirmQuitter(true));
+  }, []);
+
 
   function changerTri(t) {
     setTri(t);
@@ -9994,6 +10031,21 @@ function BioDex() {
 
       {popupAvis && MUR_ACTIF && (vue === "collection" || vue === "carte" || vue === "stats" || vue === "mur" || vue === "cartes") && (
         <PopupAvis prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setPopupAvis(false)} />
+      )}
+
+      {confirmQuitter && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 5000, background: "rgba(10,13,8,0.8)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setConfirmQuitter(false); }}>
+          <div style={{ width: "100%", maxWidth: 340, background: "linear-gradient(#20281A, #171D11)", border: `1px solid ${C.ambre}`, borderRadius: 16, padding: 22, textAlign: "center" }}>
+            <div style={{ fontSize: 34, marginBottom: 8 }}>🐞</div>
+            <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 700, color: C.papier, marginBottom: 5 }}>Quitter BioDex ?</div>
+            <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 18, lineHeight: 1.5 }}>Tu es sur le point de fermer l'appli.</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Bouton onClick={() => setConfirmQuitter(false)} style={{ flex: 1 }}>Rester</Bouton>
+              <Bouton variante="primaire" onClick={() => { setConfirmQuitter(false); bdRetour.quitterVraiment(); }} style={{ flex: 1 }}>Quitter</Bouton>
+            </div>
+          </div>
+        </div>
       )}
 
       {(() => {
