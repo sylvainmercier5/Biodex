@@ -186,6 +186,7 @@ exports.handler = async (event) => {
       '"niveau":"espèce|genre|famille|ordre",' +
       '"note":"justification courte : critères visuels décisifs, ou pourquoi l\'ID reste incertaine",' +
       '"role":"UNE phrase courte et concrète (max ~15 mots) sur le rôle écologique / l\'utilité de cet arthropode : pollinisation, recyclage de matière, régulation d\'autres espèces, maillon alimentaire, aération du sol, etc. Formulation grand public, sans jargon. Vide si vraiment inconnu.",' +
+      '"ordre":"le grand groupe d\'arthropodes, en UN seul mot parmi exactement : lepidopteres, coleopteres, hymenopteres, dipteres, hemipteres, orthopteres, odonates, arachnides, myriapodes. Si aucun ne convient ou incertain : autres.",' +
       '"inhabituel":"vide si de présence normale pour la zone ; SINON une phrase expliquant pourquoi cette observation est notable (ex : espèce invasive en expansion, hors de son aire habituelle, échappée...)",' +
       '"alternatives":[{"nom":"","nomSci":"","pourquoi":"ce qui distinguerait cette hypothèse"}]}. ' +
       "Le tableau alternatives contient 0 à 2 hypothèses secondaires (vide si tu es très sûr).";
