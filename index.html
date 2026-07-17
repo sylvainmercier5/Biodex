@@ -212,9 +212,9 @@ const bdRetour = (() => {
   return { enregistrer, definirGardeSortie, quitterVraiment };
 })();
 
-// ============ BioDex v1.41 (PWA) ============
+// ============ BioDex v1.42 (PWA) ============
 
-const VERSION = "v1.41";
+const VERSION = "v1.42";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1190,7 +1190,24 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.42", date: "2026-07", items: ["📋 Historique complété : cette rubrique « Quoi de neuf » avait oublié plusieurs mises à jour en route — les voici toutes rassemblées ci-dessous. Bonne lecture, et merci pour vos idées qui font grandir BioDex ! 🐞"] },
+  { v: "1.41", date: "2026-07", items: ["🚪 Confirmation avant de quitter : un appui de trop sur le bouton retour ne ferme plus l'appli par surprise. Une petite fenêtre « Quitter BioDex ? » te demande confirmation."] },
   { v: "1.40", date: "2026-07", items: ["🏅 Badges par catégorie : dans l'onglet Stats, gagne un badge par grand groupe d'arthropodes (🕷️ araignées, 🪲 coléoptères, 🦋 papillons...) qui monte en niveau selon le nombre d'espèces différentes que tu observes. 5 niveaux à débloquer, de 3 à 50 espèces. Ta collection existante compte déjà !"] },
+  { v: "1.39", date: "2026-07", items: ["🗑️ Ménage dans « à trier » : tu peux maintenant supprimer directement une photo en attente (bouton 🗑️ sur la vignette), sans avoir à l'ouvrir. Pratique pour faire le tri après une balade."] },
+  { v: "1.38", date: "2026-07", items: ["✏️ Modifier ta publication : corrige le nom, le nom scientifique, le biotope ou la note d'une trouvaille déjà partagée sur le mur (bouton ✏️ Modifier). Pratique quand la discussion précise l'identification. La photo, elle, ne change pas."] },
+  { v: "1.37", date: "2026-07", items: ["↩️ Bouton retour du téléphone : le bouton (ou geste) retour de ton téléphone ferme maintenant les panneaux ouverts au lieu de quitter l'appli — plus naturel, surtout sur Android."] },
+  { v: "1.36", date: "2026-07", items: ["💬 Commenter en un tap : un bouton « 💬 Commenter » est désormais directement sur chaque publication du mur, pour réagir sans avoir à tout ouvrir."] },
+  { v: "1.35", date: "2026-07", items: ["🔔 Notification de commentaire : quand quelqu'un commente ta trouvaille, tu es prévenu dans ta cloche de notifications."] },
+  { v: "1.34", date: "2026-07", items: ["💬 Commentaires sur le mur : laisse un mot sous les publications de la bande — un conseil photo, une autre idée d'identification, un encouragement. Un filtre masque les insultes : ici c'est l'entraide qui compte !"] },
+  { v: "1.33", date: "2026-07", items: ["❓ Trouvailles à identifier : partage une observation même sans savoir ce que c'est (badge « À identifier ») pour demander de l'aide à la bande. Et un bouton « 🤔 Je doute de l'ID » permet d'exprimer poliment un doute pour affiner ensemble."] },
+  { v: "1.32", date: "2026-07", items: ["🌿 « À quoi il sert » : dès qu'une espèce est identifiée, un encart t'explique en une phrase son rôle dans la nature (pollinisation, recyclage…). Et la fiche naturaliste complète est plus facile à trouver."] },
+  { v: "1.31", date: "2026-07", items: ["📏 Taille du spécimen : indique la taille de ta bestiole pour aider l'identification (la photo seule ne donne pas l'échelle). Tu peux même régler l'échelle réelle de ton écran avec une pièce de monnaie pour voir la taille en vrai !"] },
+  { v: "1.30", date: "2026-07", items: ["😊 Ton avis compte : donne une note et un commentaire sur l'appli (dans la boîte à idées), de façon signée ou anonyme. Après plusieurs identifications, un petit encart peut aussi te proposer de donner ton avis."] },
+  { v: "1.29", date: "2026-07", items: ["😊 Enquête de satisfaction : un espace pour noter l'appli et dire ce qui te plaît ou te manque."] },
+  { v: "1.28", date: "2026-07", items: ["🖼️ Sélection multiple depuis la galerie : choisis plusieurs photos d'un coup — la première devient la photo principale, les suivantes des vues complémentaires que l'IA croise pour l'identification."] },
+  { v: "1.27", date: "2026-07", items: ["📷 Prise de photo simplifiée : retour à une prise unique plus stable, et l'ajout de vues complémentaires se fait après l'identification, quand l'IA hésite. Fini les redémarrages à la prise de photo !"] },
+  { v: "1.26", date: "2026-07", items: ["🐛 Correctifs de stabilité autour de la prise de photo et de l'affichage des vues."] },
+  { v: "1.25", date: "2026-07", items: ["📸 Zone photos repensée : un espace plus clair pour gérer ta photo principale et tes vues complémentaires."] },
   { v: "1.24", date: "2026-07", items: ["🐛 CORRECTIF IMPORTANT : l'appli pouvait redémarrer toute seule après une prise de photo (saturation de mémoire liée aux vues complémentaires). C'est corrigé : les photos d'appoint sont bien plus légères, limitées à 2, et le bloc est revenu à sa place — sous la photo, avant l'identification."] },
   { v: "1.23", date: "2026-07", items: ["🔐 Espace d'administration (réservé au créateur) : modération du mur et des idées, statistiques globales, liste des membres et outils de maintenance. L'accès est vérifié par le serveur — pas juste masqué dans l'appli."] },
   { v: "1.22", date: "2026-07", items: ["🔍 Filtres dans le suivi des espèces : filtre par ordre d'insecte (papillons, coléoptères…), n'affiche que les espèces rares 🌟, et trie la liste (les plus observées, les plus récentes, ou par ordre alphabétique). Pratique quand la liste s'allonge !"] },
