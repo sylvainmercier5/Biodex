@@ -218,9 +218,9 @@ const bdRetour = (() => {
   return { enregistrer, definirGardeSortie, quitterVraiment };
 })();
 
-// ============ BioDex v1.43 (PWA) ============
+// ============ BioDex v1.49 (PWA) ============
 
-const VERSION = "v1.43";
+const VERSION = "v1.49";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1127,6 +1127,8 @@ async function engagerCarte(obs, proprietaire) {
     rarete: c.rarete || 30,
     capacite_nom: (c.capacite && c.capacite.nom) || "Coup spécial",
     capacite_effet: (c.capacite && c.capacite.effet) || "",
+    capacite_famille: deduireFamille(c.capacite),
+    xp: Number(c.xp) || 0,
     photo_url: photoUrl,
     authentique: c.authentique === false ? false : true,
   };
@@ -1163,7 +1165,55 @@ async function enregistrerResultatDefi(carteLigue, defieur, defieurGagne) {
     }
     await majScore(defieur, defieurGagne);
     await majScore(carteLigue.proprietaire, !defieurGagne);
+
+    // XP de la carte défendue (elle progresse même en perdant)
+    try {
+      const xpActuel = Number(carteLigue.xp) || 0;
+      const gain = defieurGagne ? XP_DEFAITE : XP_VICTOIRE;
+      await sb.from("cartes_ligue").update({ xp: xpActuel + gain }).eq("id", carteLigue.id);
+    } catch { /* l'XP est un bonus : ne bloque pas le défi */ }
+
+    // 3) Historique du défi (permet les notifications « X a défié ta carte »)
+    try {
+      await sb.from("defis_historique").insert({
+        defieur: String(defieur || "?").slice(0, 40),
+        defendeur: String(carteLigue.proprietaire || "?").slice(0, 40),
+        carte_nom: String(carteLigue.nom || "ta carte").slice(0, 120),
+        defieur_gagne: !!defieurGagne,
+      });
+    } catch { /* l'historique est un bonus : on n'échoue pas le défi si ça rate */ }
   } catch {}
+}
+
+// Tous les défis me concernant (subis ET lancés), pour le journal des combats.
+async function chargerMesDefis(prenom) {
+  const sb = clientSupabase();
+  if (!sb || !prenom) return [];
+  const p = prenom.trim();
+  try {
+    const { data, error } = await sb.from("defis_historique")
+      .select("*")
+      .or(`defieur.eq.${p},defendeur.eq.${p}`)
+      .order("created_at", { ascending: false })
+      .limit(40);
+    if (error || !data) return [];
+    return data;
+  } catch { return []; }
+}
+
+// Historique des défis subis (pour les notifications). Retourne les défis où je défendais.
+async function chargerDefisSubis(prenom) {
+  const sb = clientSupabase();
+  if (!sb || !prenom) return [];
+  try {
+    const { data, error } = await sb.from("defis_historique")
+      .select("*")
+      .eq("defendeur", prenom.trim())
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error || !data) return [];
+    return data;
+  } catch { return []; }
 }
 
 async function chargerValidations(saisonCle) {
@@ -1196,6 +1246,12 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.49", date: "2026-07", items: ["⭐ Tes cartes montent en niveau ! Chaque défi de ligue rapporte de l'XP — même quand tu perds — et tous les 30 points ta carte gagne une étoile (5 max) avec +3 % de stats à chaque palier. Les étoiles s'affichent sur la carte. Le plafond reste bas exprès : ceux qui jouent moins souvent gardent toutes leurs chances."] },
+  { v: "1.48", date: "2026-07", items: ["✨ Les capacités ont enfin des effets variés ! Chaque carte reçoit une famille selon la biologie de son insecte : ⚔️ Frappe (gros dégâts), 💚 Régénération (tu te soignes en frappant), 💫 Coup sonnant (l'adversaire encaisse mal son prochain coup) et 🩸 Drain (tu lui voles son énergie). De vrais choix tactiques en combat — et tes cartes existantes en profitent déjà !"] },
+  { v: "1.47", date: "2026-07", items: ["📜 Journal des combats : un nouvel onglet dans le Combat retrace tous tes défis (lancés comme subis), avec ton bilan victoires/défaites et ton taux de réussite.", "⚡ Combats plus nerveux : les affrontements durent désormais ~15 tours au lieu de ~21, sans rien changer à l'équilibre entre les types (vérifié au simulateur)."] },
+  { v: "1.46", date: "2026-07", items: ["⚖️ Combat rééquilibré (après des milliers de combats simulés !) : les messages « Super efficace ! » et la secousse d'écran s'affichent enfin quand tu exploites l'avantage de type — ils étaient bloqués par un réglage interne. L'IA adverse joue aussi plus finement. Et le type Venimeux, qui gagnait bien trop souvent, a vu son poison ajusté : l'écart entre les 8 types passe de 13 à moins de 6 points."] },
+  { v: "1.45", date: "2026-07", items: ["⚔️ Combat et Ligue fusionnés : un seul écran « Combat » où tu choisis entre « 🏆 Défier la bande » (les cartes de tes potes, résultat au classement) et « 🏟️ Arène » (le solo d'endurance). Fini le combat contre tes propres cartes — maintenant tu affrontes du vrai monde !"] },
+  { v: "1.44", date: "2026-07", items: ["⚔️ Notifications de ligue : quand quelqu'un défie une de tes cartes pendant que tu n'es pas là, tu es maintenant prévenu dans ta cloche 🔔 — avec le nom du défieur, la carte concernée, et si elle a tenu bon ou non !"] },
   { v: "1.43", date: "2026-07", items: ["🗺️ Cartes plus lisibles : quand plusieurs trouvailles sont au même endroit, elles se regroupent maintenant en une bulle avec un compteur (le nombre de points). Zoome pour les séparer. Fini les points qui se cachent les uns sous les autres, sur ta carte comme sur celle de la bande !"] },
   { v: "1.42", date: "2026-07", items: ["📋 Historique complété : cette rubrique « Quoi de neuf » avait oublié plusieurs mises à jour en route — les voici toutes rassemblées ci-dessous. Bonne lecture, et merci pour vos idées qui font grandir BioDex ! 🐞"] },
   { v: "1.41", date: "2026-07", items: ["🚪 Confirmation avant de quitter : un appui de trop sur le bouton retour ne ferme plus l'appli par surprise. Une petite fenêtre « Quitter BioDex ? » te demande confirmation."] },
@@ -1505,13 +1561,13 @@ async function chargerTousCommentaires() {
 
 async function calculerNotifications(prenom) {
   const sb = clientSupabase();
-  const vide = { total: 0, murNouveaux: 0, ideesNouvelles: 0, reactionsRecues: 0, commentairesRecus: 0, murDetail: [], ideesDetail: [], reactionsDetail: [], commentairesDetail: [] };
+  const vide = { total: 0, murNouveaux: 0, ideesNouvelles: 0, reactionsRecues: 0, commentairesRecus: 0, defisSubis: 0, murDetail: [], ideesDetail: [], reactionsDetail: [], commentairesDetail: [], defisDetail: [] };
   if (!sb) return vide;
 
   const lire = (cle) => { try { return localStorage.getItem(cle); } catch { return null; } };
   const ecrire = (cle, v) => { try { localStorage.setItem(cle, v); } catch {} };
-  let murNouveaux = 0, ideesNouvelles = 0, reactionsRecues = 0, commentairesRecus = 0;
-  let murDetail = [], ideesDetail = [], reactionsDetail = [], commentairesDetail = [];
+  let murNouveaux = 0, ideesNouvelles = 0, reactionsRecues = 0, commentairesRecus = 0, defisSubis = 0;
+  let murDetail = [], ideesDetail = [], reactionsDetail = [], commentairesDetail = [], defisDetail = [];
 
   try {
     const posts = await chargerMur(200);
@@ -1545,6 +1601,21 @@ async function calculerNotifications(prenom) {
         commentairesRecus = nouvComs.length;
         commentairesDetail = nouvComs.slice(0, 6).map((c) => ({ qui: c.auteur || "Quelqu'un", espece: mapEspece[c.post_id] || "ta trouvaille", extrait: (c.texte || "").slice(0, 60) }));
       }
+
+      // 2 ter) Défis de ligue subis (quelqu'un a affronté une de mes cartes)
+      {
+        const tousDefis = await chargerDefisSubis(prenom).catch(() => []);
+        let vuDefiDate = lire("biodex_defis_vu_date");
+        if (!vuDefiDate) { vuDefiDate = new Date().toISOString(); ecrire("biodex_defis_vu_date", vuDefiDate); }
+        const nouvDefis = tousDefis.filter((d) => d.created_at && new Date(d.created_at) > new Date(vuDefiDate));
+        defisSubis = nouvDefis.length;
+        defisDetail = nouvDefis.slice(0, 6).map((d) => ({
+          qui: d.defieur || "Quelqu'un",
+          carte: d.carte_nom || "ta carte",
+          // defieur_gagne = true → j'ai perdu la défense ; false → ma carte a tenu
+          gagne: !d.defieur_gagne,
+        }));
+      }
     }
   } catch {}
 
@@ -1562,8 +1633,8 @@ async function calculerNotifications(prenom) {
   const versionRecente = NOUVEAUTES.length ? NOUVEAUTES[0].v : "";
   const nouvelleVersion = versionRecente && vuVersion !== versionRecente ? 1 : 0;
 
-  const total = murNouveaux + ideesNouvelles + reactionsRecues + commentairesRecus + nouvelleVersion;
-  return { total, murNouveaux, ideesNouvelles, reactionsRecues, commentairesRecus, nouvelleVersion, versionRecente, murDetail, ideesDetail, reactionsDetail, commentairesDetail };
+  const total = murNouveaux + ideesNouvelles + reactionsRecues + commentairesRecus + defisSubis + nouvelleVersion;
+  return { total, murNouveaux, ideesNouvelles, reactionsRecues, commentairesRecus, defisSubis, nouvelleVersion, versionRecente, murDetail, ideesDetail, reactionsDetail, commentairesDetail, defisDetail };
 }
 
 // Récupère la date de création du post le plus récent (léger, pour la pastille "nouveau")
@@ -5923,6 +5994,14 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
         {!compact && (
           <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 11, color: "#4A4228", textAlign: "center", padding: "5px 0 3px", borderBottom: "1px solid rgba(42,36,22,.18)", marginBottom: 3 }}>{obs.nomSci || "—"}</div>
         )}
+        {/* Niveau de la carte (étoiles) — visible dès le niveau 1 */}
+        {niveauDeXp(c.xp) > 0 && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, padding: compact ? "1px 0 0" : "2px 0 0" }}>
+            {Array.from({ length: NIVEAU_MAX }).map((_, i) => (
+              <span key={i} style={{ fontSize: compact ? 8 : 10, opacity: i < niveauDeXp(c.xp) ? 1 : 0.22, filter: i < niveauDeXp(c.xp) ? "none" : "grayscale(1)" }}>⭐</span>
+            ))}
+          </div>
+        )}
         {/* Stats en barres */}
         <div style={{ padding: compact ? "3px 2px 1px" : "4px 3px 2px" }}>
           {stat("Attaque", c.attaque, "⚔️", "#B0563C")}
@@ -6463,7 +6542,7 @@ function SelecteurPoint({ point, onChange, onFermer }) {
 }
 
 // ---------- Centre de notifications ----------
-function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
+function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees, onAllerLigue }) {
   const n = notifs || {};
   const [voirNouveautes, setVoirNouveautes] = useState((n.nouvelleVersion || 0) > 0);
 
@@ -6472,9 +6551,10 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
     try { if (NOUVEAUTES.length) localStorage.setItem("biodex_nouveautes_vu", NOUVEAUTES[0].v); } catch {}
     try { localStorage.setItem("biodex_reactions_vu_date", new Date().toISOString()); } catch {}
     try { localStorage.setItem("biodex_commentaires_vu_date", new Date().toISOString()); } catch {}
+    try { localStorage.setItem("biodex_defis_vu_date", new Date().toISOString()); } catch {}
   }, []);
 
-  const rien = (n.murNouveaux || 0) === 0 && (n.ideesNouvelles || 0) === 0 && (n.reactionsRecues || 0) === 0 && (n.commentairesRecus || 0) === 0;
+  const rien = (n.murNouveaux || 0) === 0 && (n.ideesNouvelles || 0) === 0 && (n.reactionsRecues || 0) === 0 && (n.commentairesRecus || 0) === 0 && (n.defisSubis || 0) === 0;
 
   return (
     <div onClick={onFermer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 1200, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
@@ -6526,6 +6606,21 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees }) {
                   <span key={i} style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5 }}><b style={{ color: C.papier, fontWeight: 600 }}>{d.qui}</b> sur {d.espece}{d.extrait ? ` : « ${d.extrait}${d.extrait.length >= 60 ? "…" : ""} »` : ""}</span>
                 ))}
                 {n.commentairesRecus > (n.commentairesDetail || []).length && <span style={{ display: "block", fontFamily: sans, fontSize: 12, color: C.papierSombre, fontStyle: "italic", marginTop: 2 }}>…et {n.commentairesRecus - (n.commentairesDetail || []).length} autre{n.commentairesRecus - (n.commentairesDetail || []).length > 1 ? "s" : ""}</span>}
+              </span>
+            </button>
+          )}
+
+          {(n.defisSubis || 0) > 0 && (
+            <button onClick={onAllerLigue} style={{ width: "100%", display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", marginBottom: 8, borderRadius: 10, border: "1px solid #A05BC4", background: "linear-gradient(#241B2E, #1B1522)", cursor: "pointer", textAlign: "left" }}>
+              <span style={{ fontSize: 22 }}>⚔️</span>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: "#C9A0E8", marginBottom: 4 }}>{n.defisSubis} défi{n.defisSubis > 1 ? "s" : ""} sur tes cartes</span>
+                {(n.defisDetail || []).map((d, i) => (
+                  <span key={i} style={{ display: "block", fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5 }}>
+                    <b style={{ color: C.papier, fontWeight: 600 }}>{d.qui}</b> a défié {d.carte} — {d.gagne ? <span style={{ color: "#8AAE6B", fontWeight: 700 }}>ta carte a tenu ! 🛡️</span> : <span style={{ color: "#E8A88F", fontWeight: 700 }}>défaite</span>}
+                  </span>
+                ))}
+                {n.defisSubis > (n.defisDetail || []).length && <span style={{ display: "block", fontFamily: sans, fontSize: 12, color: C.papierSombre, fontStyle: "italic", marginTop: 2 }}>…et {n.defisSubis - (n.defisDetail || []).length} autre{n.defisSubis - (n.defisDetail || []).length > 1 ? "s" : ""}</span>}
               </span>
             </button>
           )}
@@ -6656,6 +6751,8 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
   const [saisiePrenom, setSaisiePrenom] = useState(prenom || "");
   const [enCours, setEnCours] = useState(null);
   const [message, setMessage] = useState("");
+  const [journal, setJournal] = useState([]);
+  const [journalEtat, setJournalEtat] = useState("chargement");
 
   const mesCartesForgees = observations.filter((o) => o.carte);
   const moi = (prenom || "").trim().toLowerCase();
@@ -6669,6 +6766,15 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
     } catch { setEtat("echec"); }
   }
   useEffect(() => { rafraichir(); }, []);
+  useEffect(() => {
+    if (onglet !== "journal" || !prenom) return;
+    let vivant = true;
+    setJournalEtat("chargement");
+    chargerMesDefis(prenom)
+      .then((l) => { if (vivant) { setJournal(l); setJournalEtat("ok"); } })
+      .catch(() => { if (vivant) setJournalEtat("echec"); });
+    return () => { vivant = false; };
+  }, [onglet, prenom]);
 
   const mesCartesEngagees = ligue.filter((c) => (c.proprietaire || "").trim().toLowerCase() === moi);
   const championsAdverses = ligue.filter((c) => (c.proprietaire || "").trim().toLowerCase() !== moi);
@@ -6728,7 +6834,7 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
 
       {/* Onglets */}
       <div style={{ display: "flex", gap: 6, marginBottom: 16, background: C.panneau, padding: 4, borderRadius: 10, border: `1px solid ${C.bordure}` }}>
-        {[["champions", "⚔️ Défier"], ["mescartes", "🎴 Mes cartes"], ["classement", "📊 Classement"]].map(([id, lab]) => (
+        {[["champions", "⚔️ Défier"], ["mescartes", "🎴 Mes cartes"], ["classement", "📊 Classement"], ["journal", "📜 Journal"]].map(([id, lab]) => (
           <button key={id} onClick={() => setOnglet(id)} style={{ flex: 1, padding: "8px 6px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: 700, background: onglet === id ? "linear-gradient(#C9A24B, #B8912F)" : "transparent", color: onglet === id ? C.encre : C.papierSombre }}>{lab}</button>
         ))}
       </div>
@@ -6814,6 +6920,73 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ONGLET JOURNAL DES COMBATS */}
+      {onglet === "journal" && (
+        <div>
+          {!prenom && (
+            <div style={{ textAlign: "center", color: C.papierSombre, fontSize: 14, padding: "24px 16px", background: C.panneau, borderRadius: 10 }}>
+              Indique ton prénom pour voir ton journal de combats.
+            </div>
+          )}
+          {prenom && journalEtat === "chargement" && (
+            <div style={{ textAlign: "center", color: C.papierSombre, fontSize: 14, padding: "24px 16px", fontStyle: "italic" }}>Chargement…</div>
+          )}
+          {prenom && journalEtat === "echec" && (
+            <div style={{ textAlign: "center", color: "#E8A88F", fontSize: 13.5, padding: "20px 16px", background: C.panneau, borderRadius: 10 }}>
+              Impossible de charger le journal.
+            </div>
+          )}
+          {prenom && journalEtat === "ok" && journal.length === 0 && (
+            <div style={{ textAlign: "center", color: C.papierSombre, fontSize: 14, padding: "24px 16px", background: C.panneau, borderRadius: 10, lineHeight: 1.5 }}>
+              Aucun combat enregistré pour l'instant.<br />Lance un défi, il apparaîtra ici !
+            </div>
+          )}
+          {prenom && journalEtat === "ok" && journal.length > 0 && (() => {
+            const moiN = prenom.trim().toLowerCase();
+            const v = journal.filter((d) => (d.defieur || "").toLowerCase() === moiN ? d.defieur_gagne : !d.defieur_gagne).length;
+            return (
+              <div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                  <div style={{ flex: 1, textAlign: "center", padding: "10px 6px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
+                    <div style={{ fontFamily: sans, fontSize: 19, fontWeight: 800, color: "#8AAE6B" }}>{v}</div>
+                    <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>victoires</div>
+                  </div>
+                  <div style={{ flex: 1, textAlign: "center", padding: "10px 6px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
+                    <div style={{ fontFamily: sans, fontSize: 19, fontWeight: 800, color: "#E8A88F" }}>{journal.length - v}</div>
+                    <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>défaites</div>
+                  </div>
+                  <div style={{ flex: 1, textAlign: "center", padding: "10px 6px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
+                    <div style={{ fontFamily: sans, fontSize: 19, fontWeight: 800, color: C.ambreClair }}>{Math.round((v / journal.length) * 100)}%</div>
+                    <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>réussite</div>
+                  </div>
+                </div>
+                {journal.map((d) => {
+                  const jAttaquais = (d.defieur || "").toLowerCase() === moiN;
+                  const jaiGagne = jAttaquais ? d.defieur_gagne : !d.defieur_gagne;
+                  const adversaire = jAttaquais ? d.defendeur : d.defieur;
+                  return (
+                    <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 13px", marginBottom: 7, background: C.panneau, borderLeft: `4px solid ${jaiGagne ? "#8AAE6B" : "#B5654A"}`, border: `1px solid ${C.bordure}`, borderRadius: 9 }}>
+                      <span style={{ fontSize: 18 }}>{jaiGagne ? "🏆" : "💀"}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: sans, fontSize: 13.5, color: C.papier, fontWeight: 600 }}>
+                          {jAttaquais ? "Tu as défié " : "Défié par "}<span style={{ color: C.ambreClair }}>{adversaire || "?"}</span>
+                        </div>
+                        <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 2 }}>
+                          {jAttaquais ? "contre " : "sur ta carte "}{d.carte_nom || "?"} · {d.created_at ? new Date(d.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}
+                        </div>
+                      </div>
+                      <span style={{ flexShrink: 0, fontFamily: sans, fontSize: 11, fontWeight: 800, padding: "3px 9px", borderRadius: 10, background: jaiGagne ? "rgba(138,174,107,.18)" : "rgba(181,101,74,.18)", color: jaiGagne ? "#8AAE6B" : "#E8A88F" }}>
+                        {jaiGagne ? "GAGNÉ" : "PERDU"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -7002,6 +7175,15 @@ function Missions({ observations, prenom, onDefinirPrenom, onFermer }) {
     catch { setEtat("echec"); }
   }
   useEffect(() => { rafraichir(); }, []);
+  useEffect(() => {
+    if (onglet !== "journal" || !prenom) return;
+    let vivant = true;
+    setJournalEtat("chargement");
+    chargerMesDefis(prenom)
+      .then((l) => { if (vivant) { setJournal(l); setJournalEtat("ok"); } })
+      .catch(() => { if (vivant) setJournalEtat("echec"); });
+    return () => { vivant = false; };
+  }, [onglet, prenom]);
 
   // Validation auto : dès que la collection remplit une mission non encore validée par moi, on l'enregistre.
   useEffect(() => {
@@ -7628,7 +7810,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🏆 La Ligue</div>
         <p style={p}>
-          Depuis le menu ☰, la Ligue te permet de défier les cartes de la bande. Engage jusqu'à 3 de tes cartes forgées (elles restent dans ta collection), et défie celles des autres : quand tu défies une carte, son propriétaire n'a pas besoin d'être connecté, l'appli la joue pour lui. Chaque défi met à jour le classement des joueurs (victoires/défaites) et les stats de chaque carte. Tu peux jouer le combat en manuel, en auto, ou juste voir le résultat. Pour que le jeu reste fair-play, chaque carte forgée est vérifiée : si la photo ne ressemble pas à une vraie photo d'insecte prise sur le terrain (capture d'écran, image trouvée sur internet, dessin), la carte est marquée « non vérifiée » et porte un badge visible dans la ligue. La carte reste jouable, mais tout le monde voit qu'elle est douteuse.
+          Depuis le menu ☰, la Ligue te permet de défier les cartes de la bande. Engage jusqu'à 3 de tes cartes forgées (elles restent dans ta collection), et défie celles des autres : quand tu défies une carte, son propriétaire n'a pas besoin d'être connecté, l'appli la joue pour lui. Chaque défi met à jour le classement des joueurs (victoires/défaites) et les stats de chaque carte. L'onglet « 📜 Journal » garde la trace de tous tes combats (défis lancés et subis) avec ton bilan victoires/défaites. Quand une de tes cartes est défiée pendant ton absence, tu es prévenu dans ta cloche 🔔 : qui t'a défié, quelle carte, et si elle a tenu bon. Tu peux jouer le combat en manuel, en auto, ou juste voir le résultat. Pour que le jeu reste fair-play, chaque carte forgée est vérifiée : si la photo ne ressemble pas à une vraie photo d'insecte prise sur le terrain (capture d'écran, image trouvée sur internet, dessin), la carte est marquée « non vérifiée » et porte un badge visible dans la ligue. La carte reste jouable, mais tout le monde voit qu'elle est douteuse.
         </p>
         <div style={t}>💡 Boîte à idées</div>
         <p style={p}>
@@ -7639,7 +7821,7 @@ function Aide({ onFermer, onImportTermine }) {
       <SectionPliable titre="🎴 Jeu & cartes">
         <div style={t}>🎴 Cartes de collection</div>
         <p style={p}>
-          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. La rareté de la carte (qui déclenche les cartes holographiques et légendaires scintillantes) s'appuie désormais sur les vraies données d'observation d'iNaturalist : plus une espèce est rare dans le monde, plus sa carte brille. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Dans ta galerie de cartes, tu peux filtrer par ordre d'insecte et trier tes cartes par récentes, par rareté ou par type de combat. Tout le jeu est regroupé dans l'onglet 🎮 Jeu en bas : « 🎴 Cartes » (ta galerie), « ⚔️ Combat » (affronte l'IA), « 🏆 Ligue » (défie la bande) et « 🧠 Quiz » (5 questions par jour). Le combat propose deux modes : « Combat libre » (un affrontement contre un adversaire au hasard) et « 🏟️ Arène » (tu enchaînes des adversaires de plus en plus forts, ton insecte étant soigné entre les manches ; ta meilleure série est enregistrée comme record). En combat, chaque insecte a un type parmi 8 (🦋 Volant, 🪲 Cuirassé, 🐛 Rampant, 🦗 Bondissant, 🕷️ Venimeux, 💧 Aquatique, 🐜 Social, 🌙 Nocturne) avec des forces et faiblesses, des points de vie, de l'énergie qui se recharge, une attaque de base et une capacité spéciale qui coûte de l'énergie. Le bouton « 🔰 Forces & faiblesses des types » affiche le schéma complet de qui bat qui — un coup avec l'avantage de type fait ×1,3 de dégâts. Choisis ton insecte selon le type de l'adversaire ! En plus d'attaquer, tu peux te mettre en 🛡️ Parade (le prochain coup encaissé est réduit de moitié et tu regagnes de l'énergie) — utile pour charger ta capacité. Et les insectes de type Venimeux empoisonnent leur cible avec leur capacité : le poison inflige des dégâts pendant 2 tours (badge ☠️). Chaque forge coûte un appel (~0,8 centime).
+          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. La rareté de la carte (qui déclenche les cartes holographiques et légendaires scintillantes) s'appuie désormais sur les vraies données d'observation d'iNaturalist : plus une espèce est rare dans le monde, plus sa carte brille. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Dans ta galerie de cartes, tu peux filtrer par ordre d'insecte et trier tes cartes par récentes, par rareté ou par type de combat. Tout le jeu est regroupé dans l'onglet 🎮 Jeu en bas : « 🎴 Cartes » (ta galerie), « ⚔️ Combat » et « 🧠 Quiz » (5 questions par jour). L'écran Combat réunit deux façons de se battre : « 🏆 Défier la bande » (tu choisis la carte d'un pote et le résultat compte au classement) et « 🏟️ Arène » (tu enchaînes seul des adversaires de plus en plus forts, ton insecte étant soigné entre les manches ; ta meilleure série est enregistrée comme record). En combat, chaque insecte a un type parmi 8 (🦋 Volant, 🪲 Cuirassé, 🐛 Rampant, 🦗 Bondissant, 🕷️ Venimeux, 💧 Aquatique, 🐜 Social, 🌙 Nocturne) avec des forces et faiblesses, des points de vie, de l'énergie qui se recharge, une attaque de base et une capacité spéciale qui coûte de l'énergie. Le bouton « 🔰 Forces & faiblesses des types » affiche le schéma complet de qui bat qui — un coup avec l'avantage de type fait ×1,3 de dégâts. Choisis ton insecte selon le type de l'adversaire ! Tes cartes progressent : chaque défi de ligue rapporte de l'XP (même en perdant !), et tous les 30 points ta carte gagne un niveau, jusqu'à 5 étoiles ⭐. Chaque niveau donne +3 % de stats (+15 % au niveau 5). Le plafond est volontairement bas pour que ceux qui jouent moins souvent restent dans la course. L'arène ne rapporte pas d'XP, seuls les défis comptent. Chaque capacité appartient à une famille qui change sa façon de frapper : ⚔️ Frappe (gros dégâts), 💚 Régénération (dégâts + tu récupères des PV), 💫 Coup sonnant (dégâts + la prochaine attaque adverse est réduite de moitié) et 🩸 Drain (dégâts + tu voles de l'énergie). La famille est déduite de la biologie de l'espèce — un insecte qui mue se régénère, un prédateur qui aspire draine, etc. L'emoji sur le bouton de capacité te dit laquelle tu as. En plus d'attaquer, tu peux te mettre en 🛡️ Parade (le prochain coup encaissé est réduit de moitié et tu regagnes de l'énergie) — utile pour charger ta capacité. Et les insectes de type Venimeux empoisonnent leur cible avec leur capacité : le poison inflige des dégâts au tour suivant (badge ☠️), sans se cumuler. Chaque forge coûte un appel (~0,8 centime).
         </p>
         <div style={t}>🔬 Science participative (iNaturalist)</div>
         <p style={p}>
@@ -7852,6 +8034,15 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
   }
 
   useEffect(() => { rafraichir(); }, []);
+  useEffect(() => {
+    if (onglet !== "journal" || !prenom) return;
+    let vivant = true;
+    setJournalEtat("chargement");
+    chargerMesDefis(prenom)
+      .then((l) => { if (vivant) { setJournal(l); setJournalEtat("ok"); } })
+      .catch(() => { if (vivant) setJournalEtat("echec"); });
+    return () => { vivant = false; };
+  }, [onglet, prenom]);
 
   async function envoyer() {
     const auteur = (saisiePrenom || "").trim();
@@ -8533,11 +8724,12 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
 }
 
 // ---------- Mode jeu : cartes + combat solo ----------
-function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, onDefier }) {
-  const [sousVue, setSousVue] = useState("galerie"); // galerie | combat | ligue
+function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, onDefier, sousVueInitiale }) {
+  const [sousVue, setSousVue] = useState(sousVueInitiale || "galerie"); // galerie | combat | quiz
   const [fOrdreC, setFOrdreC] = useState("");
   const [triCartes, setTriCartes] = useState("recentes"); // recentes | rarete | type
   const [montrerTypes, setMontrerTypes] = useState(false);
+  const [modeCombat, setModeCombat] = useState(MUR_ACTIF ? "defi" : "libre"); // defi | arene | libre
   const ordresCartes = ORDRES.map((o) => ({ ...o, n: cartes.filter((c) => deduireOrdre(c) === o.id).length })).filter((o) => o.n > 0);
   const nbAutresC = cartes.filter((c) => deduireOrdre(c) === "autres").length;
   const cartesFiltrees = fOrdreC ? cartes.filter((c) => deduireOrdre(c) === fOrdreC) : cartes;
@@ -8552,23 +8744,28 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
     else liste.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)); // récentes
     return liste;
   })();
-  const sousOnglets = [["galerie", "🎴 Cartes"], ["combat", "⚔️ Combat"], ...(MUR_ACTIF ? [["ligue", "🏆 Ligue"]] : []), ["quiz", "🧠 Quiz"]];
+  const sousOnglets = [["galerie", "🎴 Cartes"], ["combat", "⚔️ Combat"], ["quiz", "🧠 Quiz"]];
+  // « ligue » reste accepté (retour après un défi) et bascule sur le hub Combat.
+  const vueCombat = sousVue === "combat" || sousVue === "ligue";
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        {sousOnglets.map(([id, label]) => (
+        {sousOnglets.map(([id, label]) => {
+          const actif = id === "combat" ? vueCombat : sousVue === id;
+          return (
           <button key={id} className="bd-press" onClick={() => setSousVue(id)}
             style={{ flex: 1, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "9px 2px", borderRadius: 9, cursor: "pointer",
-              border: `1px solid ${sousVue === id ? "#A8863A" : C.bordure}`,
-              background: sousVue === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
-              color: sousVue === id ? C.ambreClair : C.papierSombre }}>
+              border: `1px solid ${actif ? "#A8863A" : C.bordure}`,
+              background: actif ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
+              color: actif ? C.ambreClair : C.papierSombre }}>
             {label}
           </button>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Bouton schéma des types (combat + ligue) */}
-      {(sousVue === "combat" || sousVue === "ligue") && (
+      {/* Bouton schéma des types (hub combat) */}
+      {vueCombat && (
         <div style={{ marginBottom: 14 }}>
           <button onClick={() => setMontrerTypes((v) => !v)} style={{ width: "100%", fontFamily: sans, fontSize: 13, fontWeight: 700, padding: "9px 12px", borderRadius: 9, cursor: "pointer", border: `1px solid ${C.bordure}`, background: montrerTypes ? C.panneau : "transparent", color: C.ambreClair, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span>🔰 Forces & faiblesses des types</span>
@@ -8627,10 +8824,25 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
         )
       )}
 
-      {sousVue === "combat" && <Combat cartes={cartes} />}
+      {vueCombat && (
+        <div>
+          {/* Sélecteur de mode : défier la bande (classé) ou arène (solo) */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {[...(MUR_ACTIF ? [["defi", "🏆 Défier la bande"]] : [["libre", "⚔️ Combat libre"]]), ["arene", "🏟️ Arène"]].map(([id, label]) => (
+              <button key={id} onClick={() => setModeCombat(id)}
+                style={{ flex: 1, padding: "10px 4px", borderRadius: 9, cursor: "pointer", fontFamily: sans, fontSize: 13, fontWeight: 700,
+                  border: `1px solid ${modeCombat === id ? "#A8863A" : C.bordure}`,
+                  background: modeCombat === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
+                  color: modeCombat === id ? C.ambreClair : C.papierSombre }}>{label}</button>
+            ))}
+          </div>
 
-      {sousVue === "ligue" && MUR_ACTIF && (
-        <Ligue embarque observations={observations} prenom={prenom} onDefinirPrenom={onDefinirPrenom} onDefier={onDefier} />
+          {modeCombat === "defi" && MUR_ACTIF && (
+            <Ligue embarque observations={observations} prenom={prenom} onDefinirPrenom={onDefinirPrenom} onDefier={onDefier} />
+          )}
+          {modeCombat === "arene" && <Combat cartes={cartes} modeInitial="arene" />}
+          {modeCombat === "libre" && <Combat cartes={cartes} modeInitial="libre" />}
+        </div>
       )}
 
       {sousVue === "quiz" && (
@@ -8673,7 +8885,7 @@ function SchemaTypes({ compact }) {
   return (
     <div>
       <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5, marginBottom: 12 }}>
-        Chaque type est <b style={{ color: "#8AAE6B" }}>fort contre 2</b> autres et <b style={{ color: "#E5603E" }}>faible contre 2</b>. Un coup avec l'avantage de type fait <b style={{ color: C.papier }}>×1,5</b> de dégâts, un coup désavantagé <b style={{ color: C.papier }}>×0,66</b>. Choisis ton insecte selon le type de l'adversaire !
+        Chaque type est <b style={{ color: "#8AAE6B" }}>fort contre 2</b> autres et <b style={{ color: "#E5603E" }}>faible contre 2</b>. Un coup avec l'avantage de type fait <b style={{ color: C.papier }}>×1,3</b> de dégâts, un coup désavantagé <b style={{ color: C.papier }}>×0,8</b>. Choisis ton insecte selon le type de l'adversaire !
       </div>
       <div style={{ display: "grid", gap: 7 }}>
         {TYPES_COMBAT.map((t) => {
@@ -8749,7 +8961,9 @@ function deduireType(obs) {
 
 // Prépare un combattant à partir d'une carte engagée dans la ligue (données Supabase).
 function prepCombattantLigue(carteLigue) {
-  const defense = carteLigue.defense || 50;
+  const xpL = Number(carteLigue.xp) || 0;
+  const multL = multiplicateurNiveau(xpL);
+  const defense = Math.round((carteLigue.defense || 50) * multL);
   const pvMax = Math.round(150 + defense * 1.0);
   return {
     id: carteLigue.carte_id,
@@ -8757,12 +8971,15 @@ function prepCombattantLigue(carteLigue) {
     obs: null,
     photoUrlDistante: carteLigue.photo_url || "",
     type: carteLigue.type || "rampant",
-    attaque: carteLigue.attaque || 50,
+    attaque: Math.round((carteLigue.attaque || 50) * multL),
     defense,
-    vitesse: carteLigue.vitesse || 50,
+    vitesse: Math.round((carteLigue.vitesse || 50) * multL),
     pvMax, pv: pvMax,
     energie: 3, energieMax: 6,
     capacite: { nom: carteLigue.capacite_nom || "Coup spécial", effet: carteLigue.capacite_effet || "" },
+    famille: deduireFamille({ nom: carteLigue.capacite_nom, effet: carteLigue.capacite_effet, famille: carteLigue.capacite_famille }),
+    sonne: null,
+    xp: xpL, niveau: niveauDeXp(xpL),
     rarete: carteLigue.rarete || 30,
     ligue: carteLigue, // référence pour enregistrer le résultat
   };
@@ -8771,9 +8988,11 @@ function prepCombattantLigue(carteLigue) {
 // Prépare l'état de combat d'une carte (PV, énergie, type) à partir de l'observation.
 function prepCombattant(obs) {
   const c = obs.carte || {};
-  const attaque = c.attaque || 50;
-  const defense = c.defense || 50;
-  const vitesse = c.vitesse || 50;
+  const xp = Number(c.xp) || 0;
+  const mult = multiplicateurNiveau(xp); // bonus de niveau (plafonné à +15 %)
+  const attaque = Math.round((c.attaque || 50) * mult);
+  const defense = Math.round((c.defense || 50) * mult);
+  const vitesse = Math.round((c.vitesse || 50) * mult);
   const type = deduireType(obs);
   // PV calibrés pour des combats de ~10-12 tours (testé)
   const pvMax = Math.round(150 + defense * 1.0); // ~200 pour défense 50
@@ -8786,13 +9005,65 @@ function prepCombattant(obs) {
     pvMax, pv: pvMax,
     energie: 3, energieMax: 6, // commence à 3, +2/tour, plafonné
     capacite: c.capacite || { nom: "Coup spécial", effet: "" },
+    famille: deduireFamille(c.capacite),
+    sonne: null, // malus temporaire : prochaine action affaiblie
+    xp, niveau: niveauDeXp(xp),
     rarete: c.rarete || 30,
   };
 }
 
+
+
+// ═══════ PROGRESSION DES CARTES (XP / niveaux) ═══════
+// Calibré au simulateur : plafond bas indispensable, sinon celui qui joue le plus
+// écrase les autres (écart 18 pts sans plafond, 5 pts avec).
+// L'XP ne vient QUE des défis de ligue (pas de l'arène) pour éviter le farm solo.
+const XP_VICTOIRE = 10;
+const XP_DEFAITE = 4;      // tout le monde progresse, même en perdant
+const XP_PAR_NIVEAU = 30;
+const NIVEAU_MAX = 5;
+const BONUS_PAR_NIVEAU = 0.03; // +3 % de stats par niveau, soit +15 % au niveau 5
+
+function niveauDeXp(xp) {
+  return Math.max(0, Math.min(NIVEAU_MAX, Math.floor((Number(xp) || 0) / XP_PAR_NIVEAU)));
+}
+// Progression vers le niveau suivant, en % (pour la barre)
+function progressionNiveau(xp) {
+  const n = niveauDeXp(xp);
+  if (n >= NIVEAU_MAX) return 100;
+  const dansNiveau = (Number(xp) || 0) - n * XP_PAR_NIVEAU;
+  return Math.round((dansNiveau / XP_PAR_NIVEAU) * 100);
+}
+function multiplicateurNiveau(xp) {
+  return 1 + niveauDeXp(xp) * BONUS_PAR_NIVEAU;
+}
+
+// ═══════ FAMILLES DE CAPACITÉS ═══════
+// Chaque capacité appartient à une famille qui définit son effet en combat.
+// Réglages calibrés au simulateur (écart entre familles : 5,4 points).
+const FAMILLES_CAPACITE = {
+  frappe:  { id: "frappe",  nom: "Frappe",        emoji: "⚔️", puissance: 1.8, desc: "gros dégâts" },
+  regen:   { id: "regen",   nom: "Régénération",  emoji: "💚", puissance: 1.2, soin: 0.05, desc: "dégâts + soin" },
+  sonne:   { id: "sonne",   nom: "Coup sonnant",  emoji: "💫", puissance: 1.2, sonne: 0.5, desc: "dégâts + adversaire sonné" },
+  drain:   { id: "drain",   nom: "Drain",         emoji: "🩸", puissance: 1.6, vol: 1, desc: "dégâts + vol d'énergie" },
+};
+// Déduit la famille d'une capacité existante d'après son nom/effet (rétroactif, sans appel IA).
+function deduireFamille(capacite) {
+  const c = capacite || {};
+  const explicite = (c.famille || "").toLowerCase();
+  if (FAMILLES_CAPACITE[explicite]) return explicite;
+  const t = ((c.nom || "") + " " + (c.effet || "")).toLowerCase();
+  const a = (mots) => mots.some((m) => t.includes(m));
+  if (a(["soigne", "soin", "régénèr", "regener", "guéri", "gueri", "cicatris", "récupèr", "recuper", "revitalis", "mue"])) return "regen";
+  // Attention : ne pas utiliser "sonn" ni "sonné" (contenus dans "empoisonné").
+  if (a(["étourd", "etourd", "assomm", "paralys", "immobilis", "fige", "stupéfi", "stupefi", "désorient", "desorient", "aveugl", "engourd", "hypnot"])) return "sonne";
+  if (a(["drain", "absorb", "aspire", "vampiri", "suce", "siphon", "pompe", "vole", "épuise", "epuise", "affaibl"])) return "drain";
+  return "frappe";
+}
+
 // Calcule les dégâts d'une attaque. base = puissance de l'attaque (1.0 = normale).
 function calculerDegats(attaquant, defenseur, puissance) {
-  const brut = attaquant.attaque * 0.32 * puissance; // facteur d'échelle pour des combats de plusieurs tours
+  const brut = attaquant.attaque * 0.45 * puissance; // échelle calibrée au simulateur : ~14-15 tours (avant 0.32 = ~21 tours)
   const reduction = defenseur.defense / (defenseur.defense + 100); // défense = mitigation douce
   const eff = efficaciteType(attaquant.type, defenseur.type);
   const variance = 0.9 + Math.random() * 0.2; // ±10%
@@ -8816,6 +9087,7 @@ function PortraitCombat({ combattant, cote, anim, ko }) {
   const photoLocale = useBlobUrl(photoBlob);
   const photoUrl = photoLocale || (combattant && combattant.photoUrlDistante) || null;
   const t = typeInfo(combattant.type);
+  const niv = combattant.niveau || 0;
   const classeAnim = ko ? "bd-ko" : (anim === "touche" ? "bd-touche" : anim === "attaque" ? (cote === "g" ? "bd-attaque-g" : "bd-attaque-d") : "");
   return (
     <div className={(cote === "g" ? "bd-entree-g" : "bd-entree-d")} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", maxWidth: 150 }}>
@@ -8824,6 +9096,9 @@ function PortraitCombat({ combattant, cote, anim, ko }) {
           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>{t.emoji}</div>}
       </div>
       <div style={{ marginTop: 6, fontFamily: sans, fontSize: 13, fontWeight: 700, color: C.papier, textAlign: "center", lineHeight: 1.2 }}>{combattant.nom}</div>
+      {niv > 0 && (
+        <div style={{ fontFamily: sans, fontSize: 10, color: C.ambreClair, marginTop: 1 }}>{"⭐".repeat(niv)}</div>
+      )}
       <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: "#fff", background: t.couleur || C.ambre, borderRadius: 10, padding: "1px 9px", marginTop: 3 }}>{t.emoji} {t.label}</div>
     </div>
   );
@@ -8871,7 +9146,7 @@ function jouerSon(nom) {
   else if (nom === "defaite") [392, 330, 262].forEach((f, i) => bip(f, 0.24, "triangle", 0.12, i * 0.15));
 }
 
-function Combat({ cartes, adversaireImpose, defieur, onResultatDefi }) {
+function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial }) {
   const jouables = cartes.filter((c) => c.carte);
   const [phase, setPhase] = useState("choix"); // choix | combat | fin
   const [moi, setMoi] = useState(null);
@@ -8890,15 +9165,15 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi }) {
   const [secousse, setSecousse] = useState(false);
   const [callout, setCallout] = useState(null); // { texte, ton, id }
   const [intro, setIntro] = useState(false);
-  const [mode, setMode] = useState("libre"); // libre | arene
+  const [mode, setMode] = useState(modeInitial || "libre"); // libre | arene
   const [manche, setManche] = useState(1);
   const [recordArene, setRecordArene] = useState(() => { try { return parseInt(localStorage.getItem("biodex_arene_record") || "0", 10) || 0; } catch { return 0; } });
   const son = (nom) => { if (sonActif) jouerSon(nom); };
   function effetImpact(eff) {
-    if (eff >= 1.5) { son("critique"); setSecousse(true); setTimeout(() => setSecousse(false), 420); setCallout({ texte: "SUPER EFFICACE !", ton: "fort", id: Date.now() }); }
-    else if (eff <= 0.7) { son("faible"); setCallout({ texte: "peu efficace…", ton: "faible", id: Date.now() }); }
+    if (eff >= 1.25) { son("critique"); setSecousse(true); setTimeout(() => setSecousse(false), 420); setCallout({ texte: "SUPER EFFICACE !", ton: "fort", id: Date.now() }); }
+    else if (eff <= 0.85) { son("faible"); setCallout({ texte: "peu efficace…", ton: "faible", id: Date.now() }); }
     else son("coup");
-    if (eff >= 1.5 || eff <= 0.7) setTimeout(() => setCallout(null), 1000);
+    if (eff >= 1.25 || eff <= 0.85) setTimeout(() => setCallout(null), 1000);
   }
   const [resultatEnvoye, setResultatEnvoye] = useState(false);
   const journalRef = useRef(null);
@@ -8913,7 +9188,7 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi }) {
     if (phase === "fin" && estDefi && !resultatEnvoye && moi && adv) {
       setResultatEnvoye(true);
       const jaiGagne = moi.pv > 0;
-      if (onResultatDefi) onResultatDefi(jaiGagne);
+      if (onResultatDefi) onResultatDefi(jaiGagne, moi.id);
     }
   }, [phase]);
 
@@ -8944,7 +9219,7 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi }) {
   function continuerArene() {
     const prochain = manche + 1;
     const soin = Math.round(moi.pvMax * 0.7);
-    const c1 = { ...moi, pv: Math.min(moi.pvMax, moi.pv + soin), energie: 3, garde: false, poison: null };
+    const c1 = { ...moi, pv: Math.min(moi.pvMax, moi.pv + soin), energie: 3, garde: false, poison: null, sonne: null };
     const c2 = adversaireArene(prochain);
     setMoi(c1); setAdv(c2);
     setManche(prochain);
@@ -8996,8 +9271,9 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi }) {
     setJournal((j) => [...j, ...(Array.isArray(lignes) ? lignes : [lignes])]);
   }
   function texteEfficacite(eff) {
-    if (eff >= 1.5) return " Super efficace !";
-    if (eff <= 0.7) return " Peu efficace…";
+    // Seuils alignés sur efficaciteType (x1.3 / x0.8) — sans ça, ces retours ne s'affichaient jamais.
+    if (eff >= 1.25) return " Super efficace !";
+    if (eff <= 0.85) return " Peu efficace…";
     return "";
   }
 
@@ -9033,15 +9309,29 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi }) {
       return;
     }
     let degats, efficacite;
+    const fam = FAMILLES_CAPACITE[m.famille] || FAMILLES_CAPACITE.frappe;
     if (type === "capacite") {
       m.energie -= 4;
       son("capacite");
-      ({ degats, efficacite } = calculerDegats(m, a, 1.8));
+      ({ degats, efficacite } = calculerDegats(m, a, fam.puissance));
+      if (m.sonne) { degats = Math.max(1, Math.round(degats * m.sonne)); m.sonne = null; }
       a.pv = Math.max(0, a.pv - degats);
-      ajouterJournal(`✨ ${m.nom} utilise ${m.capacite.nom} : ${degats} dégâts !${texteEfficacite(efficacite)}`);
-      if (m.type === "venimeux" && a.pv > 0) { a.poison = { tours: 2, degats: Math.max(4, Math.round(m.attaque * 0.08)) }; ajouterJournal(`☠️ ${a.nom} est empoisonné !`); }
+      ajouterJournal(`${fam.emoji} ${m.nom} utilise ${m.capacite.nom} : ${degats} dégâts !${texteEfficacite(efficacite)}`);
+      // Effets propres à la famille
+      if (fam.soin) {
+        const soin = Math.round(m.pvMax * fam.soin);
+        m.pv = Math.min(m.pvMax, m.pv + soin);
+        ajouterJournal(`💚 ${m.nom} récupère ${soin} PV.`);
+      }
+      if (fam.sonne && a.pv > 0) { a.sonne = fam.sonne; ajouterJournal(`💫 ${a.nom} est sonné : sa prochaine attaque sera affaiblie.`); }
+      if (fam.vol) {
+        const v = Math.min(fam.vol, a.energie);
+        if (v > 0) { a.energie -= v; m.energie = Math.min(m.energieMax, m.energie + v); ajouterJournal(`🩸 ${m.nom} draine ${v} énergie !`); }
+      }
+      if (m.type === "venimeux" && a.pv > 0 && !(a.poison && a.poison.tours > 0)) { a.poison = { tours: 1, degats: Math.max(2, Math.round(m.attaque * 0.05)) }; ajouterJournal(`☠️ ${a.nom} est empoisonné !`); }
     } else {
       ({ degats, efficacite } = calculerDegats(m, a, 1.0));
+      if (m.sonne) { degats = Math.max(1, Math.round(degats * m.sonne)); m.sonne = null; ajouterJournal(`💫 ${m.nom} est sonné, son coup porte mal.`); }
       a.pv = Math.max(0, a.pv - degats);
       ajouterJournal(`⚔️ ${m.nom} attaque : ${degats} dégâts.${texteEfficacite(efficacite)}`);
     }
@@ -9088,22 +9378,27 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi }) {
     }
     adv2.energie = Math.min(adv2.energieMax, adv2.energie + 2);
     const eff0 = efficaciteType(adv2.type, moi2.type);
-    const veutCapacite = adv2.energie >= 4 && (eff0 >= 1.5 || moi2.pv < moi2.pvMax * 0.4 || Math.random() < 0.5);
+    const veutCapacite = adv2.energie >= 4 && (eff0 >= 1.25 || moi2.pv < moi2.pvMax * 0.4 || Math.random() < 0.65);
     let degats, efficacite;
+    const famA = FAMILLES_CAPACITE[adv2.famille] || FAMILLES_CAPACITE.frappe;
     if (veutCapacite) {
       adv2.energie -= 4;
       son("capacite");
-      ({ degats, efficacite } = calculerDegats(adv2, moi2, 1.8));
+      ({ degats, efficacite } = calculerDegats(adv2, moi2, famA.puissance));
     } else {
       ({ degats, efficacite } = calculerDegats(adv2, moi2, 1.0));
     }
+    if (adv2.sonne) { degats = Math.max(1, Math.round(degats * adv2.sonne)); adv2.sonne = null; }
     // Parade du joueur : le coup encaissé est réduit de moitié
     let parade = false;
     if (moi2.garde) { degats = Math.max(1, Math.round(degats * 0.5)); moi2.garde = false; parade = true; }
     moi2.pv = Math.max(0, moi2.pv - degats);
     if (veutCapacite) {
-      ajouterJournal(`✨ ${adv2.nom} utilise ${adv2.capacite.nom} : ${degats} dégâts !${texteEfficacite(efficacite)}${parade ? " 🛡️ (parade !)" : ""}`);
-      if (adv2.type === "venimeux" && moi2.pv > 0) { moi2.poison = { tours: 2, degats: Math.max(4, Math.round(adv2.attaque * 0.08)) }; ajouterJournal(`☠️ ${moi2.nom} est empoisonné !`); }
+      ajouterJournal(`${famA.emoji} ${adv2.nom} utilise ${adv2.capacite.nom} : ${degats} dégâts !${texteEfficacite(efficacite)}${parade ? " 🛡️ (parade !)" : ""}`);
+      if (famA.soin) { const soin = Math.round(adv2.pvMax * famA.soin); adv2.pv = Math.min(adv2.pvMax, adv2.pv + soin); ajouterJournal(`💚 ${adv2.nom} récupère ${soin} PV.`); }
+      if (famA.sonne && moi2.pv > 0) { moi2.sonne = famA.sonne; ajouterJournal(`💫 ${moi2.nom} est sonné : sa prochaine attaque sera affaiblie.`); }
+      if (famA.vol) { const v = Math.min(famA.vol, moi2.energie); if (v > 0) { moi2.energie -= v; adv2.energie = Math.min(adv2.energieMax, adv2.energie + v); ajouterJournal(`🩸 ${adv2.nom} draine ${v} énergie !`); } }
+      if (adv2.type === "venimeux" && moi2.pv > 0 && !(moi2.poison && moi2.poison.tours > 0)) { moi2.poison = { tours: 1, degats: Math.max(2, Math.round(adv2.attaque * 0.05)) }; ajouterJournal(`☠️ ${moi2.nom} est empoisonné !`); }
     } else {
       ajouterJournal(`⚔️ ${adv2.nom} attaque : ${degats} dégâts.${texteEfficacite(efficacite)}${parade ? " 🛡️ (parade !)" : ""}`);
     }
@@ -9174,7 +9469,7 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi }) {
     return (
       <div>
         <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.papier, textAlign: "center", marginBottom: 4 }}>⚔️ Choisis ton champion</div>
-        {!estDefi && (
+        {!estDefi && !modeInitial && (
           <div style={{ display: "flex", gap: 8, margin: "10px 0" }}>
             {[["libre", "⚔️ Combat libre"], ["arene", "🏟️ Arène"]].map(([id, label]) => (
               <button key={id} onClick={() => setMode(id)} style={{ flex: 1, padding: "9px 4px", borderRadius: 9, cursor: "pointer", fontFamily: sans, fontSize: 13, fontWeight: 700, border: `1px solid ${mode === id ? "#A8863A" : C.bordure}`, background: mode === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent", color: mode === id ? C.ambreClair : C.papierSombre }}>{label}</button>
@@ -9307,7 +9602,7 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi }) {
                   background: (moi && moi.energie >= 4) ? "linear-gradient(#4A3D18, #382E10)" : C.panneau,
                   color: (moi && moi.energie >= 4) ? C.ambreClair : C.papierSombre,
                   fontFamily: sans, fontSize: 14, fontWeight: 700, cursor: (moi && moi.energie >= 4) ? "pointer" : "default", opacity: (moi && moi.energie >= 4) ? 1 : 0.55 }}>
-                ✨ {moi ? moi.capacite.nom : "Capacité"} <span style={{ fontSize: 10.5, fontWeight: 400 }}>· coûte 4⚡</span>
+                {moi && FAMILLES_CAPACITE[moi.famille] ? FAMILLES_CAPACITE[moi.famille].emoji : "✨"} {moi ? moi.capacite.nom : "Capacité"} <span style={{ fontSize: 10.5, fontWeight: 400 }}>· 4⚡{moi && FAMILLES_CAPACITE[moi.famille] ? " · " + FAMILLES_CAPACITE[moi.famille].desc : ""}</span>
               </button>
             </div>
           ) : (
@@ -9827,6 +10122,9 @@ function BioDex() {
 
   // Confirmation avant de quitter l'appli (quand un retour surviendrait alors que tout est fermé).
   const [confirmQuitter, setConfirmQuitter] = useState(false);
+  // Après un défi, on rouvre l'onglet Jeu directement sur le hub Combat (pas la galerie).
+  const [retourCombat, setRetourCombat] = useState(false);
+  useEffect(() => { if (vue !== "cartes" && vue !== "defi") setRetourCombat(false); }, [vue]);
   useEffect(() => {
     bdRetour.definirGardeSortie(() => setConfirmQuitter(true));
   }, []);
@@ -9941,6 +10239,25 @@ function BioDex() {
     const maj = { ...obs, fiche };
     try { await dbAjouter(maj); } catch {}
     setObservations((prev) => prev.map((o) => (o.id === id ? maj : o)));
+  }
+
+  // Ajoute de l'XP à une carte après un défi de ligue (victoire OU défaite).
+  // Renvoie true si la carte vient de monter d'un niveau (pour l'animation).
+  async function gagnerXp(idCarte, aGagne) {
+    if (!idCarte) return false;
+    const obs = observations.find((o) => o.id === idCarte);
+    if (!obs || !obs.carte) return false;
+    const avant = niveauDeXp(obs.carte.xp);
+    const nouvelXp = (Number(obs.carte.xp) || 0) + (aGagne ? XP_VICTOIRE : XP_DEFAITE);
+    const maj = { ...obs, carte: { ...obs.carte, xp: nouvelXp } };
+    try { await dbAjouter(maj); } catch {}
+    setObservations((prev) => prev.map((o) => (o.id === idCarte ? maj : o)));
+    const apres = niveauDeXp(nouvelXp);
+    if (apres > avant) {
+      celebrer({ emoji: "⭐", titre: "Niveau " + apres + " !", texte: (obs.nom || "Ta carte") + " gagne en puissance.", ton: "espece" });
+      return true;
+    }
+    return false;
   }
 
   async function majCarte(id, carte) {
@@ -10170,14 +10487,14 @@ function BioDex() {
       )}
       {vue === "defi" && carteDefiee && (
         <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-          <Bouton onClick={() => { setVue("cartes"); setCarteDefiee(null); }} style={{ marginBottom: 14 }}>← Retour à la ligue</Bouton>
+          <Bouton onClick={() => { setRetourCombat(true); setVue("cartes"); setCarteDefiee(null); }} style={{ marginBottom: 14 }}>← Retour aux défis</Bouton>
           <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.papier, marginBottom: 4 }}>⚔️ Défi contre {carteDefiee.nom}</div>
           <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 16 }}>Carte de {carteDefiee.proprietaire}. Choisis ton champion !</div>
           <Combat
             cartes={observations}
             adversaireImpose={carteDefiee}
             defieur={prenom}
-            onResultatDefi={(jaiGagne) => { enregistrerResultatDefi(carteDefiee, prenom, jaiGagne); }}
+            onResultatDefi={(jaiGagne, idCarte) => { enregistrerResultatDefi(carteDefiee, prenom, jaiGagne); gagnerXp(idCarte, jaiGagne); }}
           />
         </div>
       )}
@@ -10191,6 +10508,7 @@ function BioDex() {
           onFermer={() => setCentreOuvert(false)}
           onAllerMur={() => { setCentreOuvert(false); if (MUR_ACTIF) setVue("mur"); }}
           onAllerIdees={() => { setCentreOuvert(false); if (MUR_ACTIF) setVue("idees"); }}
+          onAllerLigue={() => { setCentreOuvert(false); if (MUR_ACTIF) setVue("ligue"); }}
         />
       )}
       {menuOuvert && (
@@ -10212,6 +10530,7 @@ function BioDex() {
           prenom={prenom}
           onDefinirPrenom={definirPrenom}
           onDefier={(carte) => { setCarteDefiee(carte); setVue("defi"); }}
+          sousVueInitiale={retourCombat ? "combat" : "galerie"}
         />
       )}
       {vue === "stats" && <Stats observations={triees} raretes={raretesGlobal} onFermer={() => setVue("collection")} />}
