@@ -122,7 +122,8 @@ exports.handler = async (event) => {
       "Réponds UNIQUEMENT par un objet JSON valide, sans texte ni Markdown : " +
       '{"attaque":N,"defense":N,"vitesse":N,"rarete":N,' +
       '"element":"un des 8 types : volant, cuirasse, rampant, bondissant, venimeux, aquatique, social ou nocturne",' +
-      '"capacite":{"nom":"nom court de la capacité","effet":"effet de jeu en une phrase"},' +
+      '"capacite":{"nom":"nom court de la capacité","effet":"effet de jeu en une phrase",' +
+      '"famille":"la famille d\'effet la plus cohérente avec la biologie de l\'espèce, parmi exactement : frappe (attaque brute), regen (l\'insecte se soigne/régénère/mue), sonne (il étourdit, paralyse, aveugle ou désoriente sa proie), drain (il aspire, absorbe, vampirise ou épuise sa cible). Choisis frappe si aucune autre ne colle vraiment."},' +
       (aImage ? '"authentique":true,"authenticite_raison":"",' : "") +
       '"citation":"une phrase d\'ambiance évocatrice sur l\'espèce (max 15 mots)"}';
     const contenu = [{ type: "text", text: "Crée la carte de : " + nom + (nomSci ? " (" + nomSci + ")" : "") + "." }];
