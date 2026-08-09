@@ -218,9 +218,9 @@ const bdRetour = (() => {
   return { enregistrer, definirGardeSortie, quitterVraiment };
 })();
 
-// ============ BioDex v1.49 (PWA) ============
+// ============ BioDex v1.54 (PWA) ============
 
-const VERSION = "v1.49";
+const VERSION = "v1.54";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -480,6 +480,75 @@ function lireGpsExif(file) {
     };
     reader.onerror = () => resolve(null);
     // On ne lit que les premiers 128 Ko (l'EXIF est au début du fichier)
+    reader.readAsArrayBuffer(file.slice(0, 131072));
+  });
+}
+
+
+// Lit la DATE DE PRISE DE VUE dans les métadonnées EXIF (tag DateTimeOriginal).
+// Renvoie un objet Date, ou null si l'info est absente (photo reçue par messagerie,
+// capture d'écran, image retéléchargée…). Sert à distinguer une date SÛRE d'une date devinée.
+function lireDateExif(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        const view = new DataView(e.target.result);
+        if (view.getUint16(0, false) !== 0xFFD8) { resolve(null); return; }
+        const length = view.byteLength;
+        let offset = 2;
+        const lireAscii = (off, n) => {
+          let out = "";
+          for (let k = 0; k < n; k++) {
+            const c = view.getUint8(off + k);
+            if (c === 0) break;
+            out += String.fromCharCode(c);
+          }
+          return out;
+        };
+        // "2026:07:18 14:32:05" -> Date
+        const enDate = (txt) => {
+          const m = /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(txt || "");
+          if (!m) return null;
+          const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+          return isNaN(d.getTime()) ? null : d;
+        };
+        while (offset < length) {
+          const marker = view.getUint16(offset, false);
+          offset += 2;
+          if (marker === 0xFFE1) {
+            if (view.getUint32(offset + 2, false) !== 0x45786966) { resolve(null); return; }
+            const tiffOffset = offset + 8;
+            const little = view.getUint16(tiffOffset, false) === 0x4949;
+            const dirStart = tiffOffset + view.getUint32(tiffOffset + 4, little);
+            const entries = view.getUint16(dirStart, little);
+            let exifIFD = null, dateIFD0 = null;
+            for (let i = 0; i < entries; i++) {
+              const eo = dirStart + 2 + i * 12;
+              const tag = view.getUint16(eo, little);
+              if (tag === 0x8769) exifIFD = tiffOffset + view.getUint32(eo + 8, little); // pointeur ExifIFD
+              else if (tag === 0x0132) dateIFD0 = lireAscii(tiffOffset + view.getUint32(eo + 8, little), 20); // DateTime
+            }
+            if (exifIFD !== null) {
+              const n = view.getUint16(exifIFD, little);
+              for (let i = 0; i < n; i++) {
+                const eo = exifIFD + 2 + i * 12;
+                const tag = view.getUint16(eo, little);
+                if (tag === 0x9003 || tag === 0x9004) { // DateTimeOriginal / DateTimeDigitized
+                  const d = enDate(lireAscii(tiffOffset + view.getUint32(eo + 8, little), 20));
+                  if (d) { resolve(d); return; }
+                }
+              }
+            }
+            resolve(enDate(dateIFD0));
+            return;
+          } else if ((marker & 0xFF00) !== 0xFF00) break;
+          else offset += view.getUint16(offset, false);
+        }
+        resolve(null);
+      } catch { resolve(null); }
+    };
+    reader.onerror = () => resolve(null);
     reader.readAsArrayBuffer(file.slice(0, 131072));
   });
 }
@@ -759,7 +828,7 @@ async function envoyerLienMagique(email) {
     email: email.trim(),
     options: { emailRedirectTo: window.location.origin },
   });
-  if (error) throw new Error(error.message || "Envoi impossible");
+  if (error) throw erreurSupabase("envoyerLienMagique", error, error.message || "Envoi impossible");
   return true;
 }
 
@@ -797,7 +866,7 @@ async function ajouterAuProfil(obs, auteur) {
     date_obs: obs.date || new Date().toISOString(),
   };
   const { error } = await sb.from("collections").insert(entree);
-  if (error) throw new Error(error.message || "Ajout impossible");
+  if (error) throw erreurSupabase("ajouterAuProfil", error, error.message || "Ajout impossible");
   return true;
 }
 
@@ -824,14 +893,14 @@ async function adminSupprimerPost(id) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { error } = await sb.from("posts").delete().eq("id", id);
-  if (error) throw new Error(error.message || "Suppression refusée par le serveur");
+  if (error) throw erreurSupabase("adminSupprimerPost", error, error.message || "Suppression refusée par le serveur");
   return true;
 }
 async function adminSupprimerIdee(id) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { error } = await sb.from("idees").delete().eq("id", id);
-  if (error) throw new Error(error.message || "Suppression refusée par le serveur");
+  if (error) throw erreurSupabase("adminSupprimerIdee", error, error.message || "Suppression refusée par le serveur");
   return true;
 }
 
@@ -851,7 +920,7 @@ async function retirerDuProfil(id) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { error } = await sb.from("collections").delete().eq("id", id);
-  if (error) throw new Error(error.message || "Suppression impossible");
+  if (error) throw erreurSupabase("retirerDuProfil", error, error.message || "Suppression impossible");
   return true;
 }
 
@@ -911,7 +980,7 @@ async function publierAuMur(obs, auteur, precision, cadreMur) {
     const compresse = await compresserPourMur(obs.photo, cadreMur);
     const nomFichier = `post-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
     const { error: errUp } = await sb.storage.from("photos").upload(nomFichier, compresse, { contentType: "image/jpeg", upsert: false });
-    if (errUp) throw new Error("Envoi de la photo impossible");
+    if (errUp) throw erreurSupabase("publierAuMur/photo", errUp, "Envoi de la photo impossible");
     const { data: pub } = sb.storage.from("photos").getPublicUrl(nomFichier);
     photoUrl = pub ? pub.publicUrl : "";
   }
@@ -929,9 +998,12 @@ async function publierAuMur(obs, auteur, precision, cadreMur) {
     precision: niveau,
     photo_url: photoUrl,
     note: (obs.notes || "").slice(0, 500),
+    // Date RÉELLE de l'observation (≠ date de publication) : on peut partager
+    // aujourd'hui une trouvaille faite il y a deux mois, le mur doit dire la vérité.
+    date_obs: obs.date || null,
   };
   const { error: errIns } = await sb.from("posts").insert(post);
-  if (errIns) throw new Error("Publication impossible");
+  if (errIns) throw erreurSupabase("publierAuMur/insert", errIns, "Publication impossible");
   return true;
 }
 
@@ -978,7 +1050,7 @@ async function enregistrerProfil(prenom, champs) {
     maj: new Date().toISOString(),
   };
   const { error } = await sb.from("profils").upsert(ligne, { onConflict: "prenom" });
-  if (error) throw new Error(error.message || "Enregistrement impossible");
+  if (error) throw erreurSupabase("enregistrerProfil", error, error.message || "Enregistrement impossible");
   _cacheProfils = null; // on invalide le cache
   return ligne;
 }
@@ -987,7 +1059,7 @@ async function chargerMur(limite = 50) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Mur non configuré");
   const { data, error } = await sb.from("posts").select("*").order("created_at", { ascending: false }).limit(limite);
-  if (error) throw new Error("Lecture du mur impossible");
+  if (error) throw erreurSupabase("chargerMur", error, "Lecture du mur impossible");
   return data || [];
 }
 
@@ -1133,7 +1205,7 @@ async function engagerCarte(obs, proprietaire) {
     authentique: c.authentique === false ? false : true,
   };
   const { error } = await sb.from("cartes_ligue").upsert(ligne, { onConflict: "proprietaire,carte_id", ignoreDuplicates: true });
-  if (error) throw new Error("Impossible d'engager cette carte");
+  if (error) throw erreurSupabase("engagerCarte", error, "Impossible d'engager cette carte");
   return true;
 }
 
@@ -1141,7 +1213,7 @@ async function retirerCarteLigue(proprietaire, carteId) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { error } = await sb.from("cartes_ligue").delete().eq("proprietaire", proprietaire).eq("carte_id", String(carteId));
-  if (error) throw new Error("Retrait impossible");
+  if (error) throw erreurSupabase("retirerCarteLigue", error, "Retrait impossible");
   return true;
 }
 
@@ -1233,7 +1305,7 @@ async function validerMission(saisonCle, missionId, auteur, auto) {
     { saison: saisonCle, mission_id: missionId, auteur: (auteur || "Anonyme").slice(0, 40), auto: !!auto },
     { onConflict: "saison,mission_id,auteur", ignoreDuplicates: true }
   );
-  if (error) throw new Error("Validation impossible");
+  if (error) throw erreurSupabase("validerMission", error, "Validation impossible");
   return true;
 }
 
@@ -1241,11 +1313,16 @@ async function devaliderMission(saisonCle, missionId, auteur) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { error } = await sb.from("missions_validees").delete().eq("saison", saisonCle).eq("mission_id", missionId).eq("auteur", auteur);
-  if (error) throw new Error("Retrait impossible");
+  if (error) throw erreurSupabase("devaliderMission", error, "Retrait impossible");
   return true;
 }
 
 const NOUVEAUTES = [
+  { v: "1.54", date: "2026-07", items: ["🩺 Diagnostic : quand quelque chose ne marche pas, l'appli garde désormais la trace exacte du problème (visible dans l'espace d'administration). Avant, les erreurs disparaissaient en silence et il fallait deviner. Si tu rencontres un souci, préviens Sylvain : il pourra voir précisément ce qui a coincé."] },
+  { v: "1.53", date: "2026-07", items: ["🙋 Plus d'observation oubliée sans nom : si tu enregistres une trouvaille sans l'identifier, BioDex te demande de choisir — soit tu l'identifies, soit tu cliques « Je ne sais pas, demander de l'aide ». Ne pas savoir reste tout à fait normal, on veut juste éviter les oublis !", "❓ Un rappel apparaît en haut de ta collection quand des observations attendent encore un nom."] },
+  { v: "1.52", date: "2026-07", items: ["📅 Le mur affiche la vraie date d'observation : si tu partages aujourd'hui une trouvaille faite il y a deux mois, c'est bien la date où tu l'as vue qui s'affiche (avec un petit ↩ indiquant un partage différé). Avant, tout apparaissait à la date du partage.", "🛡️ Garde-fous de saisie : impossible d'enregistrer ou de partager une observation sans date ni biotope — ce sont eux qui font vivre les stats et la carte. Les dates dans le futur sont aussi refusées."] },
+  { v: "1.51", date: "2026-07", items: ["🧹 Écrans allégés : la fiche d'observation et les stats étaient devenues très longues à faire défiler. Les parties secondaires sont maintenant regroupées dans des sections repliables (« 📅 Quand & où », « 🔎 Détails du terrain », « 📈 Analyses détaillées ») avec un résumé visible sans les ouvrir. Si une info demande ton attention, la section s'ouvre toute seule et passe en orange.", "🔠 Petits textes agrandis et boutons un peu plus hauts pour taper plus facilement."] },
+  { v: "1.50", date: "2026-07", items: ["📅 Date et lieu à compléter : BioDex lit maintenant la vraie date de prise de vue dans la photo. Quand elle est absente (photo reçue par WhatsApp, capture d'écran…), l'appli te prévient au lieu de deviner en silence, et tu peux corriger la date et placer le lieu sur la carte toi-même.", "🐛 Correctif : une photo mise de côté dans « à trier » gardait la date du jour où tu la complétais, au lieu de la date de la photo. C'est réparé."] },
   { v: "1.49", date: "2026-07", items: ["⭐ Tes cartes montent en niveau ! Chaque défi de ligue rapporte de l'XP — même quand tu perds — et tous les 30 points ta carte gagne une étoile (5 max) avec +3 % de stats à chaque palier. Les étoiles s'affichent sur la carte. Le plafond reste bas exprès : ceux qui jouent moins souvent gardent toutes leurs chances."] },
   { v: "1.48", date: "2026-07", items: ["✨ Les capacités ont enfin des effets variés ! Chaque carte reçoit une famille selon la biologie de son insecte : ⚔️ Frappe (gros dégâts), 💚 Régénération (tu te soignes en frappant), 💫 Coup sonnant (l'adversaire encaisse mal son prochain coup) et 🩸 Drain (tu lui voles son énergie). De vrais choix tactiques en combat — et tes cartes existantes en profitent déjà !"] },
   { v: "1.47", date: "2026-07", items: ["📜 Journal des combats : un nouvel onglet dans le Combat retrace tous tes défis (lancés comme subis), avec ton bilan victoires/défaites et ton taux de réussite.", "⚡ Combats plus nerveux : les affrontements durent désormais ~15 tours au lieu de ~21, sans rien changer à l'équilibre entre les types (vérifié au simulateur)."] },
@@ -1465,7 +1542,7 @@ async function reagir(postId, type, auteur, dejaReagi) {
   const nom = (auteur || "Anonyme").slice(0, 40);
   if (dejaReagi) {
     const { error } = await sb.from("reactions_detail").delete().match({ post_id: postId, type, auteur: nom });
-    if (error) throw new Error("Réaction impossible");
+    if (error) throw erreurSupabase("reagir", error, "Réaction impossible");
   } else {
     const { error } = await sb.from("reactions_detail").insert({ post_id: postId, type, auteur: nom });
     // 23505 = doublon (déjà réagi) : on ignore silencieusement
@@ -1515,7 +1592,7 @@ async function chargerCommentaires(postId) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { data, error } = await sb.from("commentaires").select("*").eq("post_id", postId).order("created_at", { ascending: true });
-  if (error) throw new Error("Lecture des commentaires impossible");
+  if (error) throw erreurSupabase("chargerCommentaires", error, "Lecture des commentaires impossible");
   return data || [];
 }
 
@@ -1525,7 +1602,7 @@ async function ajouterCommentaire(postId, auteur, texte) {
   const propre = masquerInsultes((texte || "").trim()).slice(0, 400);
   if (!propre) throw new Error("Commentaire vide");
   const { data, error } = await sb.from("commentaires").insert({ post_id: postId, auteur: (auteur || "Anonyme").slice(0, 40), texte: propre }).select();
-  if (error) throw new Error("Envoi impossible");
+  if (error) throw erreurSupabase("ajouterCommentaire", error, "Envoi impossible");
   return data && data[0];
 }
 
@@ -1533,7 +1610,7 @@ async function supprimerCommentaire(id) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { error } = await sb.from("commentaires").delete().eq("id", id);
-  if (error) throw new Error(error.message || "Suppression refusée par le serveur");
+  if (error) throw erreurSupabase("supprimerCommentaire", error, error.message || "Suppression refusée par le serveur");
   return true;
 }
 
@@ -1555,7 +1632,7 @@ async function chargerTousCommentaires() {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { data, error } = await sb.from("commentaires").select("*").order("created_at", { ascending: false }).limit(300);
-  if (error) throw new Error("Lecture impossible");
+  if (error) throw erreurSupabase("chargerTousCommentaires", error, "Lecture impossible");
   return data || [];
 }
 
@@ -1653,7 +1730,7 @@ async function chargerIdees() {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { data, error } = await sb.from("idees").select("*").order("created_at", { ascending: false }).limit(100);
-  if (error) throw new Error("Lecture des idées impossible");
+  if (error) throw erreurSupabase("chargerIdees", error, "Lecture des idées impossible");
   return data || [];
 }
 
@@ -1661,7 +1738,7 @@ async function proposerIdee(auteur, idee) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { error } = await sb.from("idees").insert({ auteur: (auteur || "Anonyme").slice(0, 40), idee: idee.slice(0, 500) });
-  if (error) throw new Error("Envoi impossible");
+  if (error) throw erreurSupabase("proposerIdee", error, "Envoi impossible");
   return true;
 }
 
@@ -1669,7 +1746,7 @@ async function supprimerIdee(id) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { error } = await sb.from("idees").delete().eq("id", id);
-  if (error) throw new Error("Suppression impossible");
+  if (error) throw erreurSupabase("supprimerIdee", error, "Suppression impossible");
   return true;
 }
 
@@ -1678,7 +1755,7 @@ async function marquerIdeeRealisee(id, realisee) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { error } = await sb.from("idees").update({ realisee: !!realisee }).eq("id", id);
-  if (error) throw new Error("Mise à jour impossible");
+  if (error) throw erreurSupabase("marquerIdeeRealisee", error, "Mise à jour impossible");
   return true;
 }
 
@@ -1687,7 +1764,7 @@ async function chargerAvis() {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { data, error } = await sb.from("satisfaction").select("*").order("created_at", { ascending: false }).limit(100);
-  if (error) throw new Error("Lecture des avis impossible");
+  if (error) throw erreurSupabase("chargerAvis", error, "Lecture des avis impossible");
   return data || [];
 }
 
@@ -1697,7 +1774,7 @@ async function envoyerAvis(auteur, note, commentaire, anonyme) {
   const n = Math.max(1, Math.min(5, parseInt(note, 10) || 0));
   const nom = anonyme ? "Anonyme" : (auteur || "Anonyme").slice(0, 40);
   const { error } = await sb.from("satisfaction").insert({ auteur: nom, note: n, commentaire: (commentaire || "").slice(0, 500) });
-  if (error) throw new Error("Envoi impossible");
+  if (error) throw erreurSupabase("envoyerAvis", error, "Envoi impossible");
   return true;
 }
 
@@ -1705,7 +1782,7 @@ async function adminSupprimerAvis(id) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
   const { error } = await sb.from("satisfaction").delete().eq("id", id);
-  if (error) throw new Error(error.message || "Suppression refusée par le serveur");
+  if (error) throw erreurSupabase("adminSupprimerAvis", error, error.message || "Suppression refusée par le serveur");
   return true;
 }
 
@@ -1727,7 +1804,7 @@ async function supprimerPost(post) {
   }
   // 2) supprimer la ligne du post
   const { error } = await sb.from("posts").delete().eq("id", post.id);
-  if (error) throw new Error("Suppression impossible");
+  if (error) throw erreurSupabase("supprimerPost", error, "Suppression impossible");
   return true;
 }
 
@@ -1742,7 +1819,7 @@ async function modifierPost(id, champs) {
     note: (champs.note || "").slice(0, 500),
   };
   const { error } = await sb.from("posts").update(maj).eq("id", id);
-  if (error) throw new Error("Modification impossible");
+  if (error) throw erreurSupabase("modifierPost", error, "Modification impossible");
   return true;
 }
 
@@ -1973,7 +2050,7 @@ function Etiquette({ obs }) {
       <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 12, color: "#6B6350", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {obs.nomSci || "—"}
       </div>
-      <div style={{ fontFamily: sans, fontSize: 9.5, letterSpacing: 0.4, textTransform: "uppercase", color: "#8A8065", marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(0,0,0,.08)", display: "flex", justifyContent: "space-between" }}>
+      <div style={{ fontFamily: sans, fontSize: 10.5, letterSpacing: 0.4, textTransform: "uppercase", color: "#8A8065", marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(0,0,0,.08)", display: "flex", justifyContent: "space-between" }}>
         <span>{biotopeOf(obs.biotope).emoji} {biotopeOf(obs.biotope).label}</span>
         <span>{new Date(obs.date).toLocaleDateString("fr-FR")}</span>
       </div>
@@ -2318,144 +2395,147 @@ function Stats({ observations, raretes, onFermer }) {
           <div key={lab} style={{ ...carte, padding: "12px 8px", textAlign: "center" }}>
             <div style={{ fontSize: 18 }}>{emo}</div>
             <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.ambreClair, lineHeight: 1, marginTop: 2 }}>{val}</div>
-            <div style={{ fontFamily: sans, fontSize: 10, textTransform: "uppercase", color: C.papierSombre, marginTop: 4 }}>{lab}</div>
+            <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 4 }}>{lab}</div>
           </div>
         ))}
       </div>
 
-      {/* Confiance moyenne d'identification */}
-      {confianceMoy !== null && (
-        <div style={{ ...carte, marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-            <span style={titre}>Fiabilité des identifications</span>
-            <span style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: couleurPourcent(confianceMoy) }}>{confianceMoy}%</span>
+      {/* Analyses détaillées — repliées : l'essentiel (chiffres clés, badges) reste visible. */}
+      <SectionPliable titre="📈 Analyses détaillées" resume="Fiabilité, ordres, rythme, spots, corrélations, conditions">
+        {/* Confiance moyenne d'identification */}
+        {confianceMoy !== null && (
+          <div style={{ ...carte, marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <span style={titre}>Fiabilité des identifications</span>
+              <span style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: couleurPourcent(confianceMoy) }}>{confianceMoy}%</span>
+            </div>
+            <div style={{ height: 10, borderRadius: 5, background: "#0F130C", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${confianceMoy}%`, borderRadius: 5, background: couleurPourcent(confianceMoy), transition: "width .5s ease" }} />
+            </div>
+            <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 8, lineHeight: 1.4 }}>
+              Confiance moyenne de l'IA sur tes {confiances.length} identification{confiances.length > 1 ? "s" : ""} avec pourcentage.
+            </div>
           </div>
-          <div style={{ height: 10, borderRadius: 5, background: "#0F130C", overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${confianceMoy}%`, borderRadius: 5, background: couleurPourcent(confianceMoy), transition: "width .5s ease" }} />
-          </div>
-          <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 8, lineHeight: 1.4 }}>
-            Confiance moyenne de l'IA sur tes {confiances.length} identification{confiances.length > 1 ? "s" : ""} avec pourcentage.
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Répartition par ordre taxonomique */}
-      {ordresTri.length > 0 && (
-        <div style={{ ...carte, marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-            <span style={titre}>Par ordre d'insecte</span>
-            <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{nbOrdres} ordre{nbOrdres > 1 ? "s" : ""}</span>
+        {/* Répartition par ordre taxonomique */}
+        {ordresTri.length > 0 && (
+          <div style={{ ...carte, marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+              <span style={titre}>Par ordre d'insecte</span>
+              <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{nbOrdres} ordre{nbOrdres > 1 ? "s" : ""}</span>
+            </div>
+            {ordresTri.map(([id, n]) => {
+              const info = ordreInfo(id);
+              const pct = Math.round((n / total) * 100);
+              return (
+                <div key={id} style={{ marginBottom: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 13, color: C.papier, marginBottom: 4 }}>
+                    <span>{info.emoji} {info.label}</span>
+                    <span style={{ color: C.papierSombre }}>{n} · {pct}%</span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 4, background: "#0F130C", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${(n / maxOrdre) * 100}%`, borderRadius: 4, background: "linear-gradient(90deg, #6E8B4E, #A8C97E)", transition: "width .5s ease" }} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          {ordresTri.map(([id, n]) => {
-            const info = ordreInfo(id);
-            const pct = Math.round((n / total) * 100);
-            return (
-              <div key={id} style={{ marginBottom: 10 }}>
+        )}
+
+        {/* Rythme : moments de la journée */}
+        {totalMoments > 0 && (
+          <div style={{ ...carte, marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+              <span style={titre}>Ton rythme d'observation</span>
+            </div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5 }}>
+              Tu observes surtout <b style={{ color: C.ambreClair }}>{momentsTri[0].emoji} {momentsTri[0].label.toLowerCase()}</b> ({Math.round((momentsTri[0].n / totalMoments) * 100)}% de tes trouvailles).
+            </div>
+            {momentsTri.map((m) => (
+              <div key={m.id} style={{ marginBottom: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 13, color: C.papier, marginBottom: 4 }}>
-                  <span>{info.emoji} {info.label}</span>
-                  <span style={{ color: C.papierSombre }}>{n} · {pct}%</span>
+                  <span>{m.emoji} {m.label}</span>
+                  <span style={{ color: C.papierSombre }}>{m.n} · {Math.round((m.n / totalMoments) * 100)}%</span>
                 </div>
                 <div style={{ height: 8, borderRadius: 4, background: "#0F130C", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${(n / maxOrdre) * 100}%`, borderRadius: 4, background: "linear-gradient(90deg, #6E8B4E, #A8C97E)", transition: "width .5s ease" }} />
+                  <div style={{ height: "100%", width: `${(m.n / maxMoment) * 100}%`, borderRadius: 4, background: "linear-gradient(90deg, #8A6E3A, #E4C878)", transition: "width .5s ease" }} />
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Rythme : moments de la journée */}
-      {totalMoments > 0 && (
-        <div style={{ ...carte, marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-            <span style={titre}>Ton rythme d'observation</span>
-          </div>
-          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5 }}>
-            Tu observes surtout <b style={{ color: C.ambreClair }}>{momentsTri[0].emoji} {momentsTri[0].label.toLowerCase()}</b> ({Math.round((momentsTri[0].n / totalMoments) * 100)}% de tes trouvailles).
-          </div>
-          {momentsTri.map((m) => (
-            <div key={m.id} style={{ marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 13, color: C.papier, marginBottom: 4 }}>
-                <span>{m.emoji} {m.label}</span>
-                <span style={{ color: C.papierSombre }}>{m.n} · {Math.round((m.n / totalMoments) * 100)}%</span>
-              </div>
-              <div style={{ height: 8, borderRadius: 4, background: "#0F130C", overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${(m.n / maxMoment) * 100}%`, borderRadius: 4, background: "linear-gradient(90deg, #8A6E3A, #E4C878)", transition: "width .5s ease" }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Spots : lieux d'observation */}
-      {spotsTri.length > 0 && (
-        <div style={{ ...carte, marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-            <span style={titre}>Tes lieux d'observation</span>
-            <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{spotsTri.length} lieu{spotsTri.length > 1 ? "x" : ""}</span>
-          </div>
-          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5 }}>
-            Ton spot le plus riche : <b style={{ color: C.ambreClair }}>📍 {spotsTri[0].nom}</b> ({spotsTri[0].especes} espèce{spotsTri[0].especes > 1 ? "s" : ""}).
-          </div>
-          {spotsTri.slice(0, 6).map((s) => (
-            <div key={s.nom} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 11px", borderRadius: 9, background: C.fond, border: `1px solid ${C.bordure}`, marginBottom: 7 }}>
-              <span style={{ fontFamily: sans, fontSize: 13.5, color: C.papier }}>📍 {s.nom}</span>
-              <span style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
-                <b style={{ color: C.lichen }}>{s.especes}</b> espèce{s.especes > 1 ? "s" : ""} · {s.obs} obs.
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Ce que révèlent tes données (corrélations) */}
-      {enseignements.length > 0 && (
-        <div style={{ ...carte, marginBottom: 16, background: "linear-gradient(135deg, #1A2820, #14201A)", border: "1px solid #2E4A3A" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: 17 }}>🔬</span>
-            <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#7FC79B" }}>Ce que révèlent tes données</span>
-          </div>
-          <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 13, lineHeight: 1.5, fontStyle: "italic" }}>
-            Des tendances tirées de tes propres observations — de la vraie petite science !
-          </div>
-          <div style={{ display: "grid", gap: 10 }}>
-            {enseignements.map((e, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 9, background: "rgba(0,0,0,.22)", border: `1px solid ${C.bordure}` }}>
-                <span style={{ fontSize: 17, flexShrink: 0 }}>{e.emoji}</span>
-                <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierClair, lineHeight: 1.55 }}>{e.texte}</div>
               </div>
             ))}
           </div>
-          <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, marginTop: 11, lineHeight: 1.45, fontStyle: "italic" }}>
-            ⚠️ Ce sont des tendances personnelles, pas des vérités scientifiques : elles reflètent tes habitudes de sortie autant que la biologie des insectes !
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Conditions fétiches */}
-      {(tempMoy !== null || cielTop) && (
-        <div style={{ ...carte, marginBottom: 16 }}>
-          <div style={{ marginBottom: 12 }}><span style={titre}>Tes conditions fétiches</span></div>
-          <div style={{ display: "flex", gap: 10 }}>
-            {tempMoy !== null && (
-              <div style={{ flex: 1, textAlign: "center", padding: "12px 8px", borderRadius: 10, background: C.fond, border: `1px solid ${C.bordure}` }}>
-                <div style={{ fontSize: 22, marginBottom: 3 }}>🌡️</div>
-                <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{tempMoy}°C</div>
-                <div style={{ fontFamily: sans, fontSize: 10, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Température moyenne</div>
+        {/* Spots : lieux d'observation */}
+        {spotsTri.length > 0 && (
+          <div style={{ ...carte, marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+              <span style={titre}>Tes lieux d'observation</span>
+              <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{spotsTri.length} lieu{spotsTri.length > 1 ? "x" : ""}</span>
+            </div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5 }}>
+              Ton spot le plus riche : <b style={{ color: C.ambreClair }}>📍 {spotsTri[0].nom}</b> ({spotsTri[0].especes} espèce{spotsTri[0].especes > 1 ? "s" : ""}).
+            </div>
+            {spotsTri.slice(0, 6).map((s) => (
+              <div key={s.nom} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 11px", borderRadius: 9, background: C.fond, border: `1px solid ${C.bordure}`, marginBottom: 7 }}>
+                <span style={{ fontFamily: sans, fontSize: 13.5, color: C.papier }}>📍 {s.nom}</span>
+                <span style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
+                  <b style={{ color: C.lichen }}>{s.especes}</b> espèce{s.especes > 1 ? "s" : ""} · {s.obs} obs.
+                </span>
               </div>
-            )}
-            {cielTop && (
-              <div style={{ flex: 1, textAlign: "center", padding: "12px 8px", borderRadius: 10, background: C.fond, border: `1px solid ${C.bordure}` }}>
-                <div style={{ fontSize: 22, marginBottom: 3 }}>{cielTop.emoji}</div>
-                <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 700, color: C.ambreClair, lineHeight: 1.2 }}>{cielTop.label}</div>
-                <div style={{ fontFamily: sans, fontSize: 10, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Ciel le plus fréquent</div>
-              </div>
-            )}
+            ))}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Activité par mois */}
+        {/* Ce que révèlent tes données (corrélations) */}
+        {enseignements.length > 0 && (
+          <div style={{ ...carte, marginBottom: 16, background: "linear-gradient(135deg, #1A2820, #14201A)", border: "1px solid #2E4A3A" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 17 }}>🔬</span>
+              <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#7FC79B" }}>Ce que révèlent tes données</span>
+            </div>
+            <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 13, lineHeight: 1.5, fontStyle: "italic" }}>
+              Des tendances tirées de tes propres observations — de la vraie petite science !
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {enseignements.map((e, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 9, background: "rgba(0,0,0,.22)", border: `1px solid ${C.bordure}` }}>
+                  <span style={{ fontSize: 17, flexShrink: 0 }}>{e.emoji}</span>
+                  <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierClair, lineHeight: 1.55 }}>{e.texte}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, marginTop: 11, lineHeight: 1.45, fontStyle: "italic" }}>
+              ⚠️ Ce sont des tendances personnelles, pas des vérités scientifiques : elles reflètent tes habitudes de sortie autant que la biologie des insectes !
+            </div>
+          </div>
+        )}
+
+        {/* Conditions fétiches */}
+        {(tempMoy !== null || cielTop) && (
+          <div style={{ ...carte, marginBottom: 16 }}>
+            <div style={{ marginBottom: 12 }}><span style={titre}>Tes conditions fétiches</span></div>
+            <div style={{ display: "flex", gap: 10 }}>
+              {tempMoy !== null && (
+                <div style={{ flex: 1, textAlign: "center", padding: "12px 8px", borderRadius: 10, background: C.fond, border: `1px solid ${C.bordure}` }}>
+                  <div style={{ fontSize: 22, marginBottom: 3 }}>🌡️</div>
+                  <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{tempMoy}°C</div>
+                  <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Température moyenne</div>
+                </div>
+              )}
+              {cielTop && (
+                <div style={{ flex: 1, textAlign: "center", padding: "12px 8px", borderRadius: 10, background: C.fond, border: `1px solid ${C.bordure}` }}>
+                  <div style={{ fontSize: 22, marginBottom: 3 }}>{cielTop.emoji}</div>
+                  <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 700, color: C.ambreClair, lineHeight: 1.2 }}>{cielTop.label}</div>
+                  <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Ciel le plus fréquent</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </SectionPliable>
+
+
       {/* Espèces rares */}
       {nbEspecesRares > 0 && (
         <div style={{ ...carte, marginBottom: 16, display: "flex", alignItems: "center", gap: 12, background: "linear-gradient(#2A2417, #201B12)", border: "1px solid #4A3E22" }}>
@@ -2478,7 +2558,7 @@ function Stats({ observations, raretes, onFermer }) {
           </div>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 600, color: C.ambreClair, lineHeight: 1 }}>{star[1]}</div>
-            <div style={{ fontFamily: sans, fontSize: 10, color: C.papierSombre }}>fois</div>
+            <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre }}>fois</div>
           </div>
         </div>
       )}
@@ -2493,7 +2573,7 @@ function Stats({ observations, raretes, onFermer }) {
           {badges.map((b, i) => (
             <div key={i} style={{ textAlign: "center", opacity: b.atteint ? 1 : 0.32, filter: b.atteint ? "none" : "grayscale(1)" }} title={b.label}>
               <div style={{ fontSize: 26, lineHeight: 1.1 }}>{b.emoji}</div>
-              <div style={{ fontFamily: sans, fontSize: 9.5, color: b.atteint ? C.papier : C.papierSombre, marginTop: 3, lineHeight: 1.2 }}>{b.label}</div>
+              <div style={{ fontFamily: sans, fontSize: 10.5, color: b.atteint ? C.papier : C.papierSombre, marginTop: 3, lineHeight: 1.2 }}>{b.label}</div>
             </div>
           ))}
         </div>
@@ -2566,7 +2646,7 @@ function Stats({ observations, raretes, onFermer }) {
               <div key={m} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                 <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{n}</div>
                 <div style={{ width: "100%", maxWidth: 44, height: `${maxMois ? (n / maxMois) * 84 : 0}px`, minHeight: 4, borderRadius: "5px 5px 0 0", background: `linear-gradient(${C.ambreClair}, ${C.ambre})`, transition: "height .5s ease" }} />
-                <div style={{ fontFamily: sans, fontSize: 10, color: C.papierSombre, textAlign: "center", lineHeight: 1.2 }}>{moisLisible(m)}</div>
+                <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, textAlign: "center", lineHeight: 1.2 }}>{moisLisible(m)}</div>
               </div>
             ))}
           </div>
@@ -2966,7 +3046,7 @@ function JardinRefuge({ onFermer }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
                     <span style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: fait ? "#B7DA8E" : C.papier }}>{g.titre}</span>
-                    {g.cle && !fait && <span style={{ fontFamily: sans, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#E0B341", border: "1px solid #6B5A2E", borderRadius: 10, padding: "1px 6px" }}>Essentiel</span>}
+                    {g.cle && !fait && <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#E0B341", border: "1px solid #6B5A2E", borderRadius: 10, padding: "1px 6px" }}>Essentiel</span>}
                   </div>
                   <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierClair, lineHeight: 1.55, marginBottom: 8 }}>{g.texte}</div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -3398,10 +3478,10 @@ function SuiviEspeces({ onFermer }) {
             <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 74 }}>
               {parMois.map((n, i) => (
                 <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                  <span style={{ fontFamily: sans, fontSize: 9, color: n > 0 ? C.papierSombre : "transparent", height: 11 }}>{n || ""}</span>
+                  <span style={{ fontFamily: sans, fontSize: 10.5, color: n > 0 ? C.papierSombre : "transparent", height: 11 }}>{n || ""}</span>
                   <div style={{ width: "100%", height: `${maxMois ? (n / maxMois) * 42 : 0}px`, minHeight: n > 0 ? 3 : 0, borderRadius: "3px 3px 0 0",
                     background: i === pic ? "linear-gradient(#E4C878, #C9A24B)" : (n > 0 ? "linear-gradient(#6E8B4E, #4A5F35)" : "transparent") }} />
-                  <span style={{ fontFamily: sans, fontSize: 9, color: i === pic ? C.ambreClair : C.papierSombre, fontWeight: i === pic ? 800 : 400 }}>{MOIS_C[i]}</span>
+                  <span style={{ fontFamily: sans, fontSize: 10.5, color: i === pic ? C.ambreClair : C.papierSombre, fontWeight: i === pic ? 800 : 400 }}>{MOIS_C[i]}</span>
                 </div>
               ))}
             </div>
@@ -3674,6 +3754,7 @@ function Administration({ onFermer }) {
         {ongletBtn("membres", "👥 Membres " + membresTri.length)}
         {ongletBtn("avis", "😊 Avis " + avis.length)}
         {ongletBtn("commentaires", "💬 Comm. " + coms.length)}
+        {ongletBtn("journal", "🩺 Journal")}
         {ongletBtn("maintenance", "🧹 Maintenance")}
       </div>
 
@@ -3694,7 +3775,7 @@ function Administration({ onFermer }) {
                 <span style={{ fontSize: 21 }}>{e}</span>
                 <div>
                   <div style={{ fontFamily: serif, fontSize: 21, fontWeight: 700, color: C.ambreClair, lineHeight: 1 }}>{v}</div>
-                  <div style={{ fontFamily: sans, fontSize: 10, textTransform: "uppercase", color: C.papierSombre, marginTop: 3 }}>{l}</div>
+                  <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 3 }}>{l}</div>
                 </div>
               </div>
             ))}
@@ -3782,7 +3863,7 @@ function Administration({ onFermer }) {
           <div style={{ ...carte, display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
             <div style={{ textAlign: "center", flexShrink: 0 }}>
               <div style={{ fontFamily: serif, fontSize: 30, fontWeight: 700, color: C.ambreClair, lineHeight: 1 }}>{noteMoyenne ? noteMoyenne.toFixed(1) : "—"}</div>
-              <div style={{ fontFamily: sans, fontSize: 10, textTransform: "uppercase", color: C.papierSombre, marginTop: 3 }}>sur 5</div>
+              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 3 }}>sur 5</div>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <Etoiles note={Math.round(noteMoyenne)} taille={18} />
@@ -3834,6 +3915,46 @@ function Administration({ onFermer }) {
           })}
         </div>
       )}
+
+      {etat === "ok" && onglet === "journal" && (() => {
+        const erreurs = lireJournalErreurs();
+        return (
+          <div>
+            <div style={{ ...carte, marginBottom: 12 }}>
+              <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5 }}>
+                Les {JOURNAL_MAX} dernières erreurs techniques rencontrées <b style={{ color: C.papier }}>sur cet appareil</b>.
+                Elles ne sont pas envoyées sur le serveur. Utile quand quelque chose « ne marche pas » :
+                la cause réelle (message de Supabase, réseau…) est conservée telle quelle.
+              </div>
+            </div>
+            {erreurs.length === 0 && (
+              <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>
+                ✓ Aucune erreur enregistrée. Tout va bien !
+              </div>
+            )}
+            {erreurs.length > 0 && (
+              <div style={{ marginBottom: 12, display: "flex", gap: 8 }}>
+                <button onClick={() => { try { navigator.clipboard.writeText(erreurs.map((e) => `${e.q} [${e.v}] ${e.ou} — ${e.msg}${e.code ? " (" + e.code + ")" : ""}`).join("\n")); setMessage("✓ Journal copié — tu peux le coller dans une discussion."); setTimeout(() => setMessage(""), 3500); } catch { setMessage("❌ Copie impossible"); } }}
+                  style={{ flex: 1, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "8px 10px", borderRadius: 8, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papier, cursor: "pointer" }}>📋 Copier</button>
+                <button onClick={() => { if (window.confirm("Vider le journal d'erreurs ?")) { viderJournalErreurs(); setMessage("✓ Journal vidé."); setTimeout(() => setMessage(""), 2500); setOnglet("maintenance"); setTimeout(() => setOnglet("journal"), 30); } }}
+                  style={{ flex: 1, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "8px 10px", borderRadius: 8, border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, cursor: "pointer" }}>🗑️ Vider</button>
+              </div>
+            )}
+            {erreurs.map((e, i) => (
+              <div key={i} style={{ padding: "10px 12px", marginBottom: 7, background: C.panneau, borderLeft: "4px solid #B5654A", border: `1px solid ${C.bordure}`, borderRadius: 9 }}>
+                <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.45, wordBreak: "break-word" }}>{e.msg}</div>
+                <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 4 }}>
+                  <b style={{ color: C.ambreClair }}>{e.ou}</b>
+                  {e.code ? ` · code ${e.code}` : ""}
+                  {e.v ? ` · ${e.v}` : ""}
+                  {" · "}{e.q ? new Date(e.q).toLocaleString("fr-FR") : ""}
+                </div>
+                {e.info && <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 2, fontStyle: "italic" }}>{e.info}</div>}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {etat === "ok" && onglet === "maintenance" && (
         <div style={{ display: "grid", gap: 11 }}>
@@ -4016,15 +4137,15 @@ function ProfilPublic({ auteur, onFermer }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9, marginBottom: 14 }}>
             <div style={{ ...carte, textAlign: "center", padding: "13px 6px" }}>
               <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.ambreClair }}>{total}</div>
-              <div style={{ fontFamily: sans, fontSize: 9.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Trouvailles</div>
+              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Trouvailles</div>
             </div>
             <div style={{ ...carte, textAlign: "center", padding: "13px 6px" }}>
               <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.ambreClair }}>{nbEspeces}</div>
-              <div style={{ fontFamily: sans, fontSize: 9.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Espèces</div>
+              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Espèces</div>
             </div>
             <div style={{ ...carte, textAlign: "center", padding: "13px 6px" }}>
               <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.ambreClair }}>{points}</div>
-              <div style={{ fontFamily: sans, fontSize: 9.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Points</div>
+              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Points</div>
             </div>
           </div>
 
@@ -4908,22 +5029,26 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir, onSupprimer }) {
     setFlash("");
 
     let posSecours; // position actuelle, demandée une seule fois si besoin
-    let ajoutees = 0, echecs = 0, avecGps = 0, avecMeteo = 0;
+    let ajoutees = 0, echecs = 0, avecGps = 0, avecMeteo = 0, aDate = 0;
 
     for (let i = 0; i < fichiers.length; i++) {
       const f = fichiers[i];
       setEnCours({ fait: i, total: fichiers.length });
       try {
-        // 1) GPS : d'abord celui de la photo (EXIF), sinon la position actuelle
+        // 1) GPS : d'abord celui de la photo (EXIF), sinon la position actuelle (= à vérifier)
         let gps = null;
+        let gpsSur = false;
         try { gps = await lireGpsExif(f); } catch {}
-        if (gps) avecGps++;
+        if (gps) { avecGps++; gpsSur = true; gps = { ...gps, depuisPhoto: true }; }
         else {
           if (posSecours === undefined) posSecours = await positionActuelle();
-          gps = posSecours;
+          gps = posSecours ? { ...posSecours, aVerifier: true } : null;
         }
-        // 2) Date : celle de la photo si connue, sinon maintenant
-        const quand = f.lastModified ? new Date(f.lastModified) : new Date();
+        // 2) Date : la vraie date de prise de vue (EXIF) si elle existe, sinon on devine
+        let quand = null, dateSure = false;
+        try { quand = await lireDateExif(f); } catch {}
+        if (quand) { dateSure = true; aDate++; }
+        else quand = f.lastModified ? new Date(f.lastModified) : new Date();
         // 3) Compression
         const blob = await compresserImage(f);
         // 4) Météo du MOMENT DE LA PHOTO (historique si besoin), pas la météo actuelle
@@ -4939,6 +5064,8 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir, onSupprimer }) {
           moment: momentDepuisDate(quand),
           gps: gps || null,
           date: quand.toISOString(),
+          dateSure, // false = date devinée (fichier), à confirmer au moment du tri
+          gpsSur,   // false = position de repli (ta position au moment de l'import)
           photo: blob,
         };
         const ok = await onAjout(obs);
@@ -4951,6 +5078,8 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir, onSupprimer }) {
     setEnCours(null);
     const bits = [`${ajoutees} photo${ajoutees > 1 ? "s" : ""} ajoutée${ajoutees > 1 ? "s" : ""} à la file`];
     if (avecGps > 0) bits.push(`📍 ${avecGps} avec la position d'origine`);
+    if (aDate > 0) bits.push(`📅 ${aDate} avec la date de prise de vue`);
+    if (ajoutees > 0 && (avecGps < ajoutees || aDate < ajoutees)) bits.push(`✏️ à compléter au moment du tri`);
     if (avecMeteo > 0) bits.push(`🌡️ ${avecMeteo} avec la météo du jour de la photo`);
     if (echecs > 0) bits.push(`⚠️ ${echecs} échec${echecs > 1 ? "s" : ""}`);
     setFlash("✓ " + bits.join(" · "));
@@ -5005,7 +5134,7 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir, onSupprimer }) {
                   <span>{o.gps ? "📍" : "—"}</span>
                 </div>
               </div>
-              <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(201,162,75,.92)", color: C.encre, fontFamily: sans, fontSize: 10, fontWeight: 700, padding: "3px 7px", borderRadius: 12 }}>À trier</div>
+              <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(201,162,75,.92)", color: C.encre, fontFamily: sans, fontSize: 10.5, fontWeight: 700, padding: "3px 7px", borderRadius: 12 }}>À trier</div>
               {/* Bouton supprimer */}
               {onSupprimer && confirmSuppr !== o.id && (
                 <button onClick={(e) => { e.stopPropagation(); setConfirmSuppr(o.id); }} aria-label="Supprimer cette photo" title="Supprimer"
@@ -5057,6 +5186,21 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
   const [ordreIA, setOrdreIA] = useState(base ? base.ordre || "" : "");
   const [biotope, setBiotope] = useState(base ? base.biotope || "" : "");
   const [moment, setMoment] = useState(base ? (base.moment || momentDepuisDate(base.date || Date.now())) : momentDepuisDate(new Date()));
+  // Date d'observation, modifiable. Format local "YYYY-MM-DDTHH:mm" pour l'input datetime-local.
+  const pourInput = (d) => {
+    const x = d ? new Date(d) : new Date();
+    if (isNaN(x.getTime())) return "";
+    const p2 = (n) => String(n).padStart(2, "0");
+    return `${x.getFullYear()}-${p2(x.getMonth() + 1)}-${p2(x.getDate())}T${p2(x.getHours())}:${p2(x.getMinutes())}`;
+  };
+  const [dateObs, setDateObs] = useState(pourInput(base ? base.date : null));
+  // L'info vient-elle vraiment de la photo ? (sinon : à confirmer par la personne)
+  const dateIncertaine = !!base && base.dateSure === false;
+  const gpsIncertain = !!base && base.gpsSur === false;
+  const [infosConfirmees, setInfosConfirmees] = useState(false);
+  const [aideDemandee, setAideDemandee] = useState(base ? !!base.aideDemandee : false); // "je ne sais pas, j'ai besoin d'aide"
+  const [forcerOuvert, setForcerOuvert] = useState(false);
+  const [choixEspece, setChoixEspece] = useState(false); // dialogue « identifier ou demander de l'aide » // déplie les sections quand un garde-fou signale un champ manquant
   const [taille, setTaille] = useState(base ? base.taille || "" : "");
   const [spots, setSpots] = useState(() => lireSpots());
   const [spot, setSpot] = useState(base ? base.spot || "" : "");
@@ -5362,11 +5506,35 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
     setAffinageFinal(null);
   }
 
-  async function sauver() {
-    if (!photoBlob) {
-      setErreur("Ajoute une photo pour enregistrer l'observation.");
+  // Garde-fous de saisie : on protège les données qui font vivre les stats et la carte.
+  // Retourne un message d'erreur, ou "" si tout va bien.
+  function verifierSaisie(aideForcee) {
+    if (!photoBlob) return "Ajoute une photo pour enregistrer l'observation.";
+    // 1) Date : indispensable (saisonnalité, activité par mois, rythme…)
+    const d = dateObs ? new Date(dateObs) : null;
+    if (!d || isNaN(d.getTime())) return "Indique la date de l'observation — c'est elle qui alimente tes statistiques.";
+    // Une date future est forcément une erreur de saisie (et fausserait les graphiques).
+    if (d.getTime() > Date.now() + 60000) return "La date est dans le futur. Corrige-la : tu ne peux pas avoir observé cette bestiole demain 😉";
+    // Garde-fou souple contre les fautes de frappe sur l'année (2016 au lieu de 2026…)
+    if (d.getFullYear() < 1990) return "Cette date semble erronée (avant 1990). Vérifie l'année.";
+    // 2) Biotope : une seule touche, et c'est la base des corrélations
+    if (!biotope) return "Choisis un biotope (dans « 🔎 Détails du terrain ») — sans lui, tes statistiques par milieu sont faussées.";
+    // 3) Espèce : soit un nom, soit une demande d'aide ASSUMÉE. Ce qu'on refuse, c'est
+    // l'oubli silencieux — pas l'ignorance, qui fait partie du jeu naturaliste.
+    if (!nom.trim() && !nomSci.trim() && !(aideForcee || aideDemandee)) return "__ESPECE__";
+    return "";
+  }
+
+  async function sauver(aideForcee) {
+    const souci = verifierSaisie(aideForcee === true);
+    if (souci === "__ESPECE__") { setChoixEspece(true); return; } // dialogue dédié, pas un message d'erreur
+    if (souci) {
+      setErreur(souci);
+      // Si le champ fautif est replié, on ouvre la section pour que la personne le voie.
+      if (souci.includes("biotope") || souci.includes("date") || souci.includes("date")) setForcerOuvert(true);
       return;
     }
+    setErreur("");
     setEnregistrement(true);
     const obs = modeEdition
       ? {
@@ -5374,7 +5542,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           nom: nom.trim(),
           nomSci: nomSci.trim(),
           confiance: confiance,
-          biotope: biotope || "autre",
+          biotope: biotope,
           moment: moment || "",
           taille: taille || "",
           spot: spot || "",
@@ -5385,6 +5553,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           notable: notable || "",
           role: role || "",
           ordre: ordreIA || "",
+          aideDemandee: !nom.trim() && !nomSci.trim() ? (aideForcee === true || aideDemandee) : false,
           gps: gpsEtat === "ok" ? gps : null,
           photo: photoBlob,
           photosSupp: photosSupp,
@@ -5396,7 +5565,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           nom: nom.trim(),
           nomSci: nomSci.trim(),
           confiance: confiance,
-          biotope: biotope || "autre",
+          biotope: biotope,
           moment: moment || "",
           taille: taille || "",
           spot: spot || "",
@@ -5408,6 +5577,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           notable: notable || "",
           role: role || "",
           ordre: ordreIA || "",
+          aideDemandee: !nom.trim() && !nomSci.trim() ? (aideForcee === true || aideDemandee) : false,
           photo: photoBlob,
           photosSupp: photosSupp,
           // id, date, gps d'origine conservés via ...base
@@ -5417,7 +5587,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           nom: nom.trim(),
           nomSci: nomSci.trim(),
           confiance: confiance,
-          biotope: biotope || "autre",
+          biotope: biotope,
           moment: moment || "",
           taille: taille || "",
           spot: spot || "",
@@ -5428,8 +5598,11 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           notable: notable || "",
           role: role || "",
           ordre: ordreIA || "",
+          aideDemandee: !nom.trim() && !nomSci.trim() ? (aideForcee === true || aideDemandee) : false,
           gps: gpsEtat === "ok" ? gps : null,
-          date: new Date().toISOString(),
+          date: (() => { const d = dateObs ? new Date(dateObs) : null; return d && !isNaN(d.getTime()) ? d.toISOString() : (base && base.date ? base.date : new Date().toISOString()); })(),
+          dateSure: dateIncertaine ? infosConfirmees : (base ? base.dateSure !== false : true),
+          gpsSur: gpsIncertain ? (infosConfirmees || (gps && gps.manuel)) : (base ? base.gpsSur !== false : true),
           photo: photoBlob,
           photosSupp: photosSupp,
         };
@@ -5496,41 +5669,86 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
         {photoUrl && photosSupp.length > 0 && (
           <div style={{ marginTop: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "7px 10px", background: "linear-gradient(#242E1C, #1B2216)", border: "1px solid #6F9450", borderRadius: 7, fontFamily: sans, fontSize: 12, color: "#A6CC82" }}>
             <span>✓ {photosSupp.length} vue{photosSupp.length > 1 ? "s" : ""} complémentaire{photosSupp.length > 1 ? "s" : ""} — l'IA les croisera à l'identification.</span>
-            <button onClick={() => setPhotosSupp([])} style={{ flexShrink: 0, fontFamily: sans, fontSize: 11, fontWeight: 600, padding: "4px 8px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: "transparent", color: C.papierSombre, cursor: "pointer" }}>Vider</button>
+            <button onClick={() => setPhotosSupp([])} style={{ flexShrink: 0, fontFamily: sans, fontSize: 11, fontWeight: 600, padding: "6px 8px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: "transparent", color: C.papierSombre, cursor: "pointer" }}>Vider</button>
           </div>
         )}
       </div>
-      <div style={{ marginBottom: 16, padding: "10px 12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 13, color: C.papierSombre }}>
-        {gpsEtat === "attente" && "📡 Recherche de la position GPS…"}
-        {gpsEtat === "ok" && gps && (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <span style={{ color: C.lichen }}>📍 {gps.manuel ? "Position (placée à la main)" : (gps.depuisPhoto ? `Position (lue dans la photo) : ${gps.lat}, ${gps.lon}` : `Position : ${gps.lat}, ${gps.lon}`)} {!gps.manuel && !gps.depuisPhoto && <span style={{ color: C.papierSombre }}>(±{gps.precision} m)</span>}</span>
-            <button onClick={() => setChoixPoint((v) => !v)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
-              {choixPoint ? "Fermer" : "Modifier"}
-            </button>
+      {/* Quand la photo ne porte pas ses métadonnées (reçue par messagerie, capture d'écran…),
+          on le dit clairement et on invite à compléter à la main plutôt que de deviner en silence. */}
+      {(dateIncertaine || gpsIncertain) && !infosConfirmees && (
+        <div style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 10, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E" }}>
+          <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: "#E4C878", marginBottom: 5 }}>
+            ⚠️ Infos manquantes sur cette photo
           </div>
-        )}
-        {infoGpsPhoto && (
-          <div style={{ marginTop: 8, padding: "7px 10px", background: "linear-gradient(#1E2A18, #182213)", border: "1px solid #6F9450", borderRadius: 7, fontFamily: sans, fontSize: 12, color: "#A6CC82", lineHeight: 1.4 }}>
-            ✓ Position récupérée depuis la photo ! Tu peux prendre tes photos avec ton appli habituelle, le lieu est conservé.
+          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papier, lineHeight: 1.5, marginBottom: 10 }}>
+            {dateIncertaine && gpsIncertain && "La date et le lieu n'ont pas pu être lus dans la photo."}
+            {dateIncertaine && !gpsIncertain && "La date de prise de vue n'a pas pu être lue dans la photo."}
+            {!dateIncertaine && gpsIncertain && "Le lieu n'a pas pu être lu dans la photo."}
+            {" "}C'est fréquent avec une photo reçue par messagerie ou une capture d'écran.
+            {dateIncertaine && " La date proposée est celle du fichier — corrige-la si besoin."}
+            {gpsIncertain && " La position proposée est celle où tu étais à l'import — place le point sur la carte si elle est fausse."}
           </div>
-        )}
-        {gpsEtat === "refuse" && (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <span>📡 Pas de position GPS</span>
-            <button onClick={() => setChoixPoint((v) => !v)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: `1px solid #A8863A`, background: "linear-gradient(#2C3623, #232B1D)", color: C.ambreClair, cursor: "pointer" }}>
-              {choixPoint ? "Fermer" : "📍 Placer sur la carte"}
-            </button>
-          </div>
-        )}
-        {choixPoint && (
-          <SelecteurPoint
-            point={gps}
-            onChange={(p) => { setGps(p); setGpsEtat("ok"); }}
-            onFermer={() => setChoixPoint(false)}
-          />
-        )}
-      </div>
+          <button onClick={() => setInfosConfirmees(true)}
+            style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 8, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papier, cursor: "pointer" }}>
+            ✓ C'est vérifié
+          </button>
+        </div>
+      )}
+
+      {/* Quand & où — repliés, mais dépliés d'office et signalés en ambre si l'info
+          n'a pas pu être lue dans la photo (voir v1.50). */}
+      <SectionPliable
+        titre="📅 Quand & où"
+        ouvertParDefaut={dateIncertaine || gpsIncertain || forcerOuvert}
+        alerte={(dateIncertaine || gpsIncertain) && !infosConfirmees}
+        resume={((dateIncertaine || gpsIncertain) && !infosConfirmees ? "⚠️ à vérifier · " : "") +
+          [dateObs ? new Date(dateObs).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : "date ?",
+           gpsEtat === "ok" && gps ? "position OK" : "sans position"].join(" · ")}
+      >
+        {/* Date et heure de l'observation (modifiable) */}
+        <div style={{ marginBottom: 12, padding: "10px 12px", background: C.panneau, borderRadius: 8, border: `1px solid ${dateIncertaine && !infosConfirmees ? "#B8862E" : C.bordure}` }}>
+          <label style={{ display: "block", fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.lichen, marginBottom: 6 }}>
+            📅 Date et heure de l'observation {dateIncertaine && !infosConfirmees && <span style={{ color: "#E4C878", fontWeight: 600 }}>· à vérifier</span>}
+          </label>
+          <input type="datetime-local" value={dateObs} onChange={(e) => { setDateObs(e.target.value); if (e.target.value) setMoment(momentDepuisDate(new Date(e.target.value))); }}
+            style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "9px 11px", fontFamily: sans, fontSize: 13.5, outline: "none", colorScheme: "dark" }} />
+          {!dateIncertaine && base && base.dateSure && (
+            <div style={{ fontFamily: sans, fontSize: 11.5, color: "#A6CC82", marginTop: 5 }}>✓ Date lue dans la photo</div>
+          )}
+        </div>
+
+        <div style={{ marginBottom: 16, padding: "10px 12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 13, color: C.papierSombre }}>
+          {gpsEtat === "attente" && "📡 Recherche de la position GPS…"}
+          {gpsEtat === "ok" && gps && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <span style={{ color: gps.aVerifier && !gps.manuel ? "#E4C878" : C.lichen }}>📍 {gps.manuel ? "Position (placée à la main)" : (gps.depuisPhoto ? `Position (lue dans la photo) : ${gps.lat}, ${gps.lon}` : (gps.aVerifier ? `Position à vérifier (celle de l'import) : ${gps.lat}, ${gps.lon}` : `Position : ${gps.lat}, ${gps.lon}`))} {!gps.manuel && !gps.depuisPhoto && gps.precision && <span style={{ color: C.papierSombre }}>(±{gps.precision} m)</span>}</span>
+              <button onClick={() => setChoixPoint((v) => !v)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
+                {choixPoint ? "Fermer" : (gps.aVerifier && !gps.manuel ? "📍 Corriger" : "Modifier")}
+              </button>
+            </div>
+          )}
+          {infoGpsPhoto && (
+            <div style={{ marginTop: 8, padding: "7px 10px", background: "linear-gradient(#1E2A18, #182213)", border: "1px solid #6F9450", borderRadius: 7, fontFamily: sans, fontSize: 12, color: "#A6CC82", lineHeight: 1.4 }}>
+              ✓ Position récupérée depuis la photo ! Tu peux prendre tes photos avec ton appli habituelle, le lieu est conservé.
+            </div>
+          )}
+          {gpsEtat === "refuse" && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <span>📡 Pas de position GPS</span>
+              <button onClick={() => setChoixPoint((v) => !v)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: `1px solid #A8863A`, background: "linear-gradient(#2C3623, #232B1D)", color: C.ambreClair, cursor: "pointer" }}>
+                {choixPoint ? "Fermer" : "📍 Placer sur la carte"}
+              </button>
+            </div>
+          )}
+          {choixPoint && (
+            <SelecteurPoint
+              point={gps}
+              onChange={(p) => { setGps(p); setGpsEtat("ok"); }}
+              onFermer={() => setChoixPoint(false)}
+            />
+          )}
+        </div>
+      </SectionPliable>
 
       {montrerZoom && photoUrl && <VisionneuseZoom url={photoUrl} onFermer={() => setMontrerZoom(false)} />}
 
@@ -5807,111 +6025,145 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
         </div>
       </div>
 
-      {/* Moment de la journée */}
-      <div style={{ marginBottom: 14 }}>
-        <label style={libelle}>Moment de la journée</label>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {MOMENTS.map((m) => (
-            <button key={m.id} onClick={() => setMoment(m.id === moment ? "" : m.id)}
-              style={{
-                fontFamily: sans, fontSize: 13, padding: "7px 12px", borderRadius: 20, cursor: "pointer",
-                border: `1px solid ${moment === m.id ? C.ambre : C.bordure}`,
-                background: moment === m.id ? C.ambre : C.panneau,
-                color: moment === m.id ? C.encre : C.papier,
-                fontWeight: moment === m.id ? 700 : 400,
-              }}>
-              {m.emoji} {m.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Taille du spécimen */}
-      <div style={{ marginBottom: 14 }}>
-        <label style={libelle}>Taille du spécimen <span style={{ fontWeight: 400, color: C.papierSombre }}>(optionnel, aide l'identification)</span></label>
-        <ChoixTaille valeur={taille} onChange={setTaille} />
-      </div>
-
-      {/* Lieu d'observation (spot favori) */}
-      <div style={{ marginBottom: 14 }}>
-        <label style={libelle}>Lieu d'observation <span style={{ fontWeight: 400, color: C.papierSombre }}>(optionnel)</span></label>
-        {spots.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-            {spots.map((s) => (
-              <span key={s.id} style={{ display: "inline-flex", alignItems: "center", borderRadius: 20, border: `1px solid ${spot === s.nom ? C.ambre : C.bordure}`, background: spot === s.nom ? C.ambre : C.panneau, overflow: "hidden" }}>
-                <button onClick={() => setSpot(s.nom === spot ? "" : s.nom)}
-                  style={{ fontFamily: sans, fontSize: 13, padding: "7px 4px 7px 12px", cursor: "pointer", border: "none", background: "transparent", color: spot === s.nom ? C.encre : C.papier, fontWeight: spot === s.nom ? 700 : 400 }}>
-                  📍 {s.nom}
-                </button>
-                <button onClick={() => { const maj = supprimerSpot(s.id); setSpots(maj); if (spot === s.nom) setSpot(""); }}
-                  title="Supprimer ce lieu"
-                  style={{ fontFamily: sans, fontSize: 13, padding: "7px 10px 7px 4px", cursor: "pointer", border: "none", background: "transparent", color: spot === s.nom ? C.encre : C.papierSombre, opacity: 0.75 }}>
-                  ✕
-                </button>
-              </span>
+      {/* Détails du terrain — repliés par défaut pour alléger l'écran.
+          Le résumé sous le titre montre ce qui est déjà rempli, sans avoir à ouvrir. */}
+      <SectionPliable
+        titre="🔎 Détails du terrain"
+        ouvertParDefaut={forcerOuvert}
+        alerte={!biotope}
+        resume={[
+          moment && (MOMENTS.find((m) => m.id === moment) || {}).label,
+          taille && (TAILLES.find((t) => t.id === taille) || {}).label,
+          spot,
+          ciel && (CIELS.find((c) => c.id === ciel) || {}).label,
+          notes.trim() && "note",
+        ].filter(Boolean).join(" · ") || "Moment, taille, lieu, météo, notes"}
+      >
+        {/* Moment de la journée */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={libelle}>Moment de la journée</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {MOMENTS.map((m) => (
+              <button key={m.id} onClick={() => setMoment(m.id === moment ? "" : m.id)}
+                style={{
+                  fontFamily: sans, fontSize: 13, padding: "7px 12px", borderRadius: 20, cursor: "pointer",
+                  border: `1px solid ${moment === m.id ? C.ambre : C.bordure}`,
+                  background: moment === m.id ? C.ambre : C.panneau,
+                  color: moment === m.id ? C.encre : C.papier,
+                  fontWeight: moment === m.id ? 700 : 400,
+                }}>
+                {m.emoji} {m.label}
+              </button>
             ))}
           </div>
-        )}
-        {!ajoutSpot ? (
-          <button onClick={() => setAjoutSpot(true)}
-            style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 600, padding: "7px 12px", borderRadius: 20, cursor: "pointer", border: `1px dashed ${C.bordure}`, background: "transparent", color: C.lichen }}>
-            ＋ Nouveau lieu
-          </button>
-        ) : (
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <input value={nouveauSpot} onChange={(e) => setNouveauSpot(e.target.value)} maxLength={40}
-              placeholder="ex : Bois de chez moi"
-              style={{ ...champ, flex: 1, minWidth: 160, marginBottom: 0 }} />
-            <Bouton onClick={() => {
-              const n = nouveauSpot.trim();
-              if (!n) { setAjoutSpot(false); return; }
-              const maj = ajouterSpot(n, gpsEtat === "ok" ? gps : null);
-              setSpots(maj);
-              setSpot(n);
-              setNouveauSpot("");
-              setAjoutSpot(false);
-            }}>✓ Ajouter</Bouton>
-            <Bouton onClick={() => { setNouveauSpot(""); setAjoutSpot(false); }}>✕</Bouton>
-          </div>
-        )}
-        {spot && !ajoutSpot && (
-          <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 6, fontStyle: "italic" }}>
-            Tes lieux sont enregistrés sur ton téléphone et réutilisables. Retape sur un lieu pour le désélectionner.
-          </div>
-        )}
-      </div>
-
-      {/* Météo */}
-      <div style={{ marginBottom: 14 }}>
-        <label style={libelle}>
-          Météo
-          {meteoEtat === "recherche" && <span style={{ color: C.papierSombre, textTransform: "none", fontWeight: 400 }}> · récupération en cours…</span>}
-          {meteoEtat === "ok" && <span style={{ color: C.ambre, textTransform: "none", fontWeight: 400 }}> · remplie automatiquement ✓</span>}
-          {meteoEtat === "echec" && <span style={{ color: C.papierSombre, textTransform: "none", fontWeight: 400 }}> · auto indisponible, renseigne à la main</span>}
-        </label>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          {CIELS.map((c) => (
-            <button key={c.id} onClick={() => { setCiel(ciel === c.id ? "" : c.id); setMeteoAuto(false); }}
-              style={{
-                fontFamily: sans, fontSize: 13, padding: "7px 12px", borderRadius: 20, cursor: "pointer",
-                border: `1px solid ${ciel === c.id ? C.ambre : C.bordure}`,
-                background: ciel === c.id ? C.ambre : C.panneau,
-                color: ciel === c.id ? C.encre : C.papier,
-              }}>
-              {c.emoji} {c.label}
-            </button>
-          ))}
-          <input style={{ ...champ, width: 90 }} value={temp}
-            onChange={(e) => { setTemp(e.target.value); setMeteoAuto(false); }}
-            placeholder="°C" inputMode="numeric" />
         </div>
-      </div>
 
-      {/* Notes */}
-      <div style={{ marginBottom: 18 }}>
-        <label style={libelle}>Notes de terrain</label>
-        <textarea style={{ ...champ, minHeight: 70, resize: "vertical" }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Comportement, plante hôte, taille estimée…" />
-      </div>
+        {/* Taille du spécimen */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={libelle}>Taille du spécimen <span style={{ fontWeight: 400, color: C.papierSombre }}>(optionnel, aide l'identification)</span></label>
+          <ChoixTaille valeur={taille} onChange={setTaille} />
+        </div>
+
+        {/* Lieu d'observation (spot favori) */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={libelle}>Lieu d'observation <span style={{ fontWeight: 400, color: C.papierSombre }}>(optionnel)</span></label>
+          {spots.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+              {spots.map((s) => (
+                <span key={s.id} style={{ display: "inline-flex", alignItems: "center", borderRadius: 20, border: `1px solid ${spot === s.nom ? C.ambre : C.bordure}`, background: spot === s.nom ? C.ambre : C.panneau, overflow: "hidden" }}>
+                  <button onClick={() => setSpot(s.nom === spot ? "" : s.nom)}
+                    style={{ fontFamily: sans, fontSize: 13, padding: "7px 4px 7px 12px", cursor: "pointer", border: "none", background: "transparent", color: spot === s.nom ? C.encre : C.papier, fontWeight: spot === s.nom ? 700 : 400 }}>
+                    📍 {s.nom}
+                  </button>
+                  <button onClick={() => { const maj = supprimerSpot(s.id); setSpots(maj); if (spot === s.nom) setSpot(""); }}
+                    title="Supprimer ce lieu"
+                    style={{ fontFamily: sans, fontSize: 13, padding: "7px 10px 7px 4px", cursor: "pointer", border: "none", background: "transparent", color: spot === s.nom ? C.encre : C.papierSombre, opacity: 0.75 }}>
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {!ajoutSpot ? (
+            <button onClick={() => setAjoutSpot(true)}
+              style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 600, padding: "7px 12px", borderRadius: 20, cursor: "pointer", border: `1px dashed ${C.bordure}`, background: "transparent", color: C.lichen }}>
+              ＋ Nouveau lieu
+            </button>
+          ) : (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input value={nouveauSpot} onChange={(e) => setNouveauSpot(e.target.value)} maxLength={40}
+                placeholder="ex : Bois de chez moi"
+                style={{ ...champ, flex: 1, minWidth: 160, marginBottom: 0 }} />
+              <Bouton onClick={() => {
+                const n = nouveauSpot.trim();
+                if (!n) { setAjoutSpot(false); return; }
+                const maj = ajouterSpot(n, gpsEtat === "ok" ? gps : null);
+                setSpots(maj);
+                setSpot(n);
+                setNouveauSpot("");
+                setAjoutSpot(false);
+              }}>✓ Ajouter</Bouton>
+              <Bouton onClick={() => { setNouveauSpot(""); setAjoutSpot(false); }}>✕</Bouton>
+            </div>
+          )}
+          {spot && !ajoutSpot && (
+            <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 6, fontStyle: "italic" }}>
+              Tes lieux sont enregistrés sur ton téléphone et réutilisables. Retape sur un lieu pour le désélectionner.
+            </div>
+          )}
+        </div>
+
+        {/* Météo */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={libelle}>
+            Météo
+            {meteoEtat === "recherche" && <span style={{ color: C.papierSombre, textTransform: "none", fontWeight: 400 }}> · récupération en cours…</span>}
+            {meteoEtat === "ok" && <span style={{ color: C.ambre, textTransform: "none", fontWeight: 400 }}> · remplie automatiquement ✓</span>}
+            {meteoEtat === "echec" && <span style={{ color: C.papierSombre, textTransform: "none", fontWeight: 400 }}> · auto indisponible, renseigne à la main</span>}
+          </label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {CIELS.map((c) => (
+              <button key={c.id} onClick={() => { setCiel(ciel === c.id ? "" : c.id); setMeteoAuto(false); }}
+                style={{
+                  fontFamily: sans, fontSize: 13, padding: "7px 12px", borderRadius: 20, cursor: "pointer",
+                  border: `1px solid ${ciel === c.id ? C.ambre : C.bordure}`,
+                  background: ciel === c.id ? C.ambre : C.panneau,
+                  color: ciel === c.id ? C.encre : C.papier,
+                }}>
+                {c.emoji} {c.label}
+              </button>
+            ))}
+            <input style={{ ...champ, width: 90 }} value={temp}
+              onChange={(e) => { setTemp(e.target.value); setMeteoAuto(false); }}
+              placeholder="°C" inputMode="numeric" />
+          </div>
+        </div>
+
+        {/* Notes */}
+        <div style={{ marginBottom: 18 }}>
+          <label style={libelle}>Notes de terrain</label>
+          <textarea style={{ ...champ, minHeight: 70, resize: "vertical" }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Comportement, plante hôte, taille estimée…" />
+        </div>
+      </SectionPliable>
+
+      {/* Espèce non renseignée : on force un choix conscient plutôt que de laisser filer
+          une observation anonyme par oubli. Demander de l'aide reste parfaitement légitime. */}
+      {choixEspece && (
+        <div style={{ marginBottom: 14, padding: "14px 15px", borderRadius: 10, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E" }}>
+          <div style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: "#E4C878", marginBottom: 6 }}>❓ Cette observation n'a pas de nom</div>
+          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papier, lineHeight: 1.55, marginBottom: 12 }}>
+            Tu peux l'identifier maintenant (l'IA peut t'aider, plus haut), ou l'enregistrer telle quelle
+            en demandant un coup de main à la bande. Ne pas savoir fait partie du jeu — on veut juste
+            éviter les observations oubliées sans nom.
+          </div>
+          <div style={{ display: "grid", gap: 8 }}>
+            <Bouton onClick={() => setChoixEspece(false)} style={{ width: "100%" }}>← Je l'identifie maintenant</Bouton>
+            <Bouton variante="primaire" onClick={() => { setAideDemandee(true); setChoixEspece(false); sauver(true); }} style={{ width: "100%" }}>
+              🙋 Je ne sais pas — demander de l'aide
+            </Bouton>
+          </div>
+        </div>
+      )}
 
       {erreur && (
         <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 8, background: "#3A241C", color: "#E8A88F", fontFamily: sans, fontSize: 14 }}>
@@ -5968,8 +6220,8 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
       {legendaire && !compact && (
         <React.Fragment>
           <span className="bd-etoile" style={{ top: 8, left: 10, fontSize: 11 }}>✦</span>
-          <span className="bd-etoile" style={{ top: "38%", right: 8, fontSize: 9, animationDelay: ".9s" }}>✦</span>
-          <span className="bd-etoile" style={{ bottom: 14, left: "22%", fontSize: 10, animationDelay: "1.7s" }}>✦</span>
+          <span className="bd-etoile" style={{ top: "38%", right: 8, fontSize: 10.5, animationDelay: ".9s" }}>✦</span>
+          <span className="bd-etoile" style={{ bottom: 14, left: "22%", fontSize: 10.5, animationDelay: "1.7s" }}>✦</span>
         </React.Fragment>
       )}
       {/* Cadre intérieur */}
@@ -6093,6 +6345,12 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
     if (murEtat === "envoi") return;
     const auteur = (prenomSaisi || "").trim();
     if (!auteur) { setMurErreur("Indique ton prénom avant de partager."); return; }
+    // Garde-fous : le mur alimente la carte et les données de la bande, on ne publie
+    // pas une trouvaille sans date ni milieu (sinon l'info collective est faussée).
+    const dObs = obs.date ? new Date(obs.date) : null;
+    if (!dObs || isNaN(dObs.getTime())) { setMurErreur("Cette observation n'a pas de date. Complète-la (bouton ✏️ Modifier) avant de la partager."); return; }
+    if (dObs.getTime() > Date.now() + 60000) { setMurErreur("La date de cette observation est dans le futur. Corrige-la avant de partager."); return; }
+    if (!obs.biotope) { setMurErreur("Indique le biotope de cette observation avant de la partager — c'est ce qui rend le mur utile à la bande."); return; }
     // Avertissement doux : pas de nom d'espèce → on propose d'identifier d'abord OU de partager pour demander de l'aide.
     if (!identifie && !confirmSansNom) { setConfirmSansNom(true); return; }
     onDefinirPrenom(auteur);
@@ -6686,7 +6944,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
       style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: "none", border: "none", borderBottom: `1px solid ${C.bordure}`, cursor: "pointer", textAlign: "left" }}>
       <span style={{ fontSize: 22, position: "relative" }}>
         {emoji}
-        {pastille > 0 && <span style={{ position: "absolute", top: -6, right: -8, minWidth: 15, height: 15, lineHeight: "15px", padding: "0 3px", borderRadius: 8, background: C.rouge, color: "#fff", fontFamily: sans, fontSize: 9.5, fontWeight: 800, boxSizing: "border-box", textAlign: "center" }}>{pastille > 9 ? "9+" : pastille}</span>}
+        {pastille > 0 && <span style={{ position: "absolute", top: -6, right: -8, minWidth: 15, height: 15, lineHeight: "15px", padding: "0 3px", borderRadius: 8, background: C.rouge, color: "#fff", fontFamily: sans, fontSize: 10.5, fontWeight: 800, boxSizing: "border-box", textAlign: "center" }}>{pastille > 9 ? "9+" : pastille}</span>}
       </span>
       <span style={{ flex: 1 }}>
         <span style={{ display: "block", fontFamily: sans, fontSize: 15, fontWeight: 700, color: C.papier }}>{titre}</span>
@@ -6862,7 +7120,7 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
                     {c.photo_url ? <img src={c.photo_url} alt={c.nom} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>{t.emoji}</div>}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.papier }}>{c.nom} {c.authentique === false && <span title="Photo non vérifiée" style={{ fontFamily: sans, fontSize: 10, fontWeight: 800, color: "#FFDDD4", background: "rgba(140,40,30,.92)", border: "1px solid #E5603E", borderRadius: 8, padding: "1px 5px", verticalAlign: "middle" }}>⚠ non vérifiée</span>}</div>
+                    <div style={{ fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.papier }}>{c.nom} {c.authentique === false && <span title="Photo non vérifiée" style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 800, color: "#FFDDD4", background: "rgba(140,40,30,.92)", border: "1px solid #E5603E", borderRadius: 8, padding: "1px 5px", verticalAlign: "middle" }}>⚠ non vérifiée</span>}</div>
                     <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre }}>par {c.proprietaire} · {t.emoji} {t.label}</div>
                     <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 2 }}>⚔️{c.attaque} 🛡️{c.defense} 💨{c.vitesse} · <span style={{ color: "#8AAE6B" }}>{c.victoires || 0}V</span>/<span style={{ color: "#E5603E" }}>{c.defaites || 0}D</span></div>
                   </div>
@@ -6890,7 +7148,7 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
                       {c.photo_url ? <img src={c.photo_url} alt={c.nom} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{t.emoji}</div>}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: C.papier }}>{c.nom} {c.authentique === false && <span title="Photo non vérifiée" style={{ fontFamily: sans, fontSize: 9.5, fontWeight: 800, color: "#FFDDD4", background: "rgba(140,40,30,.92)", border: "1px solid #E5603E", borderRadius: 8, padding: "1px 5px", verticalAlign: "middle" }}>⚠ non vérifiée</span>}</div>
+                      <div style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: C.papier }}>{c.nom} {c.authentique === false && <span title="Photo non vérifiée" style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 800, color: "#FFDDD4", background: "rgba(140,40,30,.92)", border: "1px solid #E5603E", borderRadius: 8, padding: "1px 5px", verticalAlign: "middle" }}>⚠ non vérifiée</span>}</div>
                       <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>{t.emoji} {t.label} · <span style={{ color: "#8AAE6B" }}>{c.victoires || 0}V</span>/<span style={{ color: "#E5603E" }}>{c.defaites || 0}D</span> en défense</div>
                     </div>
                     <button onClick={() => retirer(c)} disabled={enCours === "retirer-" + c.id} style={{ flexShrink: 0, background: "none", border: `1px solid ${C.bordure}`, color: C.papierSombre, borderRadius: 8, padding: "6px 10px", fontFamily: sans, fontSize: 12, cursor: "pointer" }}>Retirer</button>
@@ -7521,15 +7779,15 @@ function Carte({ observations, onOuvrirFiche }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9, marginBottom: 12 }}>
             <div style={{ textAlign: "center", padding: "12px 6px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
               <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{postsAvecPos.length}</div>
-              <div style={{ fontFamily: sans, fontSize: 9.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Trouvailles</div>
+              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Trouvailles</div>
             </div>
             <div style={{ textAlign: "center", padding: "12px 6px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
               <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{zonesTri.length}</div>
-              <div style={{ fontFamily: sans, fontSize: 9.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Zones explorées</div>
+              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Zones explorées</div>
             </div>
             <div style={{ textAlign: "center", padding: "12px 6px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
               <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{etendue > 0 ? etendue : "—"}</div>
-              <div style={{ fontFamily: sans, fontSize: 9.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>km de territoire</div>
+              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>km de territoire</div>
             </div>
           </div>
 
@@ -7593,14 +7851,23 @@ function Carte({ observations, onOuvrirFiche }) {
 
 // ---------- Vue : aide ----------
 // ---------- Section pliable (accordéon du guide) ----------
-function SectionPliable({ titre, ouvertParDefaut, children }) {
+function SectionPliable({ titre, ouvertParDefaut, resume, alerte, children }) {
   const [ouvert, setOuvert] = useState(!!ouvertParDefaut);
+  // Si la demande d'ouverture arrive APRÈS le montage (ex. un garde-fou signale un champ
+  // manquant dans cette section), on déplie — sans jamais refermer ce que la personne a ouvert.
+  useEffect(() => { if (ouvertParDefaut) setOuvert(true); }, [ouvertParDefaut]);
   return (
-    <div style={{ marginBottom: 10, border: `1px solid ${C.bordure}`, borderRadius: 10, overflow: "hidden", background: C.panneau }}>
+    <div style={{ marginBottom: 10, border: `1px solid ${alerte && !ouvert ? "#B8862E" : C.bordure}`, borderRadius: 10, overflow: "hidden", background: C.panneau }}>
       <button onClick={() => setOuvert((v) => !v)}
         style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "13px 15px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
-        <span style={{ fontFamily: sans, fontSize: 15.5, fontWeight: 700, color: C.papier }}>{titre}</span>
-        <span style={{ fontFamily: sans, fontSize: 13, color: C.ambre, transform: ouvert ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▶</span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "block", fontFamily: sans, fontSize: 15.5, fontWeight: 700, color: C.papier }}>{titre}</span>
+          {/* Résumé affiché replié : on voit ce qui est rempli sans avoir à ouvrir */}
+          {!ouvert && resume && (
+            <span style={{ display: "block", fontFamily: sans, fontSize: 12, color: alerte ? "#E4C878" : C.papierSombre, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{resume}</span>
+          )}
+        </span>
+        <span style={{ flexShrink: 0, fontFamily: sans, fontSize: 13, color: C.ambre, transform: ouvert ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▶</span>
       </button>
       {ouvert && <div style={{ padding: "0 15px 12px" }}>{children}</div>}
     </div>
@@ -7767,7 +8034,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🗺️ La carte</div>
         <p style={p}>
-          L'onglet Carte affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. Quand plusieurs trouvailles sont proches, elles se regroupent en une bulle avec un compteur — touche-la ou zoome pour les séparer. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, chaque personne choisit au moment de partager le niveau de précision de sa position : exacte (point ambré), approximative (~1 km, zone verte visible en zoomant) ou masquée (pas de point). Chacun est ainsi libre de montrer ou non l'endroit exact de sa trouvaille. La carte nécessite du réseau.
+          Pour l'espèce, tu dois faire un choix explicite : soit tu l'identifies, soit tu indiques « Je ne sais pas » pour demander de l'aide à la bande (elle apparaîtra alors avec le badge ❓ À identifier). Ne pas savoir est parfaitement normal en entomologie — ce qu'on évite, c'est l'observation oubliée sans nom. Deux autres informations sont obligatoires : la <b>date</b> et le <b>biotope</b>. Ce sont elles qui alimentent tes statistiques (saisonnalité, milieux) et la carte — sans elles, les analyses seraient faussées. Le reste (météo, taille, moment, notes) est facultatif. Sur le mur, c'est la date d'observation qui s'affiche, pas celle du partage : tu peux donc publier sans souci une trouvaille faite il y a plusieurs semaines, un petit ↩ signalera simplement le partage différé. Quand tu importes une photo depuis ta galerie, BioDex essaie de lire la date de prise de vue et le lieu directement dans le fichier. Si ces informations manquent (fréquent pour une photo reçue par messagerie ou une capture d'écran), un avertissement s'affiche au moment de compléter l'observation : tu peux alors corriger la date à la main et placer le lieu sur la carte. L'onglet Carte affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. Quand plusieurs trouvailles sont proches, elles se regroupent en une bulle avec un compteur — touche-la ou zoome pour les séparer. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, chaque personne choisit au moment de partager le niveau de précision de sa position : exacte (point ambré), approximative (~1 km, zone verte visible en zoomant) ou masquée (pas de point). Chacun est ainsi libre de montrer ou non l'endroit exact de sa trouvaille. La carte nécessite du réseau.
         </p>
         <div style={t}>📝 Brouillon automatique</div>
         <p style={p}>
@@ -8182,7 +8449,7 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
               const jaiReagi = moi && liste.map((x) => x.toLowerCase()).includes(moi);
               return (
                 <button key={r.type} onClick={() => surReactionIdee(it.id, r.type)} title={n > 0 ? liste.join(", ") : r.titre}
-                  style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 16, border: `1px solid ${jaiReagi ? C.ambre : (n > 0 ? "#A8863A" : C.bordure)}`, background: jaiReagi ? "linear-gradient(#3A4A2C, #2C3623)" : (n > 0 ? "linear-gradient(#2C3623, #232B1D)" : C.panneauClair), cursor: "pointer", fontFamily: sans, fontSize: 12.5 }}>
+                  style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 9px", borderRadius: 16, border: `1px solid ${jaiReagi ? C.ambre : (n > 0 ? "#A8863A" : C.bordure)}`, background: jaiReagi ? "linear-gradient(#3A4A2C, #2C3623)" : (n > 0 ? "linear-gradient(#2C3623, #232B1D)" : C.panneauClair), cursor: "pointer", fontFamily: sans, fontSize: 12.5 }}>
                   <span style={{ fontSize: 14 }}>{r.emoji}</span>
                   {n > 0 && <span style={{ fontWeight: 700, color: C.ambreClair, fontSize: 11.5 }}>{n}</span>}
                 </button>
@@ -8193,13 +8460,13 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
             <span>💡 {it.auteur || "Anonyme"} · {it.created_at ? new Date(it.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
             <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <button onClick={() => basculerRealisee(it)} style={{ background: "none", border: `1px solid ${it.realisee ? "#5C8A3C" : C.bordure}`, color: it.realisee ? "#8AAE6B" : C.papierSombre, fontFamily: sans, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 14, cursor: "pointer" }}>
+              <button onClick={() => basculerRealisee(it)} style={{ background: "none", border: `1px solid ${it.realisee ? "#5C8A3C" : C.bordure}`, color: it.realisee ? "#8AAE6B" : C.papierSombre, fontFamily: sans, fontSize: 11, fontWeight: 700, padding: "6px 9px", borderRadius: 14, cursor: "pointer" }}>
                 {it.realisee ? "↩︎ À refaire" : "✅ Réalisée"}
               </button>
               {confirmSuppr === it.id ? (
                 <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <button onClick={() => setConfirmSuppr(null)} style={{ fontFamily: sans, fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>Non</button>
-                  <button onClick={() => supprimer(it.id)} style={{ fontFamily: sans, fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, cursor: "pointer" }}>Supprimer</button>
+                  <button onClick={() => setConfirmSuppr(null)} style={{ fontFamily: sans, fontSize: 11, padding: "6px 8px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>Non</button>
+                  <button onClick={() => supprimer(it.id)} style={{ fontFamily: sans, fontSize: 11, padding: "6px 8px", borderRadius: 6, border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, cursor: "pointer" }}>Supprimer</button>
                 </span>
               ) : (
                 <button onClick={() => setConfirmSuppr(it.id)} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 14, cursor: "pointer", padding: "0 4px" }} title="Supprimer">🗑️</button>
@@ -8283,7 +8550,10 @@ function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirPr
               ? <button onClick={() => onOuvrirProfil(p.auteur)} style={{ fontFamily: sans, fontSize: 13, color: C.ambreClair, padding: "5px 11px", borderRadius: 20, background: C.panneau, border: `1px solid ${C.ambre}`, cursor: "pointer", fontWeight: 600 }}>🐛 {p.auteur} →</button>
               : <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, padding: "5px 11px", borderRadius: 20, background: C.panneau, border: `1px solid ${C.bordure}` }}>🐛 {p.auteur || "Anonyme"}</span>}
             {p.created_at && (
-              <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, padding: "5px 11px", borderRadius: 20, background: C.panneau, border: `1px solid ${C.bordure}` }}>📅 {new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</span>
+              <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, padding: "5px 11px", borderRadius: 20, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+                📅 {dateAffichagePost(p) ? dateAffichagePost(p).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "—"}
+                {publicationTardive(p) > 0 && <span style={{ color: C.papierSombre, fontSize: 11.5 }}> · partagé plus tard</span>}
+              </span>
             )}
           </div>
 
@@ -8601,7 +8871,10 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
                     : <span>{emblemeDe(p.auteur, profils)} {p.auteur || "Anonyme"}</span>}
                   {p.lieu ? ` · ${p.lieu}` : ""}
                 </span>
-                <span>{p.created_at ? new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
+                <span title={publicationTardive(p) ? `Observé le ${dateAffichagePost(p).toLocaleDateString("fr-FR")}, partagé ${publicationTardive(p)} jours plus tard` : ""}>
+                  {dateAffichagePost(p) ? dateAffichagePost(p).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}
+                  {publicationTardive(p) > 0 && <span style={{ color: C.papierSombre, opacity: .8 }}> ↩</span>}
+                </span>
               </div>
             </div>
           </div>
@@ -8707,10 +8980,10 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
               estMaPubli(p) && (
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
                   <button onClick={() => ouvrirEdition(p)}
-                    style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: "transparent", color: C.papierSombre, cursor: "pointer" }}
+                    style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: "transparent", color: C.papierSombre, cursor: "pointer" }}
                     title="Modifier ma publication">✏️ Modifier</button>
                   <button onClick={() => setConfirmSuppr(p.id)}
-                    style={{ fontFamily: sans, fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "none", background: "transparent", color: C.papierSombre, cursor: "pointer" }}
+                    style={{ fontFamily: sans, fontSize: 12, padding: "6px 8px", borderRadius: 6, border: "none", background: "transparent", color: C.papierSombre, cursor: "pointer" }}
                     title="Supprimer cette publication" aria-label="Supprimer">🗑️</button>
                 </div>
               )
@@ -9014,6 +9287,62 @@ function prepCombattant(obs) {
 
 
 
+
+// Date à afficher pour une publication du mur : celle de l'OBSERVATION si elle est
+// connue (v1.52+), sinon celle de la publication pour les anciens posts.
+function dateAffichagePost(p) {
+  const d = p && (p.date_obs || p.created_at);
+  const x = d ? new Date(d) : null;
+  return x && !isNaN(x.getTime()) ? x : null;
+}
+// Publication faite bien après l'observation ? (on le signale discrètement)
+function publicationTardive(p) {
+  if (!p || !p.date_obs || !p.created_at) return 0;
+  const jours = Math.round((new Date(p.created_at) - new Date(p.date_obs)) / 864e5);
+  return jours >= 2 ? jours : 0;
+}
+
+
+// ═══════ JOURNAL D'ERREURS (diagnostic) ═══════
+// Garde les 50 dernières erreurs techniques en local, consultables depuis l'admin.
+// Objectif : ne plus jamais avoir à deviner pourquoi « ça ne marche pas » — la cause
+// réelle renvoyée par Supabase/le réseau est conservée telle quelle.
+const JOURNAL_CLE = "biodex_journal_erreurs";
+const JOURNAL_MAX = 50;
+function noterErreur(ou, err, extra) {
+  try {
+    const e = {
+      q: new Date().toISOString(),
+      ou: String(ou || "?").slice(0, 60),
+      msg: String((err && (err.message || err.msg)) || err || "?").slice(0, 300),
+      code: (err && (err.code || err.status)) ? String(err.code || err.status).slice(0, 20) : "",
+      info: extra ? String(extra).slice(0, 120) : "",
+      v: typeof VERSION !== "undefined" ? VERSION : "",
+    };
+    let liste = [];
+    try { liste = JSON.parse(localStorage.getItem(JOURNAL_CLE) || "[]"); } catch { liste = []; }
+    if (!Array.isArray(liste)) liste = [];
+    liste.unshift(e);
+    localStorage.setItem(JOURNAL_CLE, JSON.stringify(liste.slice(0, JOURNAL_MAX)));
+  } catch { /* le journal ne doit jamais casser l'appli */ }
+}
+function lireJournalErreurs() {
+  try {
+    const l = JSON.parse(localStorage.getItem(JOURNAL_CLE) || "[]");
+    return Array.isArray(l) ? l : [];
+  } catch { return []; }
+}
+function viderJournalErreurs() { try { localStorage.removeItem(JOURNAL_CLE); } catch {} }
+
+// Enveloppe une erreur Supabase : message lisible pour la personne, cause technique conservée.
+function erreurSupabase(ou, error, messageLisible) {
+  noterErreur(ou, error);
+  const e = new Error(messageLisible || "Opération impossible");
+  e.cause = error && error.message ? error.message : String(error || "");
+  e.code = error && error.code ? error.code : "";
+  return e;
+}
+
 // ═══════ PROGRESSION DES CARTES (XP / niveaux) ═══════
 // Calibré au simulateur : plafond bas indispensable, sinon celui qui joue le plus
 // écrase les autres (écart 18 pts sans plafond, 5 pts avec).
@@ -9097,7 +9426,7 @@ function PortraitCombat({ combattant, cote, anim, ko }) {
       </div>
       <div style={{ marginTop: 6, fontFamily: sans, fontSize: 13, fontWeight: 700, color: C.papier, textAlign: "center", lineHeight: 1.2 }}>{combattant.nom}</div>
       {niv > 0 && (
-        <div style={{ fontFamily: sans, fontSize: 10, color: C.ambreClair, marginTop: 1 }}>{"⭐".repeat(niv)}</div>
+        <div style={{ fontFamily: sans, fontSize: 10.5, color: C.ambreClair, marginTop: 1 }}>{"⭐".repeat(niv)}</div>
       )}
       <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: "#fff", background: t.couleur || C.ambre, borderRadius: 10, padding: "1px 9px", marginTop: 3 }}>{t.emoji} {t.label}</div>
     </div>
@@ -9539,8 +9868,8 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial
             <div style={{ marginTop: 8 }}>{moi && BarreVie({ combattant: moi, aGauche: true })}</div>
             {moi && (
               <div style={{ display: "flex", gap: 5, justifyContent: "flex-start", marginTop: 5, flexWrap: "wrap", minHeight: 16 }}>
-                {moi.garde && <span style={{ fontFamily: sans, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#20282E", border: "1px solid #4C6675", color: "#AFC4D0" }}>🛡️ Garde</span>}
-                {moi.poison && moi.poison.tours > 0 && <span style={{ fontFamily: sans, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#241A2E", border: "1px solid #6A4C8A", color: "#C9A0E0" }}>☠️ Poison {moi.poison.tours}</span>}
+                {moi.garde && <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#20282E", border: "1px solid #4C6675", color: "#AFC4D0" }}>🛡️ Garde</span>}
+                {moi.poison && moi.poison.tours > 0 && <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#241A2E", border: "1px solid #6A4C8A", color: "#C9A0E0" }}>☠️ Poison {moi.poison.tours}</span>}
               </div>
             )}
           </div>
@@ -9551,8 +9880,8 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial
             <div style={{ marginTop: 8 }}>{adv && BarreVie({ combattant: adv, aGauche: false })}</div>
             {adv && (
               <div style={{ display: "flex", gap: 5, justifyContent: "flex-end", marginTop: 5, flexWrap: "wrap", minHeight: 16 }}>
-                {adv.garde && <span style={{ fontFamily: sans, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#20282E", border: "1px solid #4C6675", color: "#AFC4D0" }}>🛡️ Garde</span>}
-                {adv.poison && adv.poison.tours > 0 && <span style={{ fontFamily: sans, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#241A2E", border: "1px solid #6A4C8A", color: "#C9A0E0" }}>☠️ Poison {adv.poison.tours}</span>}
+                {adv.garde && <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#20282E", border: "1px solid #4C6675", color: "#AFC4D0" }}>🛡️ Garde</span>}
+                {adv.poison && adv.poison.tours > 0 && <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#241A2E", border: "1px solid #6A4C8A", color: "#C9A0E0" }}>☠️ Poison {adv.poison.tours}</span>}
               </div>
             )}
           </div>
@@ -9672,7 +10001,7 @@ function ChoixTaille({ valeur, onChange }) {
               style={{ flex: "1 1 auto", minWidth: 88, fontFamily: sans, padding: "8px 10px", borderRadius: 10, cursor: "pointer", textAlign: "center",
                 border: `1px solid ${actif ? C.ambre : C.bordure}`, background: actif ? "linear-gradient(#3A4A2C, #2C3623)" : C.panneau, color: C.papier }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: actif ? C.ambreClair : C.papier }}>{t.label}</div>
-              <div style={{ fontSize: 10, color: C.papierSombre, marginTop: 2 }}>{t.exemple}</div>
+              <div style={{ fontSize: 10.5, color: C.papierSombre, marginTop: 2 }}>{t.exemple}</div>
             </button>
           );
         })}
@@ -10302,7 +10631,7 @@ function BioDex() {
           <img src="emblem.png" width="32" height="32" alt="" aria-hidden="true" style={{ flexShrink: 0, display: "block", filter: "drop-shadow(0 0 6px rgba(201,162,75,.45))" }} />
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontFamily: serif, fontSize: 27, fontWeight: 600, color: C.papier, letterSpacing: 0.3 }}>Bio<span style={{ color: C.ambre }}>Dex</span></span>
-            <span style={{ fontFamily: sans, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: C.papierSombre }}>{VERSION}</span>
+            <span style={{ fontFamily: sans, fontSize: 10.5, letterSpacing: 1, textTransform: "uppercase", color: C.papierSombre }}>{VERSION}</span>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -10351,7 +10680,7 @@ function BioDex() {
               Installe BioDex sur ton écran d'accueil, comme une vraie appli !
             </span>
             <button onClick={refuserInstallation} aria-label="Plus tard"
-              style={{ background: "none", border: "none", color: C.papierSombre, fontFamily: sans, fontSize: 12, cursor: "pointer", padding: "4px 6px", flexShrink: 0 }}>
+              style={{ background: "none", border: "none", color: C.papierSombre, fontFamily: sans, fontSize: 12, cursor: "pointer", padding: "6px 6px", flexShrink: 0 }}>
               Plus tard
             </button>
             <Bouton variante="primaire" onClick={lancerInstallation}>Installer</Bouton>
@@ -10368,7 +10697,7 @@ function BioDex() {
               <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 2, lineHeight: 1.4 }}>Choisis ton emblème, ta devise, ton insecte fétiche…</div>
             </div>
             <button onClick={() => { try { localStorage.setItem("biodex_invite_profil_vue", "1"); } catch {} setInviteProfil(false); }}
-              aria-label="Masquer" style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 18, cursor: "pointer", padding: "2px 4px", flexShrink: 0, lineHeight: 1 }}>×</button>
+              aria-label="Masquer" style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 18, cursor: "pointer", padding: "6px 4px", flexShrink: 0, lineHeight: 1 }}>×</button>
             <Bouton variante="primaire" onClick={() => { try { localStorage.setItem("biodex_invite_profil_vue", "1"); } catch {} setInviteProfil(false); setVue("monprofil"); }}>Créer</Bouton>
           </div>
         </div>
@@ -10387,7 +10716,7 @@ function BioDex() {
               })()}
             </span>
             <button onClick={reporterRappel} aria-label="Plus tard"
-              style={{ background: "none", border: "none", color: C.papierSombre, fontFamily: sans, fontSize: 12, cursor: "pointer", padding: "4px 6px", flexShrink: 0 }}>
+              style={{ background: "none", border: "none", color: C.papierSombre, fontFamily: sans, fontSize: 12, cursor: "pointer", padding: "6px 6px", flexShrink: 0 }}>
               Plus tard
             </button>
             <Bouton variante="primaire" onClick={exporterMaintenant} disabled={exportEnCours}>{exportEnCours ? "…" : "Sauvegarder"}</Bouton>
@@ -10584,6 +10913,27 @@ function BioDex() {
               {nbBiotopes > 0 && <span> · {nbBiotopes} biotope{nbBiotopes > 1 ? "s" : ""}</span>}
             </span>
           </div>
+
+          {/* Rappel : observations en attente d'un nom (aide demandée ou non renseignée) */}
+          {(() => {
+            const sansNom = triees.filter((o) => !(o.nom || "").trim() && !(o.nomSci || "").trim());
+            if (sansNom.length === 0) return null;
+            return (
+              <button onClick={() => { setSelectionId(sansNom[0].id); setVue("detail"); }}
+                style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 13px", marginBottom: 12, borderRadius: 10, cursor: "pointer", textAlign: "left", background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E" }}>
+                <span style={{ fontSize: 19 }}>❓</span>
+                <span style={{ flex: 1 }}>
+                  <span style={{ display: "block", fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: "#E4C878" }}>
+                    {sansNom.length} observation{sansNom.length > 1 ? "s" : ""} attend{sansNom.length > 1 ? "ent" : ""} un nom
+                  </span>
+                  <span style={{ display: "block", fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 2 }}>
+                    Touche pour la{sansNom.length > 1 ? " première" : ""} reprendre — l'IA peut t'aider, ou demande à la bande.
+                  </span>
+                </span>
+                <span style={{ fontFamily: sans, fontSize: 13, color: C.ambre }}>▶</span>
+              </button>
+            );
+          })()}
 
           {/* Onglets par ordre taxonomique */}
           {(ordresDispo.length + (nbAutres > 0 ? 1 : 0)) > 1 && (
