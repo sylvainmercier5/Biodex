@@ -218,9 +218,9 @@ const bdRetour = (() => {
   return { enregistrer, definirGardeSortie, quitterVraiment };
 })();
 
-// ============ BioDex v1.54 (PWA) ============
+// ============ BioDex v1.56 (PWA) ============
 
-const VERSION = "v1.54";
+const VERSION = "v1.56";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1318,6 +1318,8 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.56", date: "2026-07", items: ["📱 Écran d'accueil dégagé : les encarts d'info (« À guetter », « Le savais-tu ») sont regroupés dans un bandeau qui défile — glisse dessus ou touche les petits points pour passer au suivant. Tes observations apparaissent enfin dès l'ouverture !", "🎴 Les noms complets s'affichent sur les cartes (fini les « Lucane cerf… ») et toutes les cartes ont désormais la même hauteur.", "🗺️ La carte occupe mieux l'écran, et le rappel de sauvegarde est plus lisible."] },
+  { v: "1.55", date: "2026-07", items: ["📅 CORRECTIF : les photos choisies dans la galerie ne transmettaient pas leur date de prise de vue — seul l'import en masse le faisait. C'est réparé : la date ET le lieu sont maintenant lus quel que soit le chemin.", "✓ Un encart vert sous la photo t'indique désormais ce qui a été récupéré (« Infos récupérées depuis la photo : le lieu et la date » + la date exacte). Si la photo ne contient rien, un encart orange te le dit et ouvre directement la saisie manuelle."] },
   { v: "1.54", date: "2026-07", items: ["🩺 Diagnostic : quand quelque chose ne marche pas, l'appli garde désormais la trace exacte du problème (visible dans l'espace d'administration). Avant, les erreurs disparaissaient en silence et il fallait deviner. Si tu rencontres un souci, préviens Sylvain : il pourra voir précisément ce qui a coincé."] },
   { v: "1.53", date: "2026-07", items: ["🙋 Plus d'observation oubliée sans nom : si tu enregistres une trouvaille sans l'identifier, BioDex te demande de choisir — soit tu l'identifies, soit tu cliques « Je ne sais pas, demander de l'aide ». Ne pas savoir reste tout à fait normal, on veut juste éviter les oublis !", "❓ Un rappel apparaît en haut de ta collection quand des observations attendent encore un nom."] },
   { v: "1.52", date: "2026-07", items: ["📅 Le mur affiche la vraie date d'observation : si tu partages aujourd'hui une trouvaille faite il y a deux mois, c'est bien la date où tu l'as vue qui s'affiche (avec un petit ↩ indiquant un partage différé). Avant, tout apparaissait à la date du partage.", "🛡️ Garde-fous de saisie : impossible d'enregistrer ou de partager une observation sans date ni biotope — ce sont eux qui font vivre les stats et la carte. Les dates dans le futur sont aussi refusées."] },
@@ -4403,7 +4405,62 @@ function conseilSaison(d) {
   return liste[jour % liste.length];
 }
 
-function ReveilSaisonnier() {
+
+// ---------- Carrousel de bandeaux d'ambiance ----------
+// Regroupe plusieurs encarts informatifs en un seul emplacement, pour ne pas repousser
+// la collection hors de l'écran. Glissement au doigt + points de navigation.
+// La rotation automatique est LENTE et s'arrête définitivement dès que la personne
+// interagit : on ne veut pas que le contenu change pendant qu'elle lit.
+function CarrouselBandeaux({ children, delai = 15000 }) {
+  const slides = React.Children.toArray(children).filter(Boolean);
+  const [i, setI] = useState(0);
+  const [manuel, setManuel] = useState(false); // vrai dès la 1re interaction
+  const toucheX = useRef(null);
+
+  // Rotation auto, désactivée après interaction et si l'appareil demande moins d'animations.
+  useEffect(() => {
+    if (manuel || slides.length < 2) return;
+    let reduit = false;
+    try { reduit = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch {}
+    if (reduit) return;
+    const t = setInterval(() => setI((v) => (v + 1) % slides.length), delai);
+    return () => clearInterval(t);
+  }, [manuel, slides.length, delai]);
+
+  // Si un bandeau se ferme, on reste dans les bornes.
+  useEffect(() => { if (i >= slides.length && slides.length > 0) setI(0); }, [slides.length, i]);
+
+  if (slides.length === 0) return null;
+  if (slides.length === 1) return <div>{slides[0]}</div>;
+
+  const aller = (n) => { setManuel(true); setI((n + slides.length) % slides.length); };
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div
+        onTouchStart={(e) => { toucheX.current = e.touches[0].clientX; }}
+        onTouchEnd={(e) => {
+          if (toucheX.current === null) return;
+          const d = e.changedTouches[0].clientX - toucheX.current;
+          if (Math.abs(d) > 45) aller(i + (d < 0 ? 1 : -1));
+          toucheX.current = null;
+        }}
+      >
+        {slides[Math.min(i, slides.length - 1)]}
+      </div>
+      {/* Points de navigation : indiquent aussi qu'il y a d'autres encarts à voir */}
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 7, marginTop: -6 }}>
+        {slides.map((_, n) => (
+          <button key={n} onClick={() => aller(n)} aria-label={`Encart ${n + 1}`}
+            style={{ width: n === i ? 18 : 7, height: 7, borderRadius: 4, border: "none", padding: 0, cursor: "pointer",
+              background: n === i ? C.ambre : C.bordure, transition: "width .2s" }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReveilSaisonnier({ onMasquer }) {
   const conseil = conseilSaison();
   const [ferme, setFerme] = useState(() => {
     try {
@@ -4415,6 +4472,7 @@ function ReveilSaisonnier() {
   const fermer = () => {
     try { localStorage.setItem("biodex_saison_vue", new Date().toDateString()); } catch {}
     setFerme(true);
+    if (onMasquer) onMasquer();
   };
   const doré = !!conseil.enquete;
   return (
@@ -4548,14 +4606,14 @@ const ANECDOTES = [
   "Les mâles de certains papillons de nuit détectent les phéromones d'une femelle à plusieurs kilomètres grâce à leurs antennes plumeuses.",
 ];
 
-function LeSaviasTu() {
+function LeSaviasTu({ onMasquer }) {
   const [i, setI] = useState(() => Math.floor(Date.now() / 864e5) % ANECDOTES.length);
   const [ferme, setFerme] = useState(false);
   if (ferme) return null;
   const autre = () => setI((v) => (v + 1 + Math.floor(Math.random() * (ANECDOTES.length - 1))) % ANECDOTES.length);
   return (
     <div style={{ position: "relative", marginBottom: 16, padding: "14px 16px", borderRadius: 12, background: "linear-gradient(135deg, #26301C, #1C2415)", border: "1px solid #3E4E2A", boxShadow: "0 2px 10px rgba(0,0,0,.25)" }}>
-      <button onClick={() => setFerme(true)} title="Masquer" style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", color: C.papierSombre, fontSize: 16, cursor: "pointer", lineHeight: 1, padding: 2 }}>×</button>
+      <button onClick={() => { setFerme(true); if (onMasquer) onMasquer(); }} title="Masquer" style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", color: C.papierSombre, fontSize: 16, cursor: "pointer", lineHeight: 1, padding: 2 }}>×</button>
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
         <span style={{ fontSize: 17 }}>💡</span>
         <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#A8C97E" }}>Le savais-tu ?</span>
@@ -5214,6 +5272,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
   const [gps, setGps] = useState(base ? base.gps || null : null);
   const [gpsEtat, setGpsEtat] = useState(base ? (base.gps ? "ok" : "refuse") : "attente");
   const [infoGpsPhoto, setInfoGpsPhoto] = useState(false);
+  const [metaPhoto, setMetaPhoto] = useState(null); // ce qui a été lu dans la photo (date/lieu)
   const [enregistrement, setEnregistrement] = useState(false);
   const [erreur, setErreur] = useState("");
   const [cloudEtat, setCloudEtat] = useState(""); // "" | recherche | ok | echec
@@ -5358,23 +5417,41 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
     }
   }
 
+  // Applique les métadonnées lues dans la photo (position + date de prise de vue) et
+  // affiche un retour clair de ce qui a été récupéré — ou de ce qui manque.
+  function appliquerMetaPhoto(gpsExif, dateExif) {
+    const recupere = [];
+    if (gpsExif && (!gps || gps.manuel || gpsEtat !== "ok")) {
+      setGps({ lat: gpsExif.lat, lon: gpsExif.lon, precision: 0, depuisPhoto: true });
+      setGpsEtat("ok");
+      recupere.push("le lieu");
+    } else if (gpsExif) recupere.push("le lieu");
+    if (dateExif && !isNaN(dateExif.getTime())) {
+      const p2 = (n) => String(n).padStart(2, "0");
+      setDateObs(`${dateExif.getFullYear()}-${p2(dateExif.getMonth() + 1)}-${p2(dateExif.getDate())}T${p2(dateExif.getHours())}:${p2(dateExif.getMinutes())}`);
+      setMoment(momentDepuisDate(dateExif));
+      recupere.push("la date");
+    }
+    setMetaPhoto({
+      lus: recupere,
+      date: dateExif && !isNaN(dateExif.getTime()) ? dateExif : null,
+      gps: !!gpsExif,
+      id: Date.now(),
+    });
+  }
+
   async function choisirPhoto(e) {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
     setErreur("");
     try {
-      // Lire la position GPS dans les métadonnées de la photo (avant compression, qui les efface)
+      // Lire position ET date dans les métadonnées (avant compression, qui les efface)
       const gpsExif = await lireGpsExif(f);
+      const dateExif = await lireDateExif(f);
       const blob = await compresserImage(f);
       setPhotoBlob(blob);
       setCiblage(false);
-      // Si la photo contient une position ET qu'on n'en a pas déjà une fiable, on la pré-remplit
-      if (gpsExif && (!gps || gps.manuel || gpsEtat !== "ok")) {
-        setGps({ lat: gpsExif.lat, lon: gpsExif.lon, precision: 0, depuisPhoto: true });
-        setGpsEtat("ok");
-        setInfoGpsPhoto(true);
-        setTimeout(() => setInfoGpsPhoto(false), 6000);
-      }
+      appliquerMetaPhoto(gpsExif, dateExif);
     } catch {
       setErreur("Impossible de lire cette image. Essaie avec un autre fichier.");
     }
@@ -5388,17 +5465,13 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
     if (!files.length) return;
     setErreur("");
     try {
-      // Photo principale : première du lot, qualité pleine + lecture GPS.
+      // Photo principale : première du lot, qualité pleine + lecture position/date.
       const gpsExif = await lireGpsExif(files[0]);
+      const dateExif = await lireDateExif(files[0]);
       const principale = await compresserImage(files[0]);
       setPhotoBlob(principale);
       setCiblage(false);
-      if (gpsExif && (!gps || gps.manuel || gpsEtat !== "ok")) {
-        setGps({ lat: gpsExif.lat, lon: gpsExif.lon, precision: 0, depuisPhoto: true });
-        setGpsEtat("ok");
-        setInfoGpsPhoto(true);
-        setTimeout(() => setInfoGpsPhoto(false), 6000);
-      }
+      appliquerMetaPhoto(gpsExif, dateExif);
       // Vues d'appoint : les 2 suivantes, fortement compressées (1280px), une par une.
       const supp = [];
       for (const f of files.slice(1, 3)) {
@@ -5673,6 +5746,26 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           </div>
         )}
       </div>
+      {/* Retour clair sur ce que la photo contenait comme informations. */}
+      {metaPhoto && (
+      metaPhoto.lus.length > 0 ? (
+      <div style={{ marginTop: 8, padding: "9px 11px", background: "linear-gradient(#1E2A18, #182213)", border: "1px solid #6F9450", borderRadius: 8, fontFamily: sans, fontSize: 12.5, color: "#A6CC82", lineHeight: 1.5 }}>
+      <b>✓ Infos récupérées depuis la photo :</b> {metaPhoto.lus.join(" et ")}.
+      {metaPhoto.date && (
+      <span style={{ display: "block", color: C.papierSombre, marginTop: 3 }}>
+      📅 Prise le {metaPhoto.date.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })} à {metaPhoto.date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+      </span>
+      )}
+      </div>
+      ) : (
+      <div style={{ marginTop: 8, padding: "9px 11px", background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", borderRadius: 8, fontFamily: sans, fontSize: 12.5, color: "#E4C878", lineHeight: 1.5 }}>
+      <b>ⓘ Cette photo ne contient ni date ni lieu.</b>
+      <span style={{ display: "block", color: C.papier, marginTop: 3 }}>
+      C'est fréquent avec une image reçue par messagerie, une capture d'écran ou une photo retéléchargée. Renseigne-les à la main dans « 📅 Quand & où ».
+      </span>
+      </div>
+      )
+      )}
       {/* Quand la photo ne porte pas ses métadonnées (reçue par messagerie, capture d'écran…),
           on le dit clairement et on invite à compléter à la main plutôt que de deviner en silence. */}
       {(dateIncertaine || gpsIncertain) && !infosConfirmees && (
@@ -5699,8 +5792,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           n'a pas pu être lue dans la photo (voir v1.50). */}
       <SectionPliable
         titre="📅 Quand & où"
-        ouvertParDefaut={dateIncertaine || gpsIncertain || forcerOuvert}
-        alerte={(dateIncertaine || gpsIncertain) && !infosConfirmees}
+        ouvertParDefaut={dateIncertaine || gpsIncertain || forcerOuvert || !!(metaPhoto && metaPhoto.lus.length === 0)}
+        alerte={((dateIncertaine || gpsIncertain) && !infosConfirmees) || !!(metaPhoto && metaPhoto.lus.length === 0)}
         resume={((dateIncertaine || gpsIncertain) && !infosConfirmees ? "⚠️ à vérifier · " : "") +
           [dateObs ? new Date(dateObs).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : "date ?",
            gpsEtat === "ok" && gps ? "position OK" : "sans position"].join(" · ")}
@@ -5725,11 +5818,6 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
               <button onClick={() => setChoixPoint((v) => !v)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
                 {choixPoint ? "Fermer" : (gps.aVerifier && !gps.manuel ? "📍 Corriger" : "Modifier")}
               </button>
-            </div>
-          )}
-          {infoGpsPhoto && (
-            <div style={{ marginTop: 8, padding: "7px 10px", background: "linear-gradient(#1E2A18, #182213)", border: "1px solid #6F9450", borderRadius: 7, fontFamily: sans, fontSize: 12, color: "#A6CC82", lineHeight: 1.4 }}>
-              ✓ Position récupérée depuis la photo ! Tu peux prendre tes photos avec ton appli habituelle, le lieu est conservé.
             </div>
           )}
           {gpsEtat === "refuse" && (
@@ -6228,9 +6316,11 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
       <div style={{ borderRadius: 11, border: "1px solid rgba(42,36,22,.35)", background: "linear-gradient(rgba(255,255,255,.16), rgba(255,255,255,.02))", padding: compact ? 4 : 6, position: "relative" }}>
         {/* Bandeau titre */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, padding: compact ? "0 2px 4px" : "1px 3px 6px" }}>
-          <span style={{ fontFamily: serif, fontSize: compact ? 12 : 15, fontWeight: 700, color: "#2A2416", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textShadow: "0 1px 0 rgba(255,255,255,.25)" }}>{obs.nom || "Spécimen"}</span>
-          <span style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, background: "rgba(42,36,22,.85)", border: `1px solid ${el.c}`, color: el.c, fontFamily: sans, fontSize: compact ? 8.5 : 9.5, fontWeight: 800, letterSpacing: 0.4, padding: compact ? "1px 5px" : "2px 7px", borderRadius: 10 }}>
-            {el.emoji}{!compact && <span>{c.element}</span>}
+          {/* Nom sur toute la largeur (il était tronqué : « Lucane cerf… »), le type
+              se réduit à son emoji — l'intitulé complet reste sur le bandeau sous la carte. */}
+          <span style={{ flex: 1, minWidth: 0, fontFamily: serif, fontSize: compact ? 12 : 15, fontWeight: 700, color: "#2A2416", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textShadow: "0 1px 0 rgba(255,255,255,.25)" }} title={obs.nom || "Spécimen"}>{obs.nom || "Spécimen"}</span>
+          <span title={c.element} style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", background: "rgba(42,36,22,.85)", border: `1px solid ${el.c}`, color: el.c, fontFamily: sans, fontSize: compact ? 9 : 11, fontWeight: 800, padding: compact ? "1px 4px" : "2px 5px", borderRadius: 10 }}>
+            {el.emoji}
           </span>
         </div>
         {/* Illustration (recadrée si un cadre a été défini) */}
@@ -6246,8 +6336,9 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
         {!compact && (
           <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 11, color: "#4A4228", textAlign: "center", padding: "5px 0 3px", borderBottom: "1px solid rgba(42,36,22,.18)", marginBottom: 3 }}>{obs.nomSci || "—"}</div>
         )}
-        {/* Niveau de la carte (étoiles) — visible dès le niveau 1 */}
-        {niveauDeXp(c.xp) > 0 && (
+        {/* Niveau de la carte. Toujours affiché (grisé au niveau 0) : sinon les cartes
+            n'ont pas la même hauteur et les bandeaux de type ne s'alignent plus. */}
+        {(
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, padding: compact ? "1px 0 0" : "2px 0 0" }}>
             {Array.from({ length: NIVEAU_MAX }).map((_, i) => (
               <span key={i} style={{ fontSize: compact ? 8 : 10, opacity: i < niveauDeXp(c.xp) ? 1 : 0.22, filter: i < niveauDeXp(c.xp) ? "none" : "grayscale(1)" }}>⭐</span>
@@ -7770,7 +7861,9 @@ function Carte({ observations, onOuvrirFiche }) {
           Aucune trouvaille localisée sur le mur pour l'instant. Les positions n'apparaissent que pour les partages faits à partir de la v0.45.
         </div>
       )}
-      <div ref={divRef} style={{ width: "100%", height: "62vh", borderRadius: 10, border: `1px solid ${C.bordure}`, overflow: "hidden" }} />
+      {/* Hauteur calculée : 62vh laissait ~196 px de vide sous la carte. On occupe
+          l'espace restant entre l'en-tête et la barre de navigation. */}
+      <div ref={divRef} style={{ width: "100%", height: "calc(100vh - 250px)", minHeight: 320, borderRadius: 10, border: `1px solid ${C.bordure}`, overflow: "hidden" }} />
 
       {/* Analyse du territoire (mode bande) */}
       {mode === "bande" && etatBande === "ok" && postsAvecPos.length > 0 && (
@@ -8034,7 +8127,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🗺️ La carte</div>
         <p style={p}>
-          Pour l'espèce, tu dois faire un choix explicite : soit tu l'identifies, soit tu indiques « Je ne sais pas » pour demander de l'aide à la bande (elle apparaîtra alors avec le badge ❓ À identifier). Ne pas savoir est parfaitement normal en entomologie — ce qu'on évite, c'est l'observation oubliée sans nom. Deux autres informations sont obligatoires : la <b>date</b> et le <b>biotope</b>. Ce sont elles qui alimentent tes statistiques (saisonnalité, milieux) et la carte — sans elles, les analyses seraient faussées. Le reste (météo, taille, moment, notes) est facultatif. Sur le mur, c'est la date d'observation qui s'affiche, pas celle du partage : tu peux donc publier sans souci une trouvaille faite il y a plusieurs semaines, un petit ↩ signalera simplement le partage différé. Quand tu importes une photo depuis ta galerie, BioDex essaie de lire la date de prise de vue et le lieu directement dans le fichier. Si ces informations manquent (fréquent pour une photo reçue par messagerie ou une capture d'écran), un avertissement s'affiche au moment de compléter l'observation : tu peux alors corriger la date à la main et placer le lieu sur la carte. L'onglet Carte affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. Quand plusieurs trouvailles sont proches, elles se regroupent en une bulle avec un compteur — touche-la ou zoome pour les séparer. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, chaque personne choisit au moment de partager le niveau de précision de sa position : exacte (point ambré), approximative (~1 km, zone verte visible en zoomant) ou masquée (pas de point). Chacun est ainsi libre de montrer ou non l'endroit exact de sa trouvaille. La carte nécessite du réseau.
+          Pour l'espèce, tu dois faire un choix explicite : soit tu l'identifies, soit tu indiques « Je ne sais pas » pour demander de l'aide à la bande (elle apparaîtra alors avec le badge ❓ À identifier). Ne pas savoir est parfaitement normal en entomologie — ce qu'on évite, c'est l'observation oubliée sans nom. Deux autres informations sont obligatoires : la <b>date</b> et le <b>biotope</b>. Ce sont elles qui alimentent tes statistiques (saisonnalité, milieux) et la carte — sans elles, les analyses seraient faussées. Le reste (météo, taille, moment, notes) est facultatif. Sur le mur, c'est la date d'observation qui s'affiche, pas celle du partage : tu peux donc publier sans souci une trouvaille faite il y a plusieurs semaines, un petit ↩ signalera simplement le partage différé. Quand tu prends une photo ou que tu en choisis une dans ta galerie, BioDex lit la date de prise de vue et le lieu directement dans le fichier, et t'affiche sous la photo ce qui a été récupéré (encart vert). Si la photo ne contient pas ces informations (encart orange), la section « 📅 Quand & où » s'ouvre toute seule pour que tu les saisisses. Si ces informations manquent (fréquent pour une photo reçue par messagerie ou une capture d'écran), un avertissement s'affiche au moment de compléter l'observation : tu peux alors corriger la date à la main et placer le lieu sur la carte. L'onglet Carte affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. Quand plusieurs trouvailles sont proches, elles se regroupent en une bulle avec un compteur — touche-la ou zoome pour les séparer. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, chaque personne choisit au moment de partager le niveau de précision de sa position : exacte (point ambré), approximative (~1 km, zone verte visible en zoomant) ou masquée (pas de point). Chacun est ainsi libre de montrer ou non l'endroit exact de sa trouvaille. La carte nécessite du réseau.
         </p>
         <div style={t}>📝 Brouillon automatique</div>
         <p style={p}>
@@ -10450,6 +10543,8 @@ function BioDex() {
   }, [vue]);
 
   // Confirmation avant de quitter l'appli (quand un retour surviendrait alors que tout est fermé).
+  const [saisonMasquee, setSaisonMasquee] = useState(false);
+  const [anecdoteMasquee, setAnecdoteMasquee] = useState(false);
   const [confirmQuitter, setConfirmQuitter] = useState(false);
   // Après un défi, on rouvre l'onglet Jeu directement sur le hub Combat (pas la galerie).
   const [retourCombat, setRetourCombat] = useState(false);
@@ -10705,21 +10800,27 @@ function BioDex() {
 
       {rappelSauvegarde && !majDispo && (vue === "collection") && (
         <div style={{ maxWidth: 560, margin: "0 auto", padding: "10px 16px 0" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", boxShadow: "0 2px 8px rgba(0,0,0,.3)" }}>
-            <span style={{ fontSize: 20, flexShrink: 0 }}>💾</span>
-            <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, flex: 1, lineHeight: 1.4 }}>
-              {(() => {
-                const s = etatSauvegarde();
-                return s.jamais
-                  ? <span>Ta collection ({observations.length} observation{observations.length > 1 ? "s" : ""}) n'a <b style={{ color: "#E4C878" }}>jamais été sauvegardée</b> — un fichier à garder à l'abri.</span>
-                  : <span>Dernière sauvegarde <b style={{ color: "#E4C878" }}>{s.quand}</b> · {observations.length} observation{observations.length > 1 ? "s" : ""} aujourd'hui. Pense à sauvegarder !</span>;
-              })()}
-            </span>
-            <button onClick={reporterRappel} aria-label="Plus tard"
-              style={{ background: "none", border: "none", color: C.papierSombre, fontFamily: sans, fontSize: 12, cursor: "pointer", padding: "6px 6px", flexShrink: 0 }}>
-              Plus tard
-            </button>
-            <Bouton variante="primaire" onClick={exporterMaintenant} disabled={exportEnCours}>{exportEnCours ? "…" : "Sauvegarder"}</Bouton>
+          {/* Texte sur toute la largeur, boutons en dessous : avant, les deux boutons
+              comprimaient le message sur 5 lignes étroites (143 px de haut pour 3 mots par ligne). */}
+          <div style={{ padding: "11px 14px", borderRadius: 10, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", boxShadow: "0 2px 8px rgba(0,0,0,.3)" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 9 }}>
+              <span style={{ fontSize: 20, flexShrink: 0, lineHeight: 1.2 }}>💾</span>
+              <span style={{ fontFamily: sans, fontSize: 13, color: C.papier, flex: 1, lineHeight: 1.45 }}>
+                {(() => {
+                  const s = etatSauvegarde();
+                  return s.jamais
+                    ? <span>Ta collection ({observations.length} observation{observations.length > 1 ? "s" : ""}) n'a <b style={{ color: "#E4C878" }}>jamais été sauvegardée</b> — un fichier à garder à l'abri.</span>
+                    : <span>Dernière sauvegarde <b style={{ color: "#E4C878" }}>{s.quand}</b> · {observations.length} observation{observations.length > 1 ? "s" : ""} aujourd'hui. Pense à sauvegarder !</span>;
+                })()}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button onClick={reporterRappel}
+                style={{ flexShrink: 0, background: "none", border: `1px solid ${C.bordure}`, borderRadius: 8, color: C.papierSombre, fontFamily: sans, fontSize: 12.5, cursor: "pointer", padding: "8px 14px" }}>
+                Plus tard
+              </button>
+              <Bouton variante="primaire" onClick={exporterMaintenant} disabled={exportEnCours} style={{ flex: 1 }}>{exportEnCours ? "…" : "💾 Sauvegarder"}</Bouton>
+            </div>
           </div>
         </div>
       )}
@@ -10904,8 +11005,12 @@ function BioDex() {
 
       {vue === "collection" && (
         <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-          <ReveilSaisonnier />
-          <LeSaviasTu />
+          {/* Encarts d'ambiance regroupés en carrousel : sans ça, ils repoussaient
+              la collection hors de l'écran (408 px de bandeaux mesurés). */}
+          <CarrouselBandeaux>
+            {!saisonMasquee && conseilSaison() && (() => { let vu = false; try { vu = localStorage.getItem("biodex_saison_vue") === new Date().toDateString(); } catch {} return vu ? null : <ReveilSaisonnier key="saison" onMasquer={() => setSaisonMasquee(true)} />; })()}
+            {!anecdoteMasquee && <LeSaviasTu key="anecdote" onMasquer={() => setAnecdoteMasquee(true)} />}
+          </CarrouselBandeaux>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
             <span style={{ fontFamily: serif, color: C.ambre, fontWeight: 700, fontSize: 26 }}>{triees.length}</span>
             <span style={{ fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>
@@ -10963,14 +11068,6 @@ function BioDex() {
             </div>
           )}
 
-          {triees.length > 1 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-              <span style={{ fontFamily: sans, fontSize: 12, color: C.lichen, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase" }}>Tri</span>
-              <select value={tri} onChange={(e) => changerTri(e.target.value)}
-                style={{ flex: 1, maxWidth: 260, background: C.panneau, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }}>
-                {TRIS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-              </select>
-            </div>
           )}
 
           {triees.length > 1 && (
@@ -10986,6 +11083,17 @@ function BioDex() {
 
               {montrerFiltres && (
                 <div style={{ marginTop: 10, padding: 12, background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+                  {/* Tri déplacé ici : il occupait une rangée entière en permanence alors
+                      qu'on le change rarement, contrairement à la recherche. */}
+                  {triees.length > 1 && (
+                    <div>
+                      <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 6 }}>Trier par</div>
+                      <select value={tri} onChange={(e) => changerTri(e.target.value)}
+                        style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }}>
+                        {TRIS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 6 }}>Biotope</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
