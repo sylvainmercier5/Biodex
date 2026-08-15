@@ -29,6 +29,8 @@
   }
   * { -webkit-tap-highlight-color: transparent; }
   input, textarea, button { font-size: 16px; } /* évite le zoom auto iOS */
+  .bd-pastille { background: none !important; border: none !important; box-shadow: none !important; display: flex !important; align-items: center; justify-content: center; }
+  .bd-pastille span { border-radius: 50% !important; }
   .leaflet-popup-content { margin: 10px 12px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   /* Bulles de regroupement (clustering) aux couleurs BioDex */
   .marker-cluster { background: rgba(201,162,75,0.25); }
@@ -233,9 +235,9 @@ const bdRetour = (() => {
   return { enregistrer, definirGardeSortie, quitterVraiment };
 })();
 
-// ============ BioDex v1.65 (PWA) ============
+// ============ BioDex v1.67 (PWA) ============
 
-const VERSION = "v1.65";
+const VERSION = "v1.67";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1171,6 +1173,33 @@ async function chargerMur(limite = 50) {
   return data || [];
 }
 
+// Version allégée pour les notifications : seulement les colonnes utiles.
+// Avant, on rapatriait 200 publications COMPLÈTES (photos, notes, tout) toutes les
+// 60 secondes — lourd sur mobile, et source d'échecs réseau à répétition.
+// Pastille de carte : zone tactile de 44 px, point visible de 18 px au centre.
+// Un seul marqueur (contrairement à la v1.59 qui en superposait deux, ce qui
+// séparait le point de sa zone cliquable au déploiement d'un groupe).
+function pastilleIcone(couleur) {
+  return L.divIcon({
+    className: "bd-pastille",
+    html: `<span style="display:block;width:18px;height:18px;border-radius:9px;background:${couleur};border:2px solid #2A2519;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>`,
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
+    popupAnchor: [0, -12],
+  });
+}
+
+async function chargerMurLeger(limite = 120) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Mur non configuré");
+  const { data, error } = await sb.from("posts")
+    .select("id, auteur, espece, created_at, date_obs")
+    .order("created_at", { ascending: false })
+    .limit(limite);
+  if (error) throw erreurSupabase("chargerMurLeger", error, "Lecture du mur impossible");
+  return data || [];
+}
+
 // Les 4 réactions thématiques disponibles
 // Journal des nouveautés de l'appli (le plus récent en premier).
 // Sert au "Quoi de neuf" du centre de notifications.
@@ -1426,6 +1455,8 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.67", date: "2026-08", items: ["🗺️ CORRECTIF carte : les points regroupés n'étaient plus cliquables. Chaque trouvaille créait en fait deux marqueurs superposés (le point visible et sa zone tactile), qui se séparaient à l'ouverture d'un groupe — d'où les branches vides et les points qui ne répondaient plus. Les compteurs de groupe étaient aussi doublés. C'est réparé.", "📖 « Le coin des curieux » est enfin accessible depuis le menu ☰ — l'entrée manquait alors que la rubrique existait !"] },
+  { v: "1.66", date: "2026-08", items: ["📶 Notifications plus fiables en mobilité : l'appli interrogeait le serveur toutes les minutes en rapatriant 200 publications complètes — trop lourd sur un réseau mobile, et le moindre trou de connexion faisait disparaître la cloche. Elle demande maintenant beaucoup moins de données, moins souvent, et garde tes notifications même si le réseau lâche un instant."] },
   { v: "1.65", date: "2026-08", items: ["🔔 CORRECTIF IMPORTANT sur les notifications : elles pouvaient s'effacer avant même que tu les lises. Ouvrir la cloche les marquait comme vues instantanément, si bien qu'elle affichait parfois « rien de neuf » alors que tu avais des commentaires ou des réactions. De même, un simple passage sur le mur effaçait les réactions reçues. C'est corrigé : le contenu reste affiché tant que la cloche est ouverte, et n'est marqué comme lu qu'à la fermeture."] },
   { v: "1.64", date: "2026-08", items: ["📚 Rangement des rubriques de lecture : chacune a désormais son rôle bien distinct. Le « Guide d'observation » gagne une partie « Réussir la photo », le « Jardin refuge » explique pourquoi les gestes comptent, et « Le coin des curieux » se concentre sur ce qu'on ne trouvait nulle part ailleurs — mythes, rôle des insectes et records."] },
   { v: "1.63", date: "2026-08", items: ["💡 L'encart « Le savais-tu ? » parle enfin de TOI : « Ta Coccinelle peut dévorer des milliers de pucerons », « Plus que 2 espèces d'araignées pour le badge suivant », « 4 milieux explorés, il te manque le littoral »… Il change au fil de ta collection.", "📖 Nouvelle rubrique « Le coin des curieux » (menu ☰) : cinq articles à lire tranquillement — mythes et légendes, le rôle des insectes dans la nature, leur déclin et ce qu'on peut faire, les gestes pour mieux observer, et des records étonnants."] },
@@ -1763,10 +1794,11 @@ async function calculerNotifications(prenom) {
   const lire = (cle) => { try { return localStorage.getItem(cle); } catch { return null; } };
   const ecrire = (cle, v) => { try { localStorage.setItem(cle, v); } catch {} };
   let murNouveaux = 0, ideesNouvelles = 0, reactionsRecues = 0, commentairesRecus = 0, defisSubis = 0, reactionsTotal = 0;
+  let echecReseau = false; // vrai si le réseau a lâché : on ne veut pas effacer la cloche pour autant
   let murDetail = [], ideesDetail = [], reactionsDetail = [], commentairesDetail = [], defisDetail = [];
 
   try {
-    const posts = await chargerMur(200);
+    const posts = await chargerMurLeger(120);
     // 1) Nouveaux posts depuis la dernière visite du mur
     const vuMur = lire("biodex_mur_vu");
     const nouveauxPosts = vuMur ? posts.filter((p) => p.created_at && new Date(p.created_at) > new Date(vuMur)) : posts.slice(0, 20);
@@ -1830,7 +1862,7 @@ async function calculerNotifications(prenom) {
         }));
       }
     }
-  } catch (e) { noterErreur("calculerNotifications/mur", e); }
+  } catch (e) { noterErreur("calculerNotifications/mur", e); echecReseau = true; }
 
   try {
     // 3) Nouvelles idées depuis la dernière visite
@@ -1847,7 +1879,7 @@ async function calculerNotifications(prenom) {
   const nouvelleVersion = versionRecente && vuVersion !== versionRecente ? 1 : 0;
 
   const total = murNouveaux + ideesNouvelles + reactionsRecues + commentairesRecus + defisSubis + nouvelleVersion;
-  return { total, murNouveaux, ideesNouvelles, reactionsRecues, reactionsTotal, commentairesRecus, defisSubis, nouvelleVersion, versionRecente, murDetail, ideesDetail, reactionsDetail, commentairesDetail, defisDetail };
+  return { total, echecReseau, murNouveaux, ideesNouvelles, reactionsRecues, reactionsTotal, commentairesRecus, defisSubis, nouvelleVersion, versionRecente, murDetail, ideesDetail, reactionsDetail, commentairesDetail, defisDetail };
 }
 
 // Récupère la date de création du post le plus récent (léger, pour la pastille "nouveau")
@@ -7754,6 +7786,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {titreSection("Apprendre")}
         {item("🔍", "Guide d'observation", "Quand, où observer — et réussir ses photos", () => onAller("guide"), 0)}
         {item("🏡", "Jardin refuge", "Accueillir les insectes chez toi, et pourquoi", () => onAller("refuge"), 0)}
+        {item("📖", "Le coin des curieux", "Mythes, rôle des insectes, records étonnants", () => onAller("curieux"), 0)}
         {onRevoirPresentation && item("✨", "Revoir la présentation", "L'écran de bienvenue de BioDex", () => { onFermer(); onRevoirPresentation(); }, 0)}
 
         {/* Compte */}
@@ -8453,11 +8486,10 @@ function Carte({ observations, onOuvrirFiche }) {
       avecGps.forEach((o) => {
         const pt = [o.gps.lat, o.gps.lon];
         points.push(pt);
-        // Cible tactile : le point visible fait 18 px, très en dessous des 44 px
-        // recommandés au doigt. On ajoute un disque transparent plus large qui
-        // capte le toucher, sans alourdir la carte visuellement.
-        const m = L.circleMarker(pt, { radius: 9, color: "#2A2519", weight: 2, fillColor: "#C9A24B", fillOpacity: 0.95 });
-        const zone = L.circleMarker(pt, { radius: 22, stroke: false, fillColor: "#C9A24B", fillOpacity: 0.001, interactive: true, bubblingMouseEvents: false });
+        // Marqueur UNIQUE : une pastille de 44 px (cible tactile recommandée) dont
+        // seul le disque central de 18 px est visible. Une seule couche = pas de
+        // dédoublement dans le clustering.
+        const m = L.marker(pt, { icon: pastilleIcone("#C9A24B") });
         const conteneur = document.createElement("div");
         conteneur.style.width = "150px";
         let urlPhoto = null;
@@ -8472,9 +8504,7 @@ function Carte({ observations, onOuvrirFiche }) {
         btn.style.cssText = "width:100%;padding:6px;border-radius:6px;border:none;background:#C9A24B;color:#2A2416;font-weight:700;font-size:13px;cursor:pointer;";
         btn.addEventListener("click", () => onOuvrirFiche(o.id));
         conteneur.appendChild(btn);
-        zone.bindPopup(conteneur);
-        m.options.interactive = false; // c'est la zone élargie qui capte le toucher
-        ajouterMarqueur(zone);
+        m.bindPopup(conteneur);
         ajouterMarqueur(m);
       });
     } else {
@@ -8485,8 +8515,7 @@ function Carte({ observations, onOuvrirFiche }) {
         const exacte = p.precision === "exacte";
         // Cercle de zone (approximatif) : géré à part, affiché selon le zoom.
         if (!exacte) infosCercles.push({ lat: p.lat, lon: p.lon });
-        const m = L.circleMarker(pt, { radius: 8, color: "#2A2519", weight: 2, fillColor: exacte ? "#C9A24B" : "#8AAE6B", fillOpacity: 0.95 });
-        const zone = L.circleMarker(pt, { radius: 22, stroke: false, fillColor: "#C9A24B", fillOpacity: 0.001, interactive: true, bubblingMouseEvents: false });
+        const m = L.marker(pt, { icon: pastilleIcone(exacte ? "#C9A24B" : "#8AAE6B") });
         const conteneur = document.createElement("div");
         conteneur.style.width = "150px";
         conteneur.innerHTML =
@@ -8495,9 +8524,7 @@ function Carte({ observations, onOuvrirFiche }) {
           '<div style="font-size:11px;color:#8A8065;">' +
           "🐛 " + (p.auteur ? String(p.auteur).replace(/</g, "&lt;") : "Anonyme") + (p.lieu ? " · " + String(p.lieu).replace(/</g, "&lt;") : "") + "</div>" +
           '<div style="font-size:10px;color:#A89A78;margin-top:4px;">' + (exacte ? "📍 Position exacte" : "🌫️ Zone approximative") + "</div>";
-        zone.bindPopup(conteneur);
-        m.options.interactive = false; // c'est la zone élargie qui capte le toucher
-        ajouterMarqueur(zone);
+        m.bindPopup(conteneur);
         ajouterMarqueur(m);
       });
     }
@@ -10226,6 +10253,16 @@ const JOURNAL_CLE = "biodex_journal_erreurs";
 const JOURNAL_MAX = 50;
 function noterErreur(ou, err, extra) {
   try {
+    // Les coupures réseau passagères sont fréquentes en mobilité et noieraient les
+    // vraies erreurs : on n'en garde qu'une par endroit et par tranche de 10 minutes.
+    const m0 = String((err && (err.message || err.msg)) || err || "");
+    if (/Failed to fetch|NetworkError|Load failed/i.test(m0)) {
+      const cle = "biodex_err_reseau_" + String(ou || "?").slice(0, 30);
+      let dernier = 0;
+      try { dernier = parseInt(localStorage.getItem(cle) || "0", 10) || 0; } catch {}
+      if (Date.now() - dernier < 600000) return;
+      try { localStorage.setItem(cle, String(Date.now())); } catch {}
+    }
     const e = {
       q: new Date().toISOString(),
       ou: String(ou || "?").slice(0, 60),
@@ -11312,14 +11349,25 @@ function BioDex() {
     let actif = true;
     async function verifier() {
       const n = await calculerNotifications(prenom);
-      if (actif) setNotifs(n);
+      // Si le réseau a lâché, on garde ce qu'on avait : une coupure passagère ne doit
+      // pas faire disparaître des notifications déjà détectées.
+      if (actif) setNotifs((ancien) => (n.echecReseau && (ancien.total || 0) > 0) ? ancien : n);
     }
     verifier();
-    const intervalle = setInterval(verifier, 60000);
-    const surVisible = () => { if (!document.hidden) verifier(); };
+    // Toutes les 3 minutes suffisent (c'était 60 s), et on ne relance pas à chaque
+    // changement d'écran : ça multipliait les requêtes et les échecs réseau.
+    const intervalle = setInterval(verifier, 180000);
+    // Au retour dans l'appli, on rafraîchit — mais pas plus d'une fois par minute.
+    let dernier = Date.now();
+    const surVisible = () => {
+      if (document.hidden) return;
+      if (Date.now() - dernier < 60000) return;
+      dernier = Date.now();
+      verifier();
+    };
     document.addEventListener("visibilitychange", surVisible);
     return () => { actif = false; clearInterval(intervalle); document.removeEventListener("visibilitychange", surVisible); };
-  }, [prenom, vue, centreOuvert]);
+  }, [prenom, centreOuvert]);
 
   // Le marquage des réactions vues est fait par MurCommun (qui a déjà les données), via onMarquerReactionsVues.
 
