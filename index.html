@@ -147,6 +147,21 @@
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 
+// ── Détection de la connexion ──
+// L'identification par IA passe par le réseau : hors ligne, mieux vaut le dire
+// clairement et proposer de mettre la photo de côté plutôt que de laisser
+// la personne buter sur un message d'erreur.
+function useEnLigne() {
+  const [enLigne, setEnLigne] = useState(() => { try { return navigator.onLine !== false; } catch { return true; } });
+  useEffect(() => {
+    const maj = () => { try { setEnLigne(navigator.onLine !== false); } catch {} };
+    window.addEventListener("online", maj);
+    window.addEventListener("offline", maj);
+    return () => { window.removeEventListener("online", maj); window.removeEventListener("offline", maj); };
+  }, []);
+  return enLigne;
+}
+
 // ── Registre central du bouton/geste RETOUR système ────────────────────────
 // Un seul point de gestion pour tout l'appli (évite les listeners popstate concurrents).
 // Chaque overlay ouvert s'enregistre avec une priorité + une fonction de fermeture.
@@ -218,9 +233,9 @@ const bdRetour = (() => {
   return { enregistrer, definirGardeSortie, quitterVraiment };
 })();
 
-// ============ BioDex v1.56 (PWA) ============
+// ============ BioDex v1.65 (PWA) ============
 
-const VERSION = "v1.56";
+const VERSION = "v1.65";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1010,6 +1025,87 @@ async function publierAuMur(obs, auteur, precision, cadreMur) {
 // Charge les derniers posts du mur commun
 // ---------- Profils personnalisés ----------
 // Emblèmes disponibles (thème insectes & nature).
+
+// ═══════ TITRES & THÈMES DE PROFIL ═══════
+// Les titres se MÉRITENT : ils dépendent de la collection réelle, pas d'un choix libre.
+// Cela donne un sens à l'exploration et rend les profils comparables.
+const THEMES_PROFIL = [
+  { id: "ambre",   nom: "Ambre",    c1: "#3A2E14", c2: "#2A2410", bord: "#B8862E", accent: "#E4C878" },
+  { id: "mousse",  nom: "Mousse",   c1: "#22301A", c2: "#1A2415", bord: "#6F9450", accent: "#A6CC82" },
+  { id: "nuit",    nom: "Nuit",     c1: "#1B2033", c2: "#141828", bord: "#4E5C8A", accent: "#9FB0E0" },
+  { id: "terre",   nom: "Terre",    c1: "#332218", c2: "#261A12", bord: "#8A5A3A", accent: "#D9A57E" },
+  { id: "prairie", nom: "Prairie",  c1: "#2B3120", c2: "#1F2418", bord: "#9AA84E", accent: "#D6E08A" },
+  { id: "eau",     nom: "Eau",      c1: "#162B30", c2: "#101F24", bord: "#3E7F8A", accent: "#8AC9D4" },
+  { id: "prune",   nom: "Prune",    c1: "#2C1B30", c2: "#201424", bord: "#7A4E8A", accent: "#C9A0E8" },
+  { id: "braise",  nom: "Braise",   c1: "#361C18", c2: "#281410", bord: "#A0503C", accent: "#E8A88F" },
+];
+const themeProfil = (id) => THEMES_PROFIL.find((t) => t.id === id) || THEMES_PROFIL[0];
+
+// Titres liés aux badges par catégorie (niveaux calculés dans les Stats) et aux jalons.
+const TITRES = [
+  // Titres de spécialité : niveau 3+ dans un groupe d'arthropodes
+  { id: "maitre_arachnides",  nom: "Maître des araignées",   emoji: "🕷️", ordre: "arachnides",   niveau: 3 },
+  { id: "maitre_coleopteres", nom: "Seigneur des scarabées", emoji: "🪲", ordre: "coleopteres",  niveau: 3 },
+  { id: "maitre_lepido",      nom: "Prince des papillons",   emoji: "🦋", ordre: "lepidopteres", niveau: 3 },
+  { id: "maitre_hymeno",      nom: "Ami des abeilles",       emoji: "🐝", ordre: "hymenopteres", niveau: 3 },
+  { id: "maitre_ortho",       nom: "Chef d'orchestre",       emoji: "🦗", ordre: "orthopteres",  niveau: 3 },
+  { id: "maitre_odonates",    nom: "Gardien des libellules", emoji: "🜻", ordre: "odonates",     niveau: 3 },
+  { id: "maitre_dipteres",    nom: "Dompteur de mouches",    emoji: "🪰", ordre: "dipteres",     niveau: 3 },
+  { id: "maitre_hemipteres",  nom: "Veilleur des punaises",  emoji: "🌾", ordre: "hemipteres",   niveau: 3 },
+  // Titres de progression générale
+  { id: "curieux",     nom: "Curieux de nature", emoji: "🔍", obs: 1 },
+  { id: "observateur", nom: "Observateur",       emoji: "👁️", obs: 15 },
+  { id: "naturaliste", nom: "Naturaliste",       emoji: "🌿", obs: 40 },
+  { id: "expert",      nom: "Expert de terrain", emoji: "🎖️", obs: 100 },
+  // Titres de diversité
+  { id: "explorateur", nom: "Explorateur",       emoji: "🧭", biotopes: 5 },
+  { id: "encyclopedie", nom: "Encyclopédie vivante", emoji: "📚", especes: 50 },
+];
+
+// Quels titres cette collection débloque-t-elle ?
+function titresDebloques(observations) {
+  const obs = (observations || []).filter((o) => o.statut !== "a_trier");
+  if (obs.length === 0) return [];
+  const cle = (o) => ((o.nomSci || "").trim().toLowerCase() || (o.nom || "").trim().toLowerCase());
+  const especes = new Set(obs.map(cle).filter(Boolean)).size;
+  const biotopes = new Set(obs.map((o) => o.biotope).filter(Boolean)).size;
+  // Espèces uniques par ordre (même calcul que les badges par catégorie)
+  const parOrdre = {};
+  obs.forEach((o) => {
+    const k = cle(o); if (!k) return;
+    const id = deduireOrdre(o);
+    if (id === "autres") return;
+    if (!parOrdre[id]) parOrdre[id] = new Set();
+    parOrdre[id].add(k);
+  });
+  const PALIERS = [3, 8, 15, 30, 50];
+  const niveauDe = (id) => { const n = parOrdre[id] ? parOrdre[id].size : 0; let l = 0; for (const s of PALIERS) { if (n >= s) l++; else break; } return l; };
+  return TITRES.filter((t) => {
+    if (t.ordre) return niveauDe(t.ordre) >= t.niveau;
+    if (t.obs) return obs.length >= t.obs;
+    if (t.biotopes) return biotopes >= t.biotopes;
+    if (t.especes) return especes >= t.especes;
+    return false;
+  });
+}
+const titreParId = (id) => TITRES.find((t) => t.id === id) || null;
+
+// Emblèmes supplémentaires, débloqués par les mêmes jalons.
+const EMBLEMES_BONUS = [
+  { e: "🦂", obs: 15 }, { e: "🐌", obs: 15 }, { e: "🪱", obs: 25 }, { e: "🦎", obs: 25 },
+  { e: "🌺", biotopes: 4 }, { e: "🍄", biotopes: 5 }, { e: "🌲", biotopes: 6 },
+  { e: "🎖️", obs: 60 }, { e: "👑", obs: 100 }, { e: "💎", especes: 40 },
+];
+function emblemesDebloques(observations) {
+  const obs = (observations || []).filter((o) => o.statut !== "a_trier");
+  const cle = (o) => ((o.nomSci || "").trim().toLowerCase() || (o.nom || "").trim().toLowerCase());
+  const especes = new Set(obs.map(cle).filter(Boolean)).size;
+  const biotopes = new Set(obs.map((o) => o.biotope).filter(Boolean)).size;
+  return EMBLEMES_BONUS.filter((b) =>
+    (b.obs && obs.length >= b.obs) || (b.biotopes && biotopes >= b.biotopes) || (b.especes && especes >= b.especes)
+  ).map((b) => b.e);
+}
+
 const EMBLEMES = ["🐛", "🦋", "🐞", "🪲", "🐝", "🦗", "🕷️", "🦟", "🐜", "🦂", "🪳", "🪰", "🦠", "🌿", "🍃", "🌸", "🔍", "🌟"];
 const EMBLEME_DEFAUT = "🐛";
 
@@ -1036,6 +1132,16 @@ function emblemeDe(prenom, profils) {
   const p = profilDe(prenom, profils);
   return (p && p.embleme) || EMBLEME_DEFAUT;
 }
+// Thème choisi par la personne : sert à teinter ses publications sur le mur,
+// pour qu'on reconnaisse ses trouvailles d'un coup d'œil.
+function themeDe(prenom, profils) {
+  const p = profilDe(prenom, profils);
+  return themeProfil(p && p.theme);
+}
+function titreDe(prenom, profils) {
+  const p = profilDe(prenom, profils);
+  return p && p.titre ? titreParId(p.titre) : null;
+}
 async function enregistrerProfil(prenom, champs) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
@@ -1047,6 +1153,8 @@ async function enregistrerProfil(prenom, champs) {
     bio: (champs.bio || "").slice(0, 160),
     region: (champs.region || "").slice(0, 60),
     fetiche: (champs.fetiche || "").slice(0, 80),
+    titre: (champs.titre || "").slice(0, 40),
+    theme: (champs.theme || "ambre").slice(0, 20),
     maj: new Date().toISOString(),
   };
   const { error } = await sb.from("profils").upsert(ligne, { onConflict: "prenom" });
@@ -1318,6 +1426,15 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.65", date: "2026-08", items: ["🔔 CORRECTIF IMPORTANT sur les notifications : elles pouvaient s'effacer avant même que tu les lises. Ouvrir la cloche les marquait comme vues instantanément, si bien qu'elle affichait parfois « rien de neuf » alors que tu avais des commentaires ou des réactions. De même, un simple passage sur le mur effaçait les réactions reçues. C'est corrigé : le contenu reste affiché tant que la cloche est ouverte, et n'est marqué comme lu qu'à la fermeture."] },
+  { v: "1.64", date: "2026-08", items: ["📚 Rangement des rubriques de lecture : chacune a désormais son rôle bien distinct. Le « Guide d'observation » gagne une partie « Réussir la photo », le « Jardin refuge » explique pourquoi les gestes comptent, et « Le coin des curieux » se concentre sur ce qu'on ne trouvait nulle part ailleurs — mythes, rôle des insectes et records."] },
+  { v: "1.63", date: "2026-08", items: ["💡 L'encart « Le savais-tu ? » parle enfin de TOI : « Ta Coccinelle peut dévorer des milliers de pucerons », « Plus que 2 espèces d'araignées pour le badge suivant », « 4 milieux explorés, il te manque le littoral »… Il change au fil de ta collection.", "📖 Nouvelle rubrique « Le coin des curieux » (menu ☰) : cinq articles à lire tranquillement — mythes et légendes, le rôle des insectes dans la nature, leur déclin et ce qu'on peut faire, les gestes pour mieux observer, et des records étonnants."] },
+  { v: "1.62", date: "2026-08", items: ["✨ Le mur fait peau neuve ! Chaque publication s'ouvre désormais sur son auteur : emblème en médaillon aux couleurs de son profil, prénom et titre bien visibles. Le nom de l'espèce s'affiche en grand sur la photo, le biotope devient une jolie pastille et les notes sont mises en valeur. On reconnaît les trouvailles de chacun d'un coup d'œil !"] },
+  { v: "1.61", date: "2026-08", items: ["🎖️ Des titres à débloquer ! « Maître des araignées », « Prince des papillons », « Explorateur »… Ils ne se choisissent pas librement : ils s'obtiennent en observant. Ton titre s'affiche sur ton profil, sous ton nom.", "🎨 Choisis la couleur de ton profil parmi 8 thèmes (Ambre, Mousse, Nuit, Prune, Braise…) — ta carte de visite auprès de la bande.", "✨ De nouveaux emblèmes se débloquent aussi au fil de tes trouvailles : 🦂 🐌 🍄 💎 👑…"] },
+  { v: "1.60", date: "2026-08", items: ["🔎 Filtres sur le mur : retrouve les trouvailles par période (aujourd'hui, 7 jours, 30 jours…) ou par membre de la bande. Les périodes s'ajoutent toutes seules au fil du temps — inutile d'afficher « Cette année » tant que l'appli n'a pas un an !"] },
+  { v: "1.59", date: "2026-08", items: ["🎯 Les points de la carte se touchent enfin du premier coup : leur zone tactile passe de 18 à 44 pixels (la taille recommandée pour le doigt), sans les grossir visuellement.", "🗺️ L'onglet Carte fait peau neuve : trois repères en un coup d'œil — points, espèces et milieux.", "📥 Barre du bas allégée : l'onglet « Trier » n'apparaît plus que quand des photos attendent vraiment. Le reste du temps, les autres onglets sont plus larges et plus faciles à viser (l'import en masse reste accessible depuis la Boîte)."] },
+  { v: "1.58", date: "2026-08", items: ["📴 Mode hors ligne : en balade sans réseau, BioDex te prévient au lieu de te laisser buter sur une erreur. Un bouton « Mettre de côté dans À trier » range ta photo avec sa date et sa position — tu l'identifieras tranquillement une fois rentré. Parfait pour les coins sans réseau !"] },
+  { v: "1.57", date: "2026-08", items: ["🧠 Le quiz se renouvelle sans fin ! La moitié des questions sont maintenant tirées de TA collection : nom latin d'une espèce que tu as photographiée, biotope où tu l'as trouvée, groupe auquel elle appartient… Plus tu observes, plus le quiz s'enrichit.", "🔄 Mode entraînement libre : rejoue autant de séries que tu veux, même après le quiz du jour (sans points, juste pour réviser).", "🏅 Classement du quiz partagé avec la bande — à vos neurones !", "🔔 Une pastille 🧠 sur l'onglet Jeu te signale quand le quiz du jour n'est pas encore fait."] },
   { v: "1.56", date: "2026-07", items: ["📱 Écran d'accueil dégagé : les encarts d'info (« À guetter », « Le savais-tu ») sont regroupés dans un bandeau qui défile — glisse dessus ou touche les petits points pour passer au suivant. Tes observations apparaissent enfin dès l'ouverture !", "🎴 Les noms complets s'affichent sur les cartes (fini les « Lucane cerf… ») et toutes les cartes ont désormais la même hauteur.", "🗺️ La carte occupe mieux l'écran, et le rappel de sauvegarde est plus lisible."] },
   { v: "1.55", date: "2026-07", items: ["📅 CORRECTIF : les photos choisies dans la galerie ne transmettaient pas leur date de prise de vue — seul l'import en masse le faisait. C'est réparé : la date ET le lieu sont maintenant lus quel que soit le chemin.", "✓ Un encart vert sous la photo t'indique désormais ce qui a été récupéré (« Infos récupérées depuis la photo : le lieu et la date » + la date exacte). Si la photo ne contient rien, un encart orange te le dit et ouvre directement la saisie manuelle."] },
   { v: "1.54", date: "2026-07", items: ["🩺 Diagnostic : quand quelque chose ne marche pas, l'appli garde désormais la trace exacte du problème (visible dans l'espace d'administration). Avant, les erreurs disparaissaient en silence et il fallait deviner. Si tu rencontres un souci, préviens Sylvain : il pourra voir précisément ce qui a coincé."] },
@@ -1645,7 +1762,7 @@ async function calculerNotifications(prenom) {
 
   const lire = (cle) => { try { return localStorage.getItem(cle); } catch { return null; } };
   const ecrire = (cle, v) => { try { localStorage.setItem(cle, v); } catch {} };
-  let murNouveaux = 0, ideesNouvelles = 0, reactionsRecues = 0, commentairesRecus = 0, defisSubis = 0;
+  let murNouveaux = 0, ideesNouvelles = 0, reactionsRecues = 0, commentairesRecus = 0, defisSubis = 0, reactionsTotal = 0;
   let murDetail = [], ideesDetail = [], reactionsDetail = [], commentairesDetail = [], defisDetail = [];
 
   try {
@@ -1666,12 +1783,28 @@ async function calculerNotifications(prenom) {
         const raw = await chargerReactionsRaw();
         let vuDate = lire("biodex_reactions_vu_date");
         if (!vuDate) { vuDate = new Date().toISOString(); ecrire("biodex_reactions_vu_date", vuDate); }
-        const nouvelles = raw.filter((r) => idsMoi.has(r.post_id) && (r.auteur || "").trim().toLowerCase() !== moi && r.created_at && new Date(r.created_at) > new Date(vuDate));
+        // Si la table des réactions n'a pas de colonne created_at (ancienne base), on ne
+        // peut pas dater : on signale alors les réactions non encore comptées plutôt que
+        // de n'en montrer aucune. On trace le cas pour pouvoir le corriger.
+        const datees = raw.filter((r) => r.created_at);
+        if (raw.length > 0 && datees.length === 0) noterErreur("reactions/sans-date", "La table reactions_detail ne renvoie pas created_at : les notifications de réaction ne peuvent pas être datées.");
+        const mesReacts = raw.filter((r) => idsMoi.has(r.post_id) && (r.auteur || "").trim().toLowerCase() !== moi);
+        let nouvelles;
+        if (datees.length === 0 && mesReacts.length > 0) {
+          // Repli : on compare au total déjà vu, mémorisé localement.
+          let dejaVu = 0; try { dejaVu = parseInt(lire("biodex_reactions_vu_total") || "0", 10) || 0; } catch {}
+          nouvelles = mesReacts.slice(0, Math.max(0, mesReacts.length - dejaVu));
+        } else {
+          nouvelles = mesReacts.filter((r) => r.created_at && new Date(r.created_at) > new Date(vuDate));
+        }
         reactionsRecues = nouvelles.length;
+        reactionsTotal = mesReacts.length;
         reactionsDetail = nouvelles.slice(0, 6).map((r) => ({ qui: r.auteur || "Quelqu'un", emoji: (REACTIONS.find((x) => x.type === r.type) || {}).emoji || "❤️", espece: mapEspece[r.post_id] || "ta trouvaille" }));
       }
 
       // 2 bis) Commentaires reçus sur MES posts (nouveaux, écrits par quelqu'un d'autre)
+      // Isolé : un souci sur les réactions ne doit pas faire perdre les commentaires.
+      try {
       if (idsMoi.size > 0) {
         const tousComs = await chargerTousCommentaires().catch(() => []);
         let vuComDate = lire("biodex_commentaires_vu_date");
@@ -1680,6 +1813,7 @@ async function calculerNotifications(prenom) {
         commentairesRecus = nouvComs.length;
         commentairesDetail = nouvComs.slice(0, 6).map((c) => ({ qui: c.auteur || "Quelqu'un", espece: mapEspece[c.post_id] || "ta trouvaille", extrait: (c.texte || "").slice(0, 60) }));
       }
+      } catch (e) { noterErreur("calculerNotifications/commentaires", e); }
 
       // 2 ter) Défis de ligue subis (quelqu'un a affronté une de mes cartes)
       {
@@ -1696,7 +1830,7 @@ async function calculerNotifications(prenom) {
         }));
       }
     }
-  } catch {}
+  } catch (e) { noterErreur("calculerNotifications/mur", e); }
 
   try {
     // 3) Nouvelles idées depuis la dernière visite
@@ -1713,7 +1847,7 @@ async function calculerNotifications(prenom) {
   const nouvelleVersion = versionRecente && vuVersion !== versionRecente ? 1 : 0;
 
   const total = murNouveaux + ideesNouvelles + reactionsRecues + commentairesRecus + defisSubis + nouvelleVersion;
-  return { total, murNouveaux, ideesNouvelles, reactionsRecues, commentairesRecus, defisSubis, nouvelleVersion, versionRecente, murDetail, ideesDetail, reactionsDetail, commentairesDetail, defisDetail };
+  return { total, murNouveaux, ideesNouvelles, reactionsRecues, reactionsTotal, commentairesRecus, defisSubis, nouvelleVersion, versionRecente, murDetail, ideesDetail, reactionsDetail, commentairesDetail, defisDetail };
 }
 
 // Récupère la date de création du post le plus récent (léger, pour la pastille "nouveau")
@@ -3063,6 +3197,19 @@ function JardinRefuge({ onFermer }) {
         })}
       </div>
 
+      {/* Contexte du déclin : ce qui donne du sens aux gestes ci-dessus. */}
+      <div style={{ marginTop: 18, padding: "14px 15px", borderRadius: 12, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+        <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 8 }}>📉 Pourquoi ça compte</div>
+        <div style={{ fontFamily: sans, fontSize: 13.5, color: C.papier, lineHeight: 1.6 }}>
+          Plusieurs études européennes ont mesuré des baisses importantes de biomasse d'insectes volants
+          sur quelques décennies. Les causes principales avancées : destruction et fragmentation des habitats,
+          agriculture intensive, pesticides, éclairage nocturne et changement climatique.
+          <br /><br />
+          La bonne nouvelle, c'est que les insectes recolonisent vite un milieu redevenu accueillant :
+          quelques mètres carrés laissés tranquilles suffisent souvent à voir la différence en une saison.
+        </div>
+      </div>
+
       <div style={{ marginTop: 18, padding: "13px 15px", borderRadius: 12, background: "linear-gradient(135deg, #2A2417, #201B12)", border: "1px solid #6B5A2E" }}>
         <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambreClair, lineHeight: 1.6, textAlign: "center" }}>
           « Un jardin sans insectes est un jardin mort. »
@@ -3147,6 +3294,23 @@ function GuideObservation({ onFermer }) {
         {encart("👕", "S'habiller malin", "Des vêtements clairs et couvrants (pour les tiques et les ronces), des chaussures fermées. Évite les parfums, qui attirent ou perturbent les insectes.")}
       </SectionPliable>
 
+      {/* Conseils photo : indissociables de l'observation, ils manquaient ici. */}
+      <div style={{ marginTop: 18, padding: "14px 15px", borderRadius: 12, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+        <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 10 }}>📷 Réussir la photo</div>
+        {[
+          ["Cadre serré", "Une bestiole minuscule au milieu d'une grande photo est presque impossible à identifier. Approche-toi autant que possible, ou recadre avant l'identification."],
+          ["Vue de dessus ou de profil", "Ce sont les angles que les guides utilisent. Une photo de trois quarts est jolie, mais moins parlante pour l'IA comme pour un naturaliste."],
+          ["Les détails qui tranchent", "Nervures des ailes, antennes, motif du thorax : pour beaucoup de groupes, l'identification tient à un détail. Une photo nette de la bonne zone vaut mieux qu'une belle photo floue de l'ensemble."],
+          ["Plusieurs angles", "Si la bestiole reste tranquille, prends-en deux ou trois : BioDex peut croiser les vues pour affiner."],
+          ["La lumière", "Évite le flash direct qui écrase les couleurs. Une ombre douce ou un ciel voilé donnent les meilleurs rendus."],
+        ].map(([t, d]) => (
+          <div key={t} style={{ marginBottom: 10 }}>
+            <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: C.ambreClair }}>{t}</div>
+            <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.55, marginTop: 2 }}>{d}</div>
+          </div>
+        ))}
+      </div>
+
       <div style={{ marginTop: 18, padding: "13px 15px", borderRadius: 12, background: "linear-gradient(135deg, #2A2417, #201B12)", border: "1px solid #6B5A2E" }}>
         <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambreClair, lineHeight: 1.6, textAlign: "center" }}>
           « Le meilleur observateur n'est pas celui qui trouve le plus, mais celui qui regarde le mieux. »
@@ -3200,6 +3364,8 @@ function MonProfil({ prenom, onDefinirPrenom, observations, onFermer }) {
   const [bio, setBio] = useState("");
   const [region, setRegion] = useState("");
   const [fetiche, setFetiche] = useState("");
+  const [titre, setTitre] = useState("");
+  const [theme, setTheme] = useState("ambre");
   const [etat, setEtat] = useState("chargement");
   const [message, setMessage] = useState("");
   const [enregistrement, setEnregistrement] = useState(false);
@@ -3216,6 +3382,8 @@ function MonProfil({ prenom, onDefinirPrenom, observations, onFermer }) {
         setBio(p.bio || "");
         setRegion(p.region || "");
         setFetiche(p.fetiche || "");
+        setTitre(p.titre || "");
+        setTheme(p.theme || "ambre");
       }
       setEtat("ok");
     })();
@@ -3231,7 +3399,7 @@ function MonProfil({ prenom, onDefinirPrenom, observations, onFermer }) {
     setEnregistrement(true);
     setMessage("");
     try {
-      await enregistrerProfil(p, { embleme, bio, region, fetiche });
+      await enregistrerProfil(p, { embleme, bio, region, fetiche, titre, theme });
       onDefinirPrenom(p);
       setMessage("✓ Profil enregistré ! Toute la bande le verra.");
       setTimeout(() => setMessage(""), 3500);
@@ -3271,7 +3439,7 @@ function MonProfil({ prenom, onDefinirPrenom, observations, onFermer }) {
           <div style={carte}>
             <label style={libelle}>Ton emblème</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {EMBLEMES.map((e) => (
+              {[...EMBLEMES, ...emblemesDebloques(observations)].map((e) => (
                 <button key={e} onClick={() => setEmbleme(e)}
                   style={{ fontSize: 24, width: 46, height: 46, borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
                     border: `2px solid ${embleme === e ? C.ambre : C.bordure}`,
@@ -3295,6 +3463,73 @@ function MonProfil({ prenom, onDefinirPrenom, observations, onFermer }) {
           <div style={carte}>
             <label style={libelle}>Ton secteur de chasse <span style={{ fontWeight: 400, textTransform: "none", color: C.papierSombre }}>(optionnel)</span></label>
             <input style={champ} value={region} onChange={(e) => setRegion(e.target.value)} maxLength={60} placeholder="ex : Limousin, bords de Vienne…" />
+          </div>
+
+          {(() => {
+            const bonus = emblemesDebloques(observations);
+            const restants = EMBLEMES_BONUS.length - bonus.length;
+            if (restants <= 0) return null;
+            return (
+              <div style={{ marginTop: -6, marginBottom: 14, fontFamily: sans, fontSize: 11.5, color: C.papierSombre, lineHeight: 1.5, padding: "0 2px" }}>
+                🔒 {restants} emblème{restants > 1 ? "s" : ""} supplémentaire{restants > 1 ? "s" : ""} à débloquer en observant davantage
+                {bonus.length > 0 && <span> · déjà obtenu{bonus.length > 1 ? "s" : ""} : {bonus.join(" ")}</span>}
+              </div>
+            );
+          })()}
+
+          {/* Titre — se mérite via la collection */}
+          <div style={carte}>
+            <label style={libelle}>Ton titre</label>
+            {(() => {
+              const dispo = titresDebloques(observations);
+              if (dispo.length === 0) return (
+                <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, fontStyle: "italic", lineHeight: 1.5 }}>
+                  Aucun titre débloqué pour l'instant. Ils s'obtiennent en observant : ta première trouvaille en débloque déjà un ! 🔍
+                </div>
+              );
+              const verrouilles = TITRES.filter((t) => !dispo.find((d) => d.id === t.id));
+              return (
+                <div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 10 }}>
+                    <button onClick={() => setTitre("")}
+                      style={{ fontFamily: sans, fontSize: 12.5, padding: "6px 11px", borderRadius: 18, cursor: "pointer",
+                        border: `1px solid ${!titre ? C.ambre : C.bordure}`, background: !titre ? C.ambre : C.fond, color: !titre ? C.encre : C.papierSombre }}>
+                      Aucun
+                    </button>
+                    {dispo.map((t) => (
+                      <button key={t.id} onClick={() => setTitre(t.id)}
+                        style={{ fontFamily: sans, fontSize: 12.5, padding: "6px 11px", borderRadius: 18, cursor: "pointer",
+                          border: `1px solid ${titre === t.id ? C.ambre : C.bordure}`, background: titre === t.id ? C.ambre : C.fond,
+                          color: titre === t.id ? C.encre : C.papier, fontWeight: titre === t.id ? 700 : 400 }}>
+                        {t.emoji} {t.nom}
+                      </button>
+                    ))}
+                  </div>
+                  {verrouilles.length > 0 && (
+                    <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, lineHeight: 1.6 }}>
+                      🔒 Encore {verrouilles.length} titre{verrouilles.length > 1 ? "s" : ""} à débloquer :{" "}
+                      {verrouilles.slice(0, 4).map((t) => t.nom).join(", ")}{verrouilles.length > 4 ? "…" : ""}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Thème de couleur */}
+          <div style={carte}>
+            <label style={libelle}>Couleur de ton profil</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {THEMES_PROFIL.map((t) => (
+                <button key={t.id} onClick={() => setTheme(t.id)} title={t.nom}
+                  style={{ width: 52, height: 44, borderRadius: 9, cursor: "pointer", padding: 0,
+                    background: `linear-gradient(${t.c1}, ${t.c2})`,
+                    border: `2px solid ${theme === t.id ? t.accent : C.bordure}`,
+                    boxShadow: theme === t.id ? `0 0 0 2px ${t.bord}` : "none" }}>
+                  <span style={{ fontFamily: sans, fontSize: 10, fontWeight: 700, color: t.accent }}>{t.nom}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Insecte fétiche */}
@@ -4107,10 +4342,19 @@ function ProfilPublic({ auteur, onFermer }) {
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
       <Bouton onClick={onFermer} style={{ marginBottom: 16 }}>← Retour</Bouton>
 
-      {/* En-tête */}
-      <div style={{ textAlign: "center", marginBottom: 18 }}>
+      {/* En-tête, habillé du thème choisi par la personne (carte de visite) */}
+      {(() => {
+        const th = themeProfil(perso && perso.theme);
+        const t = perso && perso.titre ? titreParId(perso.titre) : null;
+        return (
+      <div style={{ textAlign: "center", marginBottom: 18, padding: "18px 14px", borderRadius: 14, background: `linear-gradient(${th.c1}, ${th.c2})`, border: `1px solid ${th.bord}`, boxShadow: "0 2px 10px rgba(0,0,0,.3)" }}>
         <div style={{ fontSize: 46, lineHeight: 1.1 }}>{(perso && perso.embleme) || "🐛"}</div>
         <div style={{ fontFamily: serif, fontSize: 26, fontWeight: 700, color: C.papier, marginTop: 2 }}>{auteur}</div>
+        {t && (
+          <div style={{ display: "inline-block", marginTop: 5, padding: "3px 12px", borderRadius: 14, background: "rgba(0,0,0,.28)", border: `1px solid ${th.bord}`, fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: th.accent }}>
+            {t.emoji} {t.nom}
+          </div>
+        )}
         {perso && perso.region && (
           <div style={{ fontFamily: sans, fontSize: 12.5, color: C.lichen, marginTop: 3 }}>📍 {perso.region}</div>
         )}
@@ -4128,6 +4372,8 @@ function ProfilPublic({ auteur, onFermer }) {
           </div>
         )}
       </div>
+        );
+      })()}
 
       {total === 0 ? (
         <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 13.5, color: C.papierSombre, lineHeight: 1.6 }}>
@@ -4573,6 +4819,123 @@ function Celebrations({ sonActif = true }) {
   );
 }
 
+
+// Anecdotes PERSONNALISÉES : l'encart parle de la collection de la personne plutôt
+// que de généralités. C'est ce qui le rend vivant — il change quand la collection change.
+function anecdotesPersonnelles(observations, profils, posts) {
+  const obs = (observations || []).filter((o) => o.statut !== "a_trier");
+  const out = [];
+  if (obs.length === 0) return out;
+  const cle = (o) => ((o.nomSci || "").trim().toLowerCase() || (o.nom || "").trim().toLowerCase());
+  const nommees = obs.filter((o) => (o.nom || "").trim());
+  const especes = new Set(obs.map(cle).filter(Boolean));
+  const biotopes = new Set(obs.map((o) => o.biotope).filter(Boolean));
+
+  // 1) Un fait sur une espèce que la personne possède vraiment
+  if (nommees.length) {
+    const o = nommees[Math.floor(Math.random() * nommees.length)];
+    const t = ((o.nom || "") + " " + (o.nomSci || "")).toLowerCase();
+    const faits = [
+      [/coccinel/, "peut dévorer plusieurs milliers de pucerons au cours de sa vie"],
+      [/lucane|cervus/, "passe jusqu'à 6 ans sous terre à l'état de larve, pour ne vivre que quelques semaines adulte"],
+      [/abeille|apis|xyloc/, "visite des centaines de fleurs par jour et transporte le pollen sur ses pattes"],
+      [/fourmi|formic|lasius/, "peut soulever jusqu'à 50 fois son propre poids"],
+      [/libellul|odonat|aeshn|libellula/, "appartient à un groupe qui volait déjà il y a 300 millions d'années"],
+      [/papillon|machaon|papilio|vulcain|paon/, "goûte avec ses pattes avant de décider où pondre"],
+      [/arane|épeire|epeire|argiope|tegen/, "produit une soie plus résistante que l'acier à poids égal"],
+      [/sauterelle|criquet|grillon|tetti/, "entend par des tympans situés sur ses pattes ou son abdomen"],
+      [/escargot|limace|helix/, "avance sur un tapis de mucus qu'il fabrique lui-même"],
+      [/mouche|diptèr|dipter|syrphe/, "bat des ailes plusieurs centaines de fois par seconde"],
+      [/carabe|scarab|hanneton|cétoine|cetoine/, "fait partie des coléoptères, l'ordre animal le plus riche en espèces au monde"],
+      [/guêpe|guepe|frelon|vespa/, "fabrique son nid en mâchant du bois pour en faire une sorte de papier"],
+      [/punaise|gendarme|pyrrho/, "se protège en dégageant une odeur dissuasive quand on l'inquiète"],
+    ];
+    const f = faits.find(([re]) => re.test(t));
+    if (f) out.push(`🔎 Ton ${o.nom.trim()} ${f[1]}.`);
+  }
+
+  // 2) Progression vers un badge de catégorie
+  const parOrdre = {};
+  obs.forEach((o) => { const k = cle(o); if (!k) return; const id = deduireOrdre(o); if (id === "autres") return; if (!parOrdre[id]) parOrdre[id] = new Set(); parOrdre[id].add(k); });
+  const PALIERS = [3, 8, 15, 30, 50];
+  Object.keys(parOrdre).forEach((id) => {
+    const n = parOrdre[id].size;
+    const prochain = PALIERS.find((x) => x > n);
+    const ord = ORDRES.find((x) => x.id === id);
+    if (prochain && ord && prochain - n <= 3) {
+      // Élision : « de araignées » -> « d'araignées »
+      const g = ord.court.toLowerCase();
+      const de = /^[aeiouyàâäéèêëîïôöûüh]/.test(g) ? `d'${g}` : `de ${g}`;
+      out.push(`${ord.emoji} Plus que ${prochain - n} espèce${prochain - n > 1 ? "s" : ""} ${de} pour le badge suivant !`);
+    }
+  });
+
+  // 3) Milieux restant à explorer
+  if (biotopes.size >= 2 && biotopes.size < BIOTOPES.length - 1) {
+    const manquants = BIOTOPES.filter((b) => b.id !== "autre" && !biotopes.has(b.id));
+    if (manquants.length && manquants.length <= 4) {
+      out.push(`🧭 ${biotopes.size} milieux explorés. Il te manque ${manquants.slice(0, 2).map((b) => b.label.toLowerCase()).join(" et ")} !`);
+    }
+  }
+
+  // 4) Rythme d'observation
+  const derniere = obs.map((o) => new Date(o.date || 0).getTime()).filter(Boolean).sort((a, b) => b - a)[0];
+  if (derniere) {
+    const jours = Math.floor((Date.now() - derniere) / 864e5);
+    if (jours >= 10) out.push(`📅 Ta dernière trouvaille remonte à ${jours} jours. Les bestioles t'attendent !`);
+    else if (jours === 0) out.push(`🎉 Une trouvaille aujourd'hui — belle journée de chasse !`);
+  }
+
+  // 5) Espèce star de la collection
+  const compte = {};
+  obs.forEach((o) => { const k = cle(o); if (k) compte[k] = (compte[k] || 0) + 1; });
+  const star = Object.entries(compte).sort((a, b) => b[1] - a[1])[0];
+  if (star && star[1] >= 3) {
+    const o = obs.find((x) => cle(x) === star[0]);
+    if (o && o.nom) out.push(`⭐ Tu as photographié ${o.nom.trim()} ${star[1]} fois — c'est ton espèce fétiche !`);
+  }
+
+  // 6) Activité de la bande
+  if (posts && posts.length) {
+    const semaine = posts.filter((x) => { const d = dateAffichagePost(x); return d && (Date.now() - d.getTime()) < 7 * 864e5; });
+    if (semaine.length >= 2) out.push(`🌐 ${semaine.length} trouvailles partagées par la bande cette semaine.`);
+  }
+
+  // 7) Jalon de collection
+  if (especes.size >= 5) out.push(`🗃️ ${especes.size} espèces différentes dans ta boîte, sur ${obs.length} observations.`);
+
+  return out;
+}
+
+
+// ═══════ LE COIN DES CURIEUX ═══════
+// Articles courts à lire tranquillement — un registre différent de l'encart du mur,
+// qui lui doit rester bref et personnalisé.
+const ARTICLES = [
+  { id: "mythes", emoji: "🐉", titre: "Mythes et légendes", sous: "Ce qu'on raconte, et ce qui est vrai", paras: [
+    "**Les perce-oreilles rentrent-ils dans les oreilles ?** Non. Cette croyance tenace vient probablement de leur nom et de leur habitude de se glisser dans les recoins sombres et humides. Ils cherchent des abris, pas des tympans. Leurs « pinces » servent surtout à se défendre et à la parade nuptiale.",
+    "**La coccinelle porte-t-elle bonheur ?** Au Moyen Âge, on attribuait aux coccinelles la protection des récoltes — elles dévoraient les pucerons qui ravageaient les cultures. La gratitude des paysans s'est muée en superstition. Le nombre de points, en revanche, n'indique pas l'âge : il dépend simplement de l'espèce.",
+    "**Les araignées de maison sont-elles dangereuses ?** En France métropolitaine, aucune espèce commune ne présente de danger pour l'humain. La plupart ne peuvent même pas percer la peau. Elles capturent moustiques et mouches : ce sont d'excellentes colocataires.",
+    "**Les mille-pattes ont-ils mille pattes ?** Aucun. Le record connu est de 1 306 pattes chez une espèce australienne décrite en 2021, mais les espèces communes en ont plutôt entre 30 et 400.",
+    "**Une abeille meurt-elle toujours après avoir piqué ?** Seulement l'abeille domestique, dont le dard barbelé reste accroché dans une peau élastique. Les guêpes, frelons et bourdons peuvent piquer plusieurs fois sans dommage.",
+  ]},
+  { id: "roles", emoji: "🌍", titre: "À quoi servent les insectes ?", sous: "Le travail invisible qui fait tourner le monde", paras: [
+    "**La pollinisation.** Une grande part des cultures destinées à l'alimentation humaine dépend, au moins en partie, des pollinisateurs. Les abeilles domestiques ne sont qu'une petite partie de l'histoire : abeilles sauvages, syrphes, papillons et coléoptères y contribuent massivement.",
+    "**Le recyclage.** Sans les insectes décomposeurs, feuilles mortes, bois et cadavres s'accumuleraient. Les larves de lucane mettent des années à digérer le bois mort et à le transformer en humus. Les bousiers enfouissent les excréments, ce qui fertilise les sols et limite les parasites du bétail.",
+    "**La régulation.** Une coccinelle mange des milliers de pucerons. Les carabes dévorent limaces et larves. Les guêpes chassent les chenilles. Cette régulation naturelle remplace des traitements que l'humain devrait sinon appliquer.",
+    "**La base des chaînes alimentaires.** Les insectes nourrissent oiseaux, chauves-souris, hérissons, amphibiens et poissons. Une seule nichée de mésanges consomme des milliers de chenilles. Quand les insectes s'effondrent, tout ce qui est au-dessus vacille.",
+    "**Pourquoi tes observations comptent.** Contrairement aux oiseaux, les insectes sont peu suivis sur le long terme. Chaque photo datée et localisée a une vraie valeur : versée à iNaturalist ou aux enquêtes de l'OPIE, elle enrichit les bases nationales.",
+  ]},
+  { id: "records", emoji: "🏆", titre: "Records et curiosités", sous: "Les champions du monde des arthropodes", paras: [
+    "**Le plus ancien vol.** Les insectes ont conquis les airs il y a plus de 300 millions d'années — bien avant les oiseaux, les chauves-souris et les dinosaures. Certaines libellules fossiles atteignaient 70 cm d'envergure.",
+    "**La plus grande diversité.** Les coléoptères représentent à eux seuls environ un quart de toutes les espèces animales décrites. On en découvre encore chaque année.",
+    "**Les architectes.** Les termites construisent des tours ventilées naturellement, dont l'architecture inspire des bâtiments à basse consommation. Les guêpes fabriquent du papier bien avant que l'humain ne l'invente.",
+    "**Les voyageurs.** Certains papillons migrent sur des milliers de kilomètres. La libellule *Pantala flavescens* effectuerait la plus longue migration connue chez les insectes, traversant des océans.",
+    "**Les increvables.** Certaines larves survivent gelées tout un hiver grâce à des molécules antigel. D'autres passent des années en diapause, attendant des conditions favorables pour reprendre leur développement.",
+  ]},
+];
+
+
 const ANECDOTES = [
   "Les fourmis n'ont pas de poumons : elles respirent par de minuscules orifices appelés stigmates, répartis le long de leur corps.",
   "Une abeille doit butiner environ 4 millions de fleurs pour produire 1 kg de miel.",
@@ -4606,11 +4969,87 @@ const ANECDOTES = [
   "Les mâles de certains papillons de nuit détectent les phéromones d'une femelle à plusieurs kilomètres grâce à leurs antennes plumeuses.",
 ];
 
-function LeSaviasTu({ onMasquer }) {
-  const [i, setI] = useState(() => Math.floor(Date.now() / 864e5) % ANECDOTES.length);
+// Assemble la liste affichée : d'abord les anecdotes tirées de la collection
+// (mélangées entre elles), puis les anecdotes générales en secours.
+function useMemoAnecdotes(observations, profils, posts) {
+  const [liste, setListe] = useState(() => ANECDOTES.slice());
+  useEffect(() => {
+    let perso = [];
+    try { perso = anecdotesPersonnelles(observations, profils, posts) || []; } catch { perso = []; }
+    for (let k = perso.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); const t = perso[k]; perso[k] = perso[j]; perso[j] = t; }
+    const generales = ANECDOTES.slice();
+    const depart = Math.floor(Date.now() / 864e5) % generales.length;
+    setListe([...perso, ...generales.slice(depart), ...generales.slice(0, depart)]);
+  }, [observations, posts]);
+  return liste.length ? liste : ANECDOTES;
+}
+
+
+// Rubrique de lecture : liste d'articles, puis lecture d'un article.
+function CoinDesCurieux({ onFermer }) {
+  const [ouvert, setOuvert] = useState(null);
+  // Rend le gras **texte** sans dépendance externe.
+  const enrichir = (txt) => txt.split(/(\*\*[^*]+\*\*)/g).map((bout, i) =>
+    bout.startsWith("**") && bout.endsWith("**")
+      ? <b key={i} style={{ color: C.ambreClair }}>{bout.slice(2, -2)}</b>
+      : <React.Fragment key={i}>{bout}</React.Fragment>
+  );
+
+  useEffect(() => { if (ouvert) return bdRetour.enregistrer(70, () => setOuvert(null)); }, [ouvert]);
+
+  if (ouvert) {
+    const a = ARTICLES.find((x) => x.id === ouvert);
+    return (
+      <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+        <Bouton onClick={() => setOuvert(null)} style={{ marginBottom: 16 }}>← Retour aux articles</Bouton>
+        <div style={{ textAlign: "center", marginBottom: 18 }}>
+          <div style={{ fontSize: 42 }}>{a.emoji}</div>
+          <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.papier, marginTop: 4 }}>{a.titre}</div>
+          <div style={{ fontFamily: sans, fontSize: 13, color: C.lichen, marginTop: 3 }}>{a.sous}</div>
+        </div>
+        {a.paras.map((t, i) => (
+          <div key={i} style={{ fontFamily: sans, fontSize: 14.5, color: C.papier, lineHeight: 1.65, marginBottom: 16, padding: "13px 15px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
+            {enrichir(t)}
+          </div>
+        ))}
+        <Bouton onClick={() => setOuvert(null)} style={{ width: "100%", marginTop: 4 }}>← Retour aux articles</Bouton>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+      <Bouton onClick={onFermer} style={{ marginBottom: 16 }}>← Retour</Bouton>
+      <div style={{ textAlign: "center", marginBottom: 16 }}>
+        <div style={{ fontSize: 40 }}>📖</div>
+        <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.papier, marginTop: 4 }}>Le coin des curieux</div>
+        <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginTop: 5, lineHeight: 1.5 }}>
+          Des articles courts pour aller plus loin que l'anecdote.
+        </div>
+      </div>
+      {ARTICLES.map((a) => (
+        <button key={a.id} onClick={() => setOuvert(a.id)}
+          style={{ width: "100%", display: "flex", alignItems: "center", gap: 13, padding: "14px 15px", marginBottom: 10, borderRadius: 12, cursor: "pointer", textAlign: "left",
+            background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid ${C.bordure}` }}>
+          <span style={{ fontSize: 28, flexShrink: 0 }}>{a.emoji}</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: "block", fontFamily: serif, fontSize: 16.5, fontWeight: 700, color: C.papier }}>{a.titre}</span>
+            <span style={{ display: "block", fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 2 }}>{a.sous}</span>
+          </span>
+          <span style={{ fontFamily: sans, fontSize: 14, color: C.ambre, flexShrink: 0 }}>▶</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function LeSaviasTu({ onMasquer, observations, profils, posts }) {
+  // Les anecdotes personnelles passent en premier : c'est ce qui rend l'encart vivant.
+  const liste = useMemoAnecdotes(observations, profils, posts);
+  const [i, setI] = useState(0);
   const [ferme, setFerme] = useState(false);
   if (ferme) return null;
-  const autre = () => setI((v) => (v + 1 + Math.floor(Math.random() * (ANECDOTES.length - 1))) % ANECDOTES.length);
+  const autre = () => setI((v) => (v + 1) % liste.length);
   return (
     <div style={{ position: "relative", marginBottom: 16, padding: "14px 16px", borderRadius: 12, background: "linear-gradient(135deg, #26301C, #1C2415)", border: "1px solid #3E4E2A", boxShadow: "0 2px 10px rgba(0,0,0,.25)" }}>
       <button onClick={() => { setFerme(true); if (onMasquer) onMasquer(); }} title="Masquer" style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", color: C.papierSombre, fontSize: 16, cursor: "pointer", lineHeight: 1, padding: 2 }}>×</button>
@@ -4618,7 +5057,7 @@ function LeSaviasTu({ onMasquer }) {
         <span style={{ fontSize: 17 }}>💡</span>
         <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#A8C97E" }}>Le savais-tu ?</span>
       </div>
-      <div style={{ fontFamily: serif, fontSize: 15, color: C.papier, lineHeight: 1.5, marginBottom: 10 }}>{ANECDOTES[i]}</div>
+      <div style={{ fontFamily: serif, fontSize: 15, color: C.papier, lineHeight: 1.5, marginBottom: 10 }}>{liste[i % liste.length]}</div>
       <button onClick={autre} className="bd-press" style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair, background: "transparent", border: `1px solid ${C.bordure}`, borderRadius: 16, padding: "5px 12px", cursor: "pointer" }}>
         🔀 Une autre
       </button>
@@ -4677,25 +5116,183 @@ function grainePRNG(seed) {
 function jourActuel() { return Math.floor(Date.now() / 864e5); }
 
 // Sélectionne n questions de façon déterministe pour un jour donné (même quiz pour tous ce jour-là).
-function questionsDuJour(jour, n = 5) {
+
+// ═══════ QUESTIONS TIRÉES DE LA COLLECTION ═══════
+// Banque de questions renouvelable à l'infini : elle grandit avec la collection.
+// Chaque question porte sur des espèces que la personne a réellement observées.
+function questionsCollection(observations, rng, combien) {
+  const obs = (observations || []).filter((o) => o.statut !== "a_trier" && (o.nom || "").trim());
+  if (obs.length < 4) return []; // il faut assez de matière pour proposer de vrais leurres
+  const piocher = (liste, n, sauf) => {
+    const dispo = liste.filter((x) => x !== sauf);
+    const out = [];
+    while (out.length < n && dispo.length) out.push(dispo.splice(Math.floor(rng() * dispo.length), 1)[0]);
+    return out;
+  };
+  const melanger = (arr) => { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; } return a; };
+  // Élision : « le Épeire » -> « l'Épeire ». On reste neutre sur le genre en utilisant
+  // l'article seulement quand il ne prête pas à confusion.
+  const art = (nom) => {
+    const n = (nom || "").trim();
+    if (/^(hanneton|hérisson|héron|hibou|houppe)/i.test(n)) return "le " + n; // h aspiré courant
+    if (/^[œæ]/i.test(n)) return "l'" + n;
+    return /^[aeiouyàâäéèêëîïôöûü]/i.test(n) ? "l'" + n : "le " + n;
+  };
+  const construire = (question, bonne, leurres, indice) => {
+    if (leurres.length < 2) return null;
+    const options = melanger([bonne, ...leurres.slice(0, 3)]);
+    return { q: question, options, reponse: options.indexOf(bonne), indice, perso: true };
+  };
+
+  const tousNoms = [...new Set(obs.map((o) => o.nom.trim()))];
+  const avecSci = obs.filter((o) => (o.nomSci || "").trim());
+  const tousSci = [...new Set(avecSci.map((o) => o.nomSci.trim()))];
+  const avecBio = obs.filter((o) => o.biotope);
+
+  const candidates = [];
+  // 1) Nom latin d'une de tes espèces
+  avecSci.forEach((o) => {
+    const q = construire(`Quel est le nom scientifique de ${art(o.nom)} ?`, o.nomSci.trim(), piocher(tousSci, 3, o.nomSci.trim()), "Tu l'as dans ta collection !");
+    if (q) candidates.push(q);
+  });
+  // 2) Nom courant à partir du latin
+  avecSci.forEach((o) => {
+    const q = construire(`Quelle espèce se cache derrière « ${o.nomSci.trim()} » ?`, o.nom.trim(), piocher(tousNoms, 3, o.nom.trim()));
+    if (q) candidates.push(q);
+  });
+  // 3) Biotope où TU l'as observée
+  avecBio.forEach((o) => {
+    const bon = biotopeOf(o.biotope).label;
+    const autres = BIOTOPES.filter((b) => b.id !== o.biotope).map((b) => b.label);
+    const q = construire(`Dans quel milieu as-tu observé ${art(o.nom)} ?`, bon, piocher(autres, 3), "Souviens-toi de ta sortie…");
+    if (q) candidates.push(q);
+  });
+  // 4) Groupe d'arthropodes
+  obs.forEach((o) => {
+    const id = deduireOrdre(o);
+    if (id === "autres") return;
+    const ord = ORDRES.find((x) => x.id === id);
+    if (!ord) return;
+    const autres = ORDRES.filter((x) => x.id !== id && x.id !== "autres").map((x) => x.court);
+    const q = construire(`À quel groupe appartient ${art(o.nom)} ?`, ord.court, piocher(autres, 3));
+    if (q) candidates.push(q);
+  });
+
+  return melanger(candidates).slice(0, combien);
+}
+
+function questionsDuJour(jour, n = 5, observations) {
   const rng = grainePRNG((jour * 2654435761) >>> 0);
+  // Moitié de questions personnelles (tirées de la collection) si elle est assez fournie :
+  // la banque générale s'épuise en une semaine, celle-ci grandit avec la collection.
+  const perso = questionsCollection(observations, rng, Math.floor(n / 2));
+  const reste = n - perso.length;
   const idx = QUIZ_QUESTIONS.map((_, i) => i);
   for (let i = idx.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     const tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
   }
-  return idx.slice(0, n).map((i) => QUIZ_QUESTIONS[i]);
+  const generales = idx.slice(0, reste).map((i) => QUIZ_QUESTIONS[i]);
+  // Mélange final pour ne pas grouper les deux familles
+  const tout = [...perso, ...generales];
+  for (let i = tout.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const t = tout[i]; tout[i] = tout[j]; tout[j] = t;
+  }
+  return tout;
+}
+
+// Série pour le mode entraînement : tirage aléatoire à chaque partie (pas de graine du jour).
+function questionsEntrainement(observations, n = 5) {
+  const rng = Math.random;
+  const perso = questionsCollection(observations, rng, Math.ceil(n / 2));
+  const pool = QUIZ_QUESTIONS.slice();
+  const generales = [];
+  while (generales.length < n - perso.length && pool.length) generales.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
+  const tout = [...perso, ...generales];
+  for (let i = tout.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const t = tout[i]; tout[i] = tout[j]; tout[j] = t; }
+  return tout;
 }
 
 const QUIZ_BONUS = 3; // points bonus si sans faute
 
-function Quiz() {
+
+// ── Classement quiz partagé ──
+async function envoyerScoreQuiz(prenom, total) {
+  const sb = clientSupabase();
+  if (!sb || !prenom) return false;
+  try {
+    const { error } = await sb.from("quiz_scores").upsert(
+      { joueur: prenom.trim().slice(0, 40), total: Math.max(0, Math.round(total)), maj: new Date().toISOString() },
+      { onConflict: "joueur" }
+    );
+    if (error) { noterErreur("envoyerScoreQuiz", error); return false; }
+    return true;
+  } catch (e) { noterErreur("envoyerScoreQuiz", e); return false; }
+}
+async function chargerClassementQuiz() {
+  const sb = clientSupabase();
+  if (!sb) return [];
+  try {
+    const { data, error } = await sb.from("quiz_scores").select("*").order("total", { ascending: false }).limit(30);
+    if (error) { noterErreur("chargerClassementQuiz", error); return []; }
+    return data || [];
+  } catch { return []; }
+}
+
+// Classement quiz partagé avec la bande.
+function ClassementQuiz({ prenom }) {
+  const [liste, setListe] = useState(null);
+  useEffect(() => {
+    if (!MUR_ACTIF) return;
+    let vivant = true;
+    chargerClassementQuiz().then((l) => { if (vivant) setListe(l); }).catch(() => { if (vivant) setListe([]); });
+    return () => { vivant = false; };
+  }, []);
+  if (!MUR_ACTIF || liste === null || liste.length === 0) return null;
+  const moi = (prenom || "").trim().toLowerCase();
+  return (
+    <div style={{ marginTop: 22, textAlign: "left" }}>
+      <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 10 }}>🏅 Classement de la bande</div>
+      {liste.slice(0, 10).map((j, i) => {
+        const cestMoi = (j.joueur || "").trim().toLowerCase() === moi;
+        return (
+          <div key={j.joueur || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", marginBottom: 5, borderRadius: 9,
+            background: cestMoi ? "linear-gradient(#2C3623, #232B1D)" : C.panneau, border: `1px solid ${cestMoi ? "#A8863A" : C.bordure}` }}>
+            <span style={{ fontFamily: serif, fontSize: 15, fontWeight: 700, color: i === 0 ? C.ambre : C.papierSombre, width: 26, flexShrink: 0 }}>
+              {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1}
+            </span>
+            <span style={{ flex: 1, fontFamily: sans, fontSize: 13.5, fontWeight: cestMoi ? 700 : 500, color: cestMoi ? C.ambreClair : C.papier, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {j.joueur || "?"}{cestMoi ? " (toi)" : ""}
+            </span>
+            <span style={{ flexShrink: 0, fontFamily: sans, fontSize: 13, fontWeight: 800, color: C.ambreClair }}>{j.total} pts</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Questions du quiz selon le mode : série stable pour le quiz du jour,
+// tirage neuf à chaque partie en entraînement.
+function useMemoQuiz(mode, jour, serie, observations) {
+  const [q, setQ] = useState(() => questionsDuJour(jour, 5, observations));
+  useEffect(() => {
+    setQ(mode === "jour" ? questionsDuJour(jour, 5, observations) : questionsEntrainement(observations, 5));
+  }, [mode, jour, serie]);
+  return q;
+}
+
+function Quiz({ observations, prenom }) {
   const jour = jourActuel();
-  const [questions] = useState(() => questionsDuJour(jour, 5));
+  const [mode, setMode] = useState("jour"); // jour | entrainement
+  const [serie, setSerie] = useState(0);    // relance une partie d'entraînement
+  const questions = useMemoQuiz(mode, jour, serie, observations);
   const [fait, setFait] = useState(() => { try { const b = localStorage.getItem("biodex:quiz:" + jour); return b ? JSON.parse(b) : null; } catch { return null; } });
   const [etape, setEtape] = useState(0);
   const [choix, setChoix] = useState(null);
   const [bonnes, setBonnes] = useState(0);
+  const [resultatLibre, setResultatLibre] = useState(null); // résultat d'une partie d'entraînement
   const [total, setTotal] = useState(() => { try { return parseInt(localStorage.getItem("biodex:quiz:total") || "0", 10) || 0; } catch { return 0; } });
 
   function repondre(i) {
@@ -4705,6 +5302,10 @@ function Quiz() {
   }
   function suivante() {
     if (etape + 1 < questions.length) { setEtape(etape + 1); setChoix(null); }
+    else if (mode === "entrainement") {
+      // L'entraînement ne rapporte pas de points : il ne doit pas concurrencer le quiz du jour.
+      setResultatLibre({ score: bonnes, sur: questions.length });
+    }
     else {
       const sansFaute = bonnes === questions.length;
       const points = bonnes + (sansFaute ? QUIZ_BONUS : 0);
@@ -4715,14 +5316,55 @@ function Quiz() {
         localStorage.setItem("biodex:quiz:total", String(nt));
         setTotal(nt);
       } catch {}
+      // Partage du total avec la bande (silencieux : un échec réseau ne gâche pas la partie)
+      if (MUR_ACTIF && prenom) envoyerScoreQuiz(prenom, total + points);
       setFait(res);
     }
   }
 
-  // Écran résultat (quiz terminé ou déjà fait aujourd'hui)
-  if (fait) {
+  const relancer = () => { setEtape(0); setChoix(null); setBonnes(0); setResultatLibre(null); setSerie((v) => v + 1); };
+  const basculer = (m) => { setMode(m); setEtape(0); setChoix(null); setBonnes(0); setResultatLibre(null); if (m === "entrainement") setSerie((v) => v + 1); };
+
+  // Bandeau de mode, présent sur tous les écrans du quiz
+  const barreMode = (
+    <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+      {[["jour", "📅 Quiz du jour"], ["entrainement", "🔄 Entraînement"]].map(([id, lab]) => (
+        <button key={id} onClick={() => basculer(id)}
+          style={{ flex: 1, padding: "9px 4px", borderRadius: 9, cursor: "pointer", fontFamily: sans, fontSize: 13, fontWeight: 700,
+            border: `1px solid ${mode === id ? "#A8863A" : C.bordure}`,
+            background: mode === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
+            color: mode === id ? C.ambreClair : C.papierSombre }}>
+          {lab}{id === "jour" && !fait ? " •" : ""}
+        </button>
+      ))}
+    </div>
+  );
+
+  // Résultat d'une partie d'entraînement : relançable à volonté, sans points.
+  if (mode === "entrainement" && resultatLibre) {
     return (
-      <div style={{ padding: "8px 4px", textAlign: "center" }}>
+      <div style={{ padding: "4px 2px" }}>
+        {barreMode}
+        <div style={{ textAlign: "center", padding: "8px 4px" }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>{resultatLibre.score === resultatLibre.sur ? "🏆" : resultatLibre.score >= 3 ? "🎉" : "🧠"}</div>
+          <div style={{ fontFamily: serif, fontSize: 21, fontWeight: 600, color: C.papier, marginBottom: 4 }}>
+            {resultatLibre.score} / {resultatLibre.sur}
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 18, lineHeight: 1.5 }}>
+            Entraînement libre — pas de points, juste le plaisir de réviser.<br />Autant de parties que tu veux !
+          </div>
+          <Bouton variante="primaire" onClick={relancer} style={{ width: "100%", maxWidth: 260 }}>🔄 Une autre série</Bouton>
+        </div>
+      </div>
+    );
+  }
+
+  // Écran résultat (quiz terminé ou déjà fait aujourd'hui)
+  if (fait && mode === "jour") {
+    return (
+      <div style={{ padding: "4px 2px" }}>
+        {barreMode}
+        <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: 44, marginBottom: 8 }}>{fait.sansFaute ? "🏆" : fait.score >= 3 ? "🎉" : "🧠"}</div>
         <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier, marginBottom: 4 }}>Quiz du jour terminé !</div>
         <div style={{ fontFamily: sans, fontSize: 15, color: C.papierSombre, marginBottom: 16 }}>
@@ -4733,7 +5375,11 @@ function Quiz() {
           {fait.sansFaute && <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: "#A8C97E", marginTop: 2 }}>✨ Sans faute ! (+{QUIZ_BONUS} bonus)</div>}
         </div>
         <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 6 }}>Total accumulé : <b style={{ color: C.ambreClair }}>{total} pts</b></div>
-        <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, fontStyle: "italic" }}>Reviens demain pour un nouveau quiz ! 🐞</div>
+        <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, fontStyle: "italic", marginBottom: 14 }}>Reviens demain pour un nouveau quiz ! 🐞</div>
+        <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papier, lineHeight: 1.5, marginBottom: 10 }}>En attendant, tu peux réviser autant que tu veux :</div>
+        <Bouton onClick={() => basculer("entrainement")} style={{ width: "100%", maxWidth: 260 }}>🔄 Entraînement libre</Bouton>
+        <ClassementQuiz prenom={prenom} />
+        </div>
       </div>
     );
   }
@@ -4743,6 +5389,7 @@ function Quiz() {
   const repondu = choix !== null;
   return (
     <div style={{ padding: "4px 2px" }}>
+      {barreMode}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.papierSombre, letterSpacing: 0.5 }}>QUESTION {etape + 1} / {questions.length}</span>
         <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>🧠 {bonnes} ✓</span>
@@ -4752,6 +5399,12 @@ function Quiz() {
         <div style={{ height: "100%", width: `${((etape + (repondu ? 1 : 0)) / questions.length) * 100}%`, background: `linear-gradient(90deg, ${C.ambre}, ${C.ambreClair})`, borderRadius: 3, transition: "width .3s ease" }} />
       </div>
 
+      {/* Marque les questions tirées de la collection : ça valorise le fait d'observer. */}
+      {q.perso && (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginBottom: 8, padding: "3px 9px", borderRadius: 12, background: "linear-gradient(#26301C, #1C2415)", border: "1px solid #3E4E2A", fontFamily: sans, fontSize: 11, fontWeight: 700, color: "#A8C97E" }}>
+          🗃️ D'après ta collection
+        </div>
+      )}
       <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.papier, lineHeight: 1.4, marginBottom: 16 }}>{q.q}</div>
 
       <div style={{ display: "grid", gap: 9, marginBottom: 14 }}>
@@ -5147,7 +5800,7 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir, onSupprimer }) {
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
       <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.55, marginBottom: 16 }}>
-        Reviens de balade avec plein de photos ? <b style={{ color: C.papier }}>Importe-les toutes d'un coup</b> : chacune garde sa date et sa position d'origine. Tu les identifieras ensuite tranquillement, une par une.
+        Sans réseau, l'identification par l'IA n'est pas possible : BioDex te propose alors de mettre ta photo de côté ici, avec sa date et sa position, pour l'identifier une fois rentré. Cet onglet n'apparaît en bas que lorsque des photos attendent d'être triées ; le reste du temps, tu y accèdes par le bouton « 📥 Importer plusieurs photos d'un coup » depuis ta collection. Reviens de balade avec plein de photos ? <b style={{ color: C.papier }}>Importe-les toutes d'un coup</b> : chacune garde sa date et sa position d'origine. Tu les identifieras ensuite tranquillement, une par une.
       </div>
 
       {/* Import multiple */}
@@ -5231,7 +5884,8 @@ function VignetteSupp({ blob, onRetirer }) {
   );
 }
 
-function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) {
+function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, onMettreDeCote }) {
+  const enLigne = useEnLigne();
   const modeTri = !!base && mode !== "edition";
   const modeEdition = mode === "edition";
   const [photoBlob, setPhotoBlob] = useState(base ? base.photo : null);
@@ -5495,7 +6149,15 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
       setCloudEtat("ok");
       signalerIdentificationReussie();
     } catch (e) {
-      setCloudErreur(String(e.message || e).includes("configur") ? "Clé API non configurée sur le serveur (voir réglages Netlify)." : "Identification précise indisponible (réseau, ou service non configuré).");
+      const msg = String(e.message || e);
+      setCloudErreur(
+        !enLigne
+          ? "📴 Hors ligne : l'identification a besoin du réseau. Mets la photo de côté dans « À trier » et reviens dessus une fois connecté."
+          : msg.includes("configur")
+            ? "Clé API non configurée sur le serveur (voir réglages Netlify)."
+            : "Identification précise indisponible (réseau, ou service non configuré)."
+      );
+      noterErreur("identifierCloud", e, enLigne ? "en ligne" : "hors ligne");
       setCloudEtat("echec");
     }
   }
@@ -5746,6 +6408,28 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations }) 
           </div>
         )}
       </div>
+      {/* Hors ligne : l'identification par IA passe par le réseau. Plutôt que de laisser
+          buter sur un message d'erreur, on propose de mettre la photo de côté. */}
+      {!enLigne && photoBlob && !modeTri && !modeEdition && (
+        <div style={{ marginTop: 8, marginBottom: 12, padding: "11px 13px", borderRadius: 10, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E" }}>
+          <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: "#E4C878", marginBottom: 4 }}>📴 Tu es hors ligne</div>
+          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papier, lineHeight: 1.5, marginBottom: 10 }}>
+            L'identification par l'IA a besoin du réseau. Tu peux quand même remplir la fiche
+            si tu connais l'espèce, ou mettre la photo de côté et l'identifier plus tard —
+            sa date et sa position seront conservées.
+          </div>
+          {onMettreDeCote && (
+            <Bouton onClick={() => onMettreDeCote({
+              photo: photoBlob,
+              gps: gpsEtat === "ok" ? gps : null,
+              date: (() => { const d = dateObs ? new Date(dateObs) : null; return d && !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString(); })(),
+              dateSure: !dateIncertaine,
+              gpsSur: !gpsIncertain,
+            })} style={{ width: "100%" }}>📥 Mettre de côté dans « À trier »</Bouton>
+          )}
+        </div>
+      )}
+
       {/* Retour clair sur ce que la photo contenait comme informations. */}
       {metaPhoto && (
       metaPhoto.lus.length > 0 ? (
@@ -6892,15 +7576,21 @@ function SelecteurPoint({ point, onChange, onFermer }) {
 
 // ---------- Centre de notifications ----------
 function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees, onAllerLigue }) {
-  const n = notifs || {};
+  // On FIGE le contenu à l'ouverture. Sans ça, le marquage « vu » déclenchait un
+  // recalcul qui renvoyait 0, et le centre se vidait sous les yeux de la personne
+  // (les effets de l'enfant s'exécutent avant ceux du parent en React).
+  const [n] = useState(() => notifs || {});
   const [voirNouveautes, setVoirNouveautes] = useState((n.nouvelleVersion || 0) > 0);
 
-  // Marque les nouveautés d'appli + les réactions comme vues dès qu'on ouvre le centre
+  // Le marquage « vu » n'a lieu qu'à la FERMETURE : on a alors vraiment eu le temps de lire.
   useEffect(() => {
-    try { if (NOUVEAUTES.length) localStorage.setItem("biodex_nouveautes_vu", NOUVEAUTES[0].v); } catch {}
-    try { localStorage.setItem("biodex_reactions_vu_date", new Date().toISOString()); } catch {}
-    try { localStorage.setItem("biodex_commentaires_vu_date", new Date().toISOString()); } catch {}
-    try { localStorage.setItem("biodex_defis_vu_date", new Date().toISOString()); } catch {}
+    return () => {
+      try { if (NOUVEAUTES.length) localStorage.setItem("biodex_nouveautes_vu", NOUVEAUTES[0].v); } catch {}
+      try { localStorage.setItem("biodex_reactions_vu_date", new Date().toISOString()); } catch {}
+      try { localStorage.setItem("biodex_reactions_vu_total", String(n.reactionsTotal || 0)); } catch {}
+      try { localStorage.setItem("biodex_commentaires_vu_date", new Date().toISOString()); } catch {}
+      try { localStorage.setItem("biodex_defis_vu_date", new Date().toISOString()); } catch {}
+    };
   }, []);
 
   const rien = (n.murNouveaux || 0) === 0 && (n.ideesNouvelles || 0) === 0 && (n.reactionsRecues || 0) === 0 && (n.commentairesRecus || 0) === 0 && (n.defisSubis || 0) === 0;
@@ -7062,13 +7752,14 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
 
         {/* Apprendre */}
         {titreSection("Apprendre")}
-        {item("🔍", "Guide d'observation", "Quand, où et comment observer les insectes", () => onAller("guide"), 0)}
-        {item("🏡", "Jardin refuge", "Accueillir les insectes chez toi", () => onAller("refuge"), 0)}
+        {item("🔍", "Guide d'observation", "Quand, où observer — et réussir ses photos", () => onAller("guide"), 0)}
+        {item("🏡", "Jardin refuge", "Accueillir les insectes chez toi, et pourquoi", () => onAller("refuge"), 0)}
         {onRevoirPresentation && item("✨", "Revoir la présentation", "L'écran de bienvenue de BioDex", () => { onFermer(); onRevoirPresentation(); }, 0)}
 
         {/* Compte */}
         {MUR_ACTIF && titreSection("Mon compte")}
-        {MUR_ACTIF && item("🎨", "Mon profil", "Emblème, devise, secteur, insecte fétiche", () => onAller("monprofil"), 0)}
+        {MUR_ACTIF && item("🎨", "Mon profil", "Emblème, titre, couleur, insecte fétiche", () => onAller("monprofil"), 0)}
+        {item("📖", "Le coin des curieux", "Mythes, rôle des insectes, records étonnants", () => onAller("curieux"), 0)}
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Ma collection publique" : "Se connecter", utilisateur ? "Tes espèces sur ton profil" : "Connexion facultative par email", () => onAller("connexion"), 0)}
 
         {/* Faire vivre BioDex */}
@@ -7762,7 +8453,11 @@ function Carte({ observations, onOuvrirFiche }) {
       avecGps.forEach((o) => {
         const pt = [o.gps.lat, o.gps.lon];
         points.push(pt);
+        // Cible tactile : le point visible fait 18 px, très en dessous des 44 px
+        // recommandés au doigt. On ajoute un disque transparent plus large qui
+        // capte le toucher, sans alourdir la carte visuellement.
         const m = L.circleMarker(pt, { radius: 9, color: "#2A2519", weight: 2, fillColor: "#C9A24B", fillOpacity: 0.95 });
+        const zone = L.circleMarker(pt, { radius: 22, stroke: false, fillColor: "#C9A24B", fillOpacity: 0.001, interactive: true, bubblingMouseEvents: false });
         const conteneur = document.createElement("div");
         conteneur.style.width = "150px";
         let urlPhoto = null;
@@ -7777,7 +8472,9 @@ function Carte({ observations, onOuvrirFiche }) {
         btn.style.cssText = "width:100%;padding:6px;border-radius:6px;border:none;background:#C9A24B;color:#2A2416;font-weight:700;font-size:13px;cursor:pointer;";
         btn.addEventListener("click", () => onOuvrirFiche(o.id));
         conteneur.appendChild(btn);
-        m.bindPopup(conteneur);
+        zone.bindPopup(conteneur);
+        m.options.interactive = false; // c'est la zone élargie qui capte le toucher
+        ajouterMarqueur(zone);
         ajouterMarqueur(m);
       });
     } else {
@@ -7789,6 +8486,7 @@ function Carte({ observations, onOuvrirFiche }) {
         // Cercle de zone (approximatif) : géré à part, affiché selon le zoom.
         if (!exacte) infosCercles.push({ lat: p.lat, lon: p.lon });
         const m = L.circleMarker(pt, { radius: 8, color: "#2A2519", weight: 2, fillColor: exacte ? "#C9A24B" : "#8AAE6B", fillOpacity: 0.95 });
+        const zone = L.circleMarker(pt, { radius: 22, stroke: false, fillColor: "#C9A24B", fillOpacity: 0.001, interactive: true, bubblingMouseEvents: false });
         const conteneur = document.createElement("div");
         conteneur.style.width = "150px";
         conteneur.innerHTML =
@@ -7797,7 +8495,9 @@ function Carte({ observations, onOuvrirFiche }) {
           '<div style="font-size:11px;color:#8A8065;">' +
           "🐛 " + (p.auteur ? String(p.auteur).replace(/</g, "&lt;") : "Anonyme") + (p.lieu ? " · " + String(p.lieu).replace(/</g, "&lt;") : "") + "</div>" +
           '<div style="font-size:10px;color:#A89A78;margin-top:4px;">' + (exacte ? "📍 Position exacte" : "🌫️ Zone approximative") + "</div>";
-        m.bindPopup(conteneur);
+        zone.bindPopup(conteneur);
+        m.options.interactive = false; // c'est la zone élargie qui capte le toucher
+        ajouterMarqueur(zone);
         ajouterMarqueur(m);
       });
     }
@@ -7838,11 +8538,32 @@ function Carte({ observations, onOuvrirFiche }) {
         </div>
       )}
 
+      {/* Barre d'infos de la carte : trois repères d'un coup d'œil. */}
       {mode === "moi" ? (
-        <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 10 }}>
-          <span style={{ color: C.ambre, fontWeight: 800 }}>{avecGps.length}</span> observation{avecGps.length > 1 ? "s" : ""} positionnée{avecGps.length > 1 ? "s" : ""}
-          {sansGps > 0 && <span> · {sansGps} sans position</span>}
+        <React.Fragment>
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          {(() => {
+            const especes = new Set(avecGps.map((o) => (o.nom || "").trim().toLowerCase()).filter(Boolean)).size;
+            const milieux = new Set(avecGps.map((o) => o.biotope).filter(Boolean)).size;
+            const tuiles = [
+              { v: avecGps.length, l: avecGps.length > 1 ? "points" : "point", c: C.ambre },
+              { v: especes, l: especes > 1 ? "espèces" : "espèce", c: "#A6CC82" },
+              { v: milieux, l: milieux > 1 ? "milieux" : "milieu", c: "#8AAEC9" },
+            ];
+            return tuiles.map((t, i) => (
+              <div key={i} style={{ flex: 1, textAlign: "center", padding: "7px 4px", borderRadius: 9, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+                <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 700, color: t.c, lineHeight: 1.1 }}>{t.v}</div>
+                <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, letterSpacing: 0.3 }}>{t.l}</div>
+              </div>
+            ));
+          })()}
         </div>
+        {sansGps > 0 && (
+          <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 10, fontStyle: "italic" }}>
+            ⓘ {sansGps} observation{sansGps > 1 ? "s" : ""} sans position n'apparaî{sansGps > 1 ? "ssent" : "t"} pas ici.
+          </div>
+        )}
+        </React.Fragment>
       ) : (
         <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 10 }}>
           {etatBande === "chargement" && "Chargement des trouvailles de la bande…"}
@@ -8127,7 +8848,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🗺️ La carte</div>
         <p style={p}>
-          Pour l'espèce, tu dois faire un choix explicite : soit tu l'identifies, soit tu indiques « Je ne sais pas » pour demander de l'aide à la bande (elle apparaîtra alors avec le badge ❓ À identifier). Ne pas savoir est parfaitement normal en entomologie — ce qu'on évite, c'est l'observation oubliée sans nom. Deux autres informations sont obligatoires : la <b>date</b> et le <b>biotope</b>. Ce sont elles qui alimentent tes statistiques (saisonnalité, milieux) et la carte — sans elles, les analyses seraient faussées. Le reste (météo, taille, moment, notes) est facultatif. Sur le mur, c'est la date d'observation qui s'affiche, pas celle du partage : tu peux donc publier sans souci une trouvaille faite il y a plusieurs semaines, un petit ↩ signalera simplement le partage différé. Quand tu prends une photo ou que tu en choisis une dans ta galerie, BioDex lit la date de prise de vue et le lieu directement dans le fichier, et t'affiche sous la photo ce qui a été récupéré (encart vert). Si la photo ne contient pas ces informations (encart orange), la section « 📅 Quand & où » s'ouvre toute seule pour que tu les saisisses. Si ces informations manquent (fréquent pour une photo reçue par messagerie ou une capture d'écran), un avertissement s'affiche au moment de compléter l'observation : tu peux alors corriger la date à la main et placer le lieu sur la carte. L'onglet Carte affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche. Quand plusieurs trouvailles sont proches, elles se regroupent en une bulle avec un compteur — touche-la ou zoome pour les séparer. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, chaque personne choisit au moment de partager le niveau de précision de sa position : exacte (point ambré), approximative (~1 km, zone verte visible en zoomant) ou masquée (pas de point). Chacun est ainsi libre de montrer ou non l'endroit exact de sa trouvaille. La carte nécessite du réseau.
+          Pour l'espèce, tu dois faire un choix explicite : soit tu l'identifies, soit tu indiques « Je ne sais pas » pour demander de l'aide à la bande (elle apparaîtra alors avec le badge ❓ À identifier). Ne pas savoir est parfaitement normal en entomologie — ce qu'on évite, c'est l'observation oubliée sans nom. Deux autres informations sont obligatoires : la <b>date</b> et le <b>biotope</b>. Ce sont elles qui alimentent tes statistiques (saisonnalité, milieux) et la carte — sans elles, les analyses seraient faussées. Le reste (météo, taille, moment, notes) est facultatif. Sur le mur, c'est la date d'observation qui s'affiche, pas celle du partage : tu peux donc publier sans souci une trouvaille faite il y a plusieurs semaines, un petit ↩ signalera simplement le partage différé. Quand tu prends une photo ou que tu en choisis une dans ta galerie, BioDex lit la date de prise de vue et le lieu directement dans le fichier, et t'affiche sous la photo ce qui a été récupéré (encart vert). Si la photo ne contient pas ces informations (encart orange), la section « 📅 Quand & où » s'ouvre toute seule pour que tu les saisisses. Si ces informations manquent (fréquent pour une photo reçue par messagerie ou une capture d'écran), un avertissement s'affiche au moment de compléter l'observation : tu peux alors corriger la date à la main et placer le lieu sur la carte. L'onglet Carte affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche (la zone sensible est plus large que le point, pour viser sans effort). Quand plusieurs trouvailles sont proches, elles se regroupent en une bulle avec un compteur — touche-la ou zoome pour les séparer. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, chaque personne choisit au moment de partager le niveau de précision de sa position : exacte (point ambré), approximative (~1 km, zone verte visible en zoomant) ou masquée (pas de point). Chacun est ainsi libre de montrer ou non l'endroit exact de sa trouvaille. La carte nécessite du réseau.
         </p>
         <div style={t}>📝 Brouillon automatique</div>
         <p style={p}>
@@ -8146,7 +8867,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🌐 Mur commun</div>
         <p style={p}>
-          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Tu peux aussi partager une observation <b>pas encore identifiée</b> : elle apparaît alors avec un badge « ❓ À identifier », une façon de demander un coup de main à la bande (l'entraide fait partie du jeu !). Sous chaque publication, un bouton « 🤔 Je doute de l'ID » permet d'exprimer poliment un doute sur l'identification proposée : le compteur est visible par tous et ouvre la discussion, sans rien supprimer — l'idée est d'affiner ensemble, comme entre naturalistes. Tu peux aussi commenter une publication directement depuis le mur grâce au bouton « 💬 Commenter » (sous chaque trouvaille) : un conseil pour la prochaine photo, une autre hypothèse d'identification… Reste bienveillant : un filtre masque automatiquement les insultes, mais l'esprit du mur, c'est l'entraide. L'auteur reçoit une notification quand on commente sa trouvaille. L'auteur d'une publication peut aussi la modifier (bouton ✏️ Modifier sous sa trouvaille) pour corriger le nom, le nom scientifique, le biotope ou la note — pratique quand la discussion précise l'identification. La photo, elle, ne se change pas : pour ça, mieux vaut republier. Chacun ne peut modifier ou supprimer que ses propres publications. Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection. Indique ton prénom une fois, il est mémorisé. Tu peux aussi personnaliser ton profil (menu ☰ → 🎨 Mon profil) : choisis ton emblème, écris ta devise, indique ton secteur de chasse et ton insecte fétiche — toute la bande le verra sur le mur, dans le classement et sur ton profil. Le mur affiche les dernières trouvailles de tout le monde. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
+          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Tu peux aussi partager une observation <b>pas encore identifiée</b> : elle apparaît alors avec un badge « ❓ À identifier », une façon de demander un coup de main à la bande (l'entraide fait partie du jeu !). Sous chaque publication, un bouton « 🤔 Je doute de l'ID » permet d'exprimer poliment un doute sur l'identification proposée : le compteur est visible par tous et ouvre la discussion, sans rien supprimer — l'idée est d'affiner ensemble, comme entre naturalistes. Tu peux aussi commenter une publication directement depuis le mur grâce au bouton « 💬 Commenter » (sous chaque trouvaille) : un conseil pour la prochaine photo, une autre hypothèse d'identification… Reste bienveillant : un filtre masque automatiquement les insultes, mais l'esprit du mur, c'est l'entraide. L'auteur reçoit une notification quand on commente sa trouvaille. L'auteur d'une publication peut aussi la modifier (bouton ✏️ Modifier sous sa trouvaille) pour corriger le nom, le nom scientifique, le biotope ou la note — pratique quand la discussion précise l'identification. La photo, elle, ne se change pas : pour ça, mieux vaut republier. Chacun ne peut modifier ou supprimer que ses propres publications. Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection. Indique ton prénom une fois, il est mémorisé. Tu peux aussi personnaliser ton profil (menu ☰ → 🎨 Mon profil) : choisis ton emblème, écris ta devise, indique ton secteur de chasse et ton insecte fétiche, sélectionne une couleur parmi 8 thèmes, et affiche un titre. Les titres et certains emblèmes ne se choisissent pas librement : ils se débloquent en observant (nombre de trouvailles, diversité des milieux, ou spécialisation dans un groupe d'arthropodes — par exemple « Maître des araignées » à partir de 15 espèces d'araignées différentes) — toute la bande le verra sur le mur, dans le classement et sur ton profil. Le mur affiche les dernières trouvailles de tout le monde. Des filtres permettent de n'afficher qu'une période (aujourd'hui, 7 jours, 30 jours, cette année) ou les publications d'une seule personne ; les périodes n'apparaissent que lorsqu'elles contiennent vraiment des trouvailles. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
         </p>
         <div style={t}>📖 Posts détaillés</div>
         <p style={p}>
@@ -8174,14 +8895,14 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>💡 Boîte à idées</div>
         <p style={p}>
-          Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Réagis aux idées (👍 bonne idée, ❤️ coup de cœur, 🚀 vivement !) pour montrer lesquelles t'emballent — ça aide à voir ce qui suscite le plus d'intérêt. Une idée réalisée peut être cochée « ✅ Réalisée » (visible par tous). Les meilleures finiront peut-être dans une prochaine version ! En haut de cet écran, tu peux aussi laisser un avis global sur l'appli : une note en étoiles (1 à 5) et un commentaire facultatif. Tu choisis de le signer ou de le publier anonymement en cochant la case prévue. Ces avis aident à savoir ce qui plaît et ce qui manque. Après plusieurs identifications, un petit encart peut aussi te proposer spontanément de donner ton avis — tu peux répondre ou choisir « Plus tard ».
+          Le menu ☰ regroupe trois espaces de lecture complémentaires : le « 🔍 Guide d'observation » (quand et où chercher au fil des saisons, et comment réussir ses photos), le « 🏡 Jardin refuge » (les gestes concrets pour accueillir les insectes chez toi, et pourquoi ça compte) et « 📖 Le coin des curieux » (mythes et idées reçues, rôle des insectes dans la nature, records étonnants). Sur l'écran d'accueil, l'encart « 💡 Le savais-tu ? » puise d'abord dans ta propre collection — il te parle des espèces que tu as photographiées et de tes badges en cours. Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Réagis aux idées (👍 bonne idée, ❤️ coup de cœur, 🚀 vivement !) pour montrer lesquelles t'emballent — ça aide à voir ce qui suscite le plus d'intérêt. Une idée réalisée peut être cochée « ✅ Réalisée » (visible par tous). Les meilleures finiront peut-être dans une prochaine version ! En haut de cet écran, tu peux aussi laisser un avis global sur l'appli : une note en étoiles (1 à 5) et un commentaire facultatif. Tu choisis de le signer ou de le publier anonymement en cochant la case prévue. Ces avis aident à savoir ce qui plaît et ce qui manque. Après plusieurs identifications, un petit encart peut aussi te proposer spontanément de donner ton avis — tu peux répondre ou choisir « Plus tard ».
         </p>
       </SectionPliable>
 
       <SectionPliable titre="🎴 Jeu & cartes">
         <div style={t}>🎴 Cartes de collection</div>
         <p style={p}>
-          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. La rareté de la carte (qui déclenche les cartes holographiques et légendaires scintillantes) s'appuie désormais sur les vraies données d'observation d'iNaturalist : plus une espèce est rare dans le monde, plus sa carte brille. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Dans ta galerie de cartes, tu peux filtrer par ordre d'insecte et trier tes cartes par récentes, par rareté ou par type de combat. Tout le jeu est regroupé dans l'onglet 🎮 Jeu en bas : « 🎴 Cartes » (ta galerie), « ⚔️ Combat » et « 🧠 Quiz » (5 questions par jour). L'écran Combat réunit deux façons de se battre : « 🏆 Défier la bande » (tu choisis la carte d'un pote et le résultat compte au classement) et « 🏟️ Arène » (tu enchaînes seul des adversaires de plus en plus forts, ton insecte étant soigné entre les manches ; ta meilleure série est enregistrée comme record). En combat, chaque insecte a un type parmi 8 (🦋 Volant, 🪲 Cuirassé, 🐛 Rampant, 🦗 Bondissant, 🕷️ Venimeux, 💧 Aquatique, 🐜 Social, 🌙 Nocturne) avec des forces et faiblesses, des points de vie, de l'énergie qui se recharge, une attaque de base et une capacité spéciale qui coûte de l'énergie. Le bouton « 🔰 Forces & faiblesses des types » affiche le schéma complet de qui bat qui — un coup avec l'avantage de type fait ×1,3 de dégâts. Choisis ton insecte selon le type de l'adversaire ! Tes cartes progressent : chaque défi de ligue rapporte de l'XP (même en perdant !), et tous les 30 points ta carte gagne un niveau, jusqu'à 5 étoiles ⭐. Chaque niveau donne +3 % de stats (+15 % au niveau 5). Le plafond est volontairement bas pour que ceux qui jouent moins souvent restent dans la course. L'arène ne rapporte pas d'XP, seuls les défis comptent. Chaque capacité appartient à une famille qui change sa façon de frapper : ⚔️ Frappe (gros dégâts), 💚 Régénération (dégâts + tu récupères des PV), 💫 Coup sonnant (dégâts + la prochaine attaque adverse est réduite de moitié) et 🩸 Drain (dégâts + tu voles de l'énergie). La famille est déduite de la biologie de l'espèce — un insecte qui mue se régénère, un prédateur qui aspire draine, etc. L'emoji sur le bouton de capacité te dit laquelle tu as. En plus d'attaquer, tu peux te mettre en 🛡️ Parade (le prochain coup encaissé est réduit de moitié et tu regagnes de l'énergie) — utile pour charger ta capacité. Et les insectes de type Venimeux empoisonnent leur cible avec leur capacité : le poison inflige des dégâts au tour suivant (badge ☠️), sans se cumuler. Chaque forge coûte un appel (~0,8 centime).
+          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. La rareté de la carte (qui déclenche les cartes holographiques et légendaires scintillantes) s'appuie désormais sur les vraies données d'observation d'iNaturalist : plus une espèce est rare dans le monde, plus sa carte brille. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Dans ta galerie de cartes, tu peux filtrer par ordre d'insecte et trier tes cartes par récentes, par rareté ou par type de combat. Tout le jeu est regroupé dans l'onglet 🎮 Jeu en bas : « 🎴 Cartes » (ta galerie), « ⚔️ Combat » et « 🧠 Quiz ». Le quiz propose 5 questions par jour, dont la moitié tirées de ta propre collection (nom scientifique, biotope, groupe d'une espèce que tu as observée) : il se renouvelle donc au fil de tes trouvailles. Une fois le quiz du jour fait, le mode « 🔄 Entraînement » te permet de rejouer des séries à volonté, sans points. Ton total de points apparaît dans le classement quiz de la bande. Une pastille 🧠 sur l'onglet Jeu indique que le quiz du jour t'attend. L'écran Combat réunit deux façons de se battre : « 🏆 Défier la bande » (tu choisis la carte d'un pote et le résultat compte au classement) et « 🏟️ Arène » (tu enchaînes seul des adversaires de plus en plus forts, ton insecte étant soigné entre les manches ; ta meilleure série est enregistrée comme record). En combat, chaque insecte a un type parmi 8 (🦋 Volant, 🪲 Cuirassé, 🐛 Rampant, 🦗 Bondissant, 🕷️ Venimeux, 💧 Aquatique, 🐜 Social, 🌙 Nocturne) avec des forces et faiblesses, des points de vie, de l'énergie qui se recharge, une attaque de base et une capacité spéciale qui coûte de l'énergie. Le bouton « 🔰 Forces & faiblesses des types » affiche le schéma complet de qui bat qui — un coup avec l'avantage de type fait ×1,3 de dégâts. Choisis ton insecte selon le type de l'adversaire ! Tes cartes progressent : chaque défi de ligue rapporte de l'XP (même en perdant !), et tous les 30 points ta carte gagne un niveau, jusqu'à 5 étoiles ⭐. Chaque niveau donne +3 % de stats (+15 % au niveau 5). Le plafond est volontairement bas pour que ceux qui jouent moins souvent restent dans la course. L'arène ne rapporte pas d'XP, seuls les défis comptent. Chaque capacité appartient à une famille qui change sa façon de frapper : ⚔️ Frappe (gros dégâts), 💚 Régénération (dégâts + tu récupères des PV), 💫 Coup sonnant (dégâts + la prochaine attaque adverse est réduite de moitié) et 🩸 Drain (dégâts + tu voles de l'énergie). La famille est déduite de la biologie de l'espèce — un insecte qui mue se régénère, un prédateur qui aspire draine, etc. L'emoji sur le bouton de capacité te dit laquelle tu as. En plus d'attaquer, tu peux te mettre en 🛡️ Parade (le prochain coup encaissé est réduit de moitié et tu regagnes de l'énergie) — utile pour charger ta capacité. Et les insectes de type Venimeux empoisonnent leur cible avec leur capacité : le poison inflige des dégâts au tour suivant (badge ☠️), sans se cumuler. Chaque forge coûte un appel (~0,8 centime).
         </p>
         <div style={t}>🔬 Science participative (iNaturalist)</div>
         <p style={p}>
@@ -8775,6 +9496,8 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
   const [detailFocusCom, setDetailFocusCom] = useState(false); // ouvrir directement sur la zone commentaire
   const [reactions, setReactions] = useState({}); // { post_id: { type: compteur } }
   const [comptesCom, setComptesCom] = useState({}); // { post_id: nb commentaires }
+  const [periode, setPeriode] = useState("tout"); // tout | jour | semaine | mois | annee
+  const [auteurFiltre, setAuteurFiltre] = useState(""); // "" = toute la bande
 
   // Retour système : le détail post s'inscrit dans le registre central de fermeture
   // (voir bdRetour plus bas). Priorité haute : il se ferme avant la sous-vue "mur".
@@ -8851,18 +9574,9 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
       setPosts(p);
       chargerRaretes(p);
       compterCommentaires().then(setComptesCom).catch(() => {});
-      chargerReactions().then((r) => {
-        setReactions(r);
-        // Marque les réactions reçues comme vues, à partir des données déjà chargées (pas de requête en plus)
-        if (prenom && onMarquerReactionsVues) {
-          const moi = prenom.trim().toLowerCase();
-          let total = 0;
-          p.filter((x) => (x.auteur || "").trim().toLowerCase() === moi).forEach((x) => {
-            total += nbReacts(r[x.id]);
-          });
-          onMarquerReactionsVues(total);
-        }
-      });
+      // Les réactions reçues ne sont PAS marquées comme vues ici : on ne les remarque pas
+      // en faisant défiler le mur. C'est l'ouverture du centre de notifications qui fait foi.
+      chargerReactions().then(setReactions);
       setEtat("ok");
     } catch (e) {
       if (!silencieux) setEtat("echec");
@@ -8934,6 +9648,54 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
         </button>
       </div>
 
+      {/* Filtres adaptatifs : une période n'est proposée que si elle contient réellement
+          des publications. Inutile d'afficher « Cette année » sur une appli de 3 mois. */}
+      {etat === "ok" && posts.length > 0 && (() => {
+        const now = Date.now();
+        const dateDe = (p) => { const d = dateAffichagePost(p); return d ? d.getTime() : 0; };
+        const bornes = { jour: 864e5, semaine: 7 * 864e5, mois: 30 * 864e5, annee: 365 * 864e5 };
+        const dispo = [["tout", "Tout"]];
+        // On propose une période si elle contient des publications ET si elle en exclut
+        // au moins une (sinon elle ferait doublon avec « Tout »).
+        [["jour", "Aujourd'hui"], ["semaine", "7 jours"], ["mois", "30 jours"], ["annee", "Cette année"]].forEach(([id, lab]) => {
+          const dedans = posts.filter((p) => now - dateDe(p) <= bornes[id]).length;
+          if (dedans > 0 && dedans < posts.length) dispo.push([id, lab]);
+        });
+        const auteurs = [...new Set(posts.map((p) => (p.auteur || "").trim()).filter(Boolean))].sort();
+        if (dispo.length <= 1 && auteurs.length <= 1) return null;
+        return (
+          <div style={{ marginBottom: 12 }}>
+            {dispo.length > 1 && (
+              <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, marginBottom: auteurs.length > 1 ? 7 : 0 }}>
+                {dispo.map(([id, lab]) => (
+                  <button key={id} onClick={() => setPeriode(id)}
+                    style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 16, cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: periode === id ? 700 : 500,
+                      border: `1px solid ${periode === id ? C.ambre : C.bordure}`, background: periode === id ? C.ambre : "transparent", color: periode === id ? C.encre : C.papierSombre }}>
+                    {lab}
+                  </button>
+                ))}
+              </div>
+            )}
+            {auteurs.length > 1 && (
+              <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4 }}>
+                <button onClick={() => setAuteurFiltre("")}
+                  style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 16, cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: !auteurFiltre ? 700 : 500,
+                    border: `1px solid ${!auteurFiltre ? "#6F9450" : C.bordure}`, background: !auteurFiltre ? "#6F9450" : "transparent", color: !auteurFiltre ? C.encre : C.papierSombre }}>
+                  🐛 Toute la bande
+                </button>
+                {auteurs.map((a) => (
+                  <button key={a} onClick={() => setAuteurFiltre(auteurFiltre === a ? "" : a)}
+                    style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 16, cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: auteurFiltre === a ? 700 : 500,
+                      border: `1px solid ${auteurFiltre === a ? "#6F9450" : C.bordure}`, background: auteurFiltre === a ? "#6F9450" : "transparent", color: auteurFiltre === a ? C.encre : C.papierSombre }}>
+                    {a}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {etat === "chargement" && <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, fontStyle: "italic", padding: "20px 0", textAlign: "center" }}>Chargement du mur…</div>}
       {etat === "echec" && <div style={{ fontFamily: sans, fontSize: 14, color: "#E8A88F", padding: "16px 0", textAlign: "center" }}>Impossible de charger le mur (réseau ?). Réessaie.</div>}
       {etat === "ok" && posts.length === 0 && (
@@ -8942,35 +9704,94 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
         </div>
       )}
 
-      {etat === "ok" && posts.map((p) => (
+      {etat === "ok" && (() => {
+        const now = Date.now();
+        const bornes = { jour: 864e5, semaine: 7 * 864e5, mois: 30 * 864e5, annee: 365 * 864e5 };
+        const visibles = posts.filter((p) => {
+          if (auteurFiltre && (p.auteur || "").trim() !== auteurFiltre) return false;
+          if (periode === "tout") return true;
+          const d = dateAffichagePost(p);
+          return d ? (now - d.getTime()) <= bornes[periode] : false;
+        });
+        if (visibles.length === 0) return (
+          <div style={{ textAlign: "center", padding: "30px 20px", border: `1px solid ${C.bordure}`, borderRadius: 12, background: C.panneau, fontFamily: sans, fontSize: 13.5, color: C.papierSombre, lineHeight: 1.6 }}>
+            Aucune trouvaille ne correspond à ce filtre.<br />
+            <button onClick={() => { setPeriode("tout"); setAuteurFiltre(""); }}
+              style={{ marginTop: 10, padding: "7px 14px", borderRadius: 8, cursor: "pointer", border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papier, fontFamily: sans, fontSize: 12.5, fontWeight: 600 }}>
+              Tout afficher
+            </button>
+          </div>
+        );
+        return visibles.map((p) => (
         <div key={p.id} style={{ marginBottom: 14, border: `1px solid ${C.bordure}`, borderRadius: 12, overflow: "hidden", background: C.panneau, boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
+          {(() => { const th = themeDe(p.auteur, profils); const ti = titreDe(p.auteur, profils); return (
           <div onClick={() => setPostDetail(p)} style={{ cursor: "pointer" }}>
-            {p.photo_url && <img src={p.photo_url} alt={p.espece} loading="lazy" style={{ width: "100%", maxHeight: 360, objectFit: "cover", display: "block" }} />}
+            {/* En-tête auteur : ce qui rend le mur « social ». L'emblème est mis en médaillon
+                et teinté du thème choisi par la personne (v1.61). */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px 9px" }}>
+              <span onClick={(e) => { if (onOuvrirProfil && p.auteur) { e.stopPropagation(); onOuvrirProfil(p.auteur); } }}
+                style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 19, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20,
+                  background: `linear-gradient(${th.c1}, ${th.c2})`, border: `1.5px solid ${th.bord}`, cursor: onOuvrirProfil ? "pointer" : "default" }}>
+                {emblemeDe(p.auteur, profils)}
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 14, fontWeight: 700, color: C.papier, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  onClick={(e) => { if (onOuvrirProfil && p.auteur) { e.stopPropagation(); onOuvrirProfil(p.auteur); } }}>
+                  {p.auteur || "Anonyme"}
+                </span>
+                <span style={{ display: "block", fontFamily: sans, fontSize: 11, color: th.accent, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {ti ? `${ti.emoji} ${ti.nom}` : "\u00A0"}
+                </span>
+              </span>
+              <span style={{ flexShrink: 0, fontFamily: sans, fontSize: 11.5, color: C.papierSombre, textAlign: "right" }}
+                title={publicationTardive(p) ? `Observé le ${dateAffichagePost(p).toLocaleDateString("fr-FR")}, partagé ${publicationTardive(p)} jours plus tard` : ""}>
+                {dateAffichagePost(p) ? dateAffichagePost(p).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}
+                {publicationTardive(p) > 0 && <span style={{ opacity: .8 }}> ↩</span>}
+              </span>
+            </div>
+
+            {/* Photo avec le nom d'espèce en surimpression sur un dégradé */}
+            {p.photo_url && (
+              <div style={{ position: "relative" }}>
+                <img src={p.photo_url} alt={p.espece} loading="lazy" style={{ width: "100%", maxHeight: 360, objectFit: "cover", display: "block" }} />
+                <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "26px 14px 10px", background: "linear-gradient(transparent, rgba(10,13,8,.88))" }}>
+                  <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }}>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      {p.espece
+                        ? <span style={{ display: "block", fontFamily: serif, fontSize: 19, fontWeight: 700, color: "#F5EFE0", textShadow: "0 1px 4px rgba(0,0,0,.7)", lineHeight: 1.2 }}>{p.espece}</span>
+                        : <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: sans, fontSize: 13, fontWeight: 700, padding: "3px 10px", borderRadius: 16, background: "rgba(42,36,16,.9)", border: "1px solid #B8862E", color: "#E4C878" }}>❓ À identifier</span>}
+                      {p.espece_sci && <span style={{ display: "block", fontFamily: serif, fontStyle: "italic", fontSize: 13, color: "#D8C89A", textShadow: "0 1px 3px rgba(0,0,0,.7)" }}>{p.espece_sci}</span>}
+                    </span>
+                    <span style={{ flexShrink: 0, display: "flex", gap: 5, alignItems: "center" }}>
+                      <BadgePourcent confiance={p.confiance} />
+                      <BadgeRarete count={raretes[cleEspeceMur(p)]} />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div style={{ padding: "10px 14px 4px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                {p.espece
-                  ? <span style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier }}>{p.espece}</span>
-                  : <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: sans, fontSize: 13, fontWeight: 700, padding: "3px 10px", borderRadius: 16, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", color: "#E4C878" }}>❓ À identifier</span>}
-                <BadgePourcent confiance={p.confiance} />
-                <BadgeRarete count={raretes[cleEspeceMur(p)]} />
-              </div>
-              {p.espece_sci && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambre }}>{p.espece_sci}</div>}
-              {p.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginTop: 6 }}>{p.note}</div>}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
-                <span>
-                  {onOuvrirProfil && p.auteur
-                    ? <button onClick={(e) => { e.stopPropagation(); onOuvrirProfil(p.auteur); }}
-                        style={{ background: "none", border: "none", padding: 0, font: "inherit", color: C.ambreClair, cursor: "pointer", textDecoration: "underline" }}>{emblemeDe(p.auteur, profils)} {p.auteur}</button>
-                    : <span>{emblemeDe(p.auteur, profils)} {p.auteur || "Anonyme"}</span>}
-                  {p.lieu ? ` · ${p.lieu}` : ""}
+              {/* Sans photo, le nom reprend sa place normale */}
+              {!p.photo_url && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                  {p.espece
+                    ? <span style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier }}>{p.espece}</span>
+                    : <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: sans, fontSize: 13, fontWeight: 700, padding: "3px 10px", borderRadius: 16, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", color: "#E4C878" }}>❓ À identifier</span>}
+                  <BadgePourcent confiance={p.confiance} />
+                  <BadgeRarete count={raretes[cleEspeceMur(p)]} />
+                </div>
+              )}
+              {/* Biotope en pastille plutôt qu'en texte gris */}
+              {p.lieu && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 2, padding: "3px 10px", borderRadius: 14, background: C.fond, border: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 11.5, color: C.lichen }}>
+                  {(BIOTOPES.find((b) => b.label === p.lieu) || {}).emoji || "📍"} {p.lieu}
                 </span>
-                <span title={publicationTardive(p) ? `Observé le ${dateAffichagePost(p).toLocaleDateString("fr-FR")}, partagé ${publicationTardive(p)} jours plus tard` : ""}>
-                  {dateAffichagePost(p) ? dateAffichagePost(p).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}
-                  {publicationTardive(p) > 0 && <span style={{ color: C.papierSombre, opacity: .8 }}> ↩</span>}
-                </span>
-              </div>
+              )}
+              {p.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginTop: 8, fontStyle: "italic" }}>« {p.note} »</div>}
             </div>
           </div>
+          ); })()}
           {/* Barre d'actions : commenter directement (ouvre le détail focalisé sur la zone commentaire) */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px 4px" }}>
             <button onClick={() => { setDetailFocusCom(true); setPostDetail(p); }}
@@ -9083,7 +9904,8 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
             )}
           </div>
         </div>
-      ))}
+        ));
+      })()}
       {postDetail && <DetailPost post={postDetail} reactions={reactions[postDetail.id] || {}} onReagir={(type) => surReaction(postDetail.id, type)} onFermer={() => { setPostDetail(null); setDetailFocusCom(false); }} monPrenom={prenom} onOuvrirProfil={onOuvrirProfil ? (nom) => { setPostDetail(null); onOuvrirProfil(nom); } : null} onDefinirPrenom={onDefinirPrenom} focusCommentaire={detailFocusCom} />}
     </div>
   );
@@ -9220,7 +10042,7 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
           <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 16, lineHeight: 1.5 }}>
             5 questions sur les insectes, un nouveau quiz chaque jour. Gagne des points, et vise le sans-faute !
           </div>
-          <Quiz />
+          <Quiz observations={observations} prenom={prenom} />
         </div>
       )}
     </div>
@@ -10545,6 +11367,16 @@ function BioDex() {
   // Confirmation avant de quitter l'appli (quand un retour surviendrait alors que tout est fermé).
   const [saisonMasquee, setSaisonMasquee] = useState(false);
   const [anecdoteMasquee, setAnecdoteMasquee] = useState(false);
+  // Le quiz du jour est-il encore à faire ? (sert la pastille de l'onglet Jeu)
+  const [quizDispo, setQuizDispo] = useState(false);
+  useEffect(() => {
+    const verifier = () => {
+      try { setQuizDispo(!localStorage.getItem("biodex:quiz:" + jourActuel())); } catch { setQuizDispo(false); }
+    };
+    verifier();
+    const t = setInterval(verifier, 60000); // repasse à jour après minuit ou après une partie
+    return () => clearInterval(t);
+  }, [vue]);
   const [confirmQuitter, setConfirmQuitter] = useState(false);
   // Après un défi, on rouvre l'onglet Jeu directement sur le hub Combat (pas la galerie).
   const [retourCombat, setRetourCombat] = useState(false);
@@ -10623,6 +11455,21 @@ function BioDex() {
   }
 
   // Une observation "à trier" complétée passe en collection (statut retiré)
+  // Range une photo dans la file « à trier » (utile hors ligne : l'identification
+  // par IA a besoin du réseau, mais la photo et son contexte sont conservés).
+  async function mettreDeCote(donnees) {
+    const obs = {
+      id: `${Date.now()}-${Math.floor(Math.random() * 9999)}`,
+      statut: "a_trier",
+      nom: "", nomSci: "", biotope: "",
+      ...donnees,
+    };
+    try { await dbAjouter(obs); } catch { return false; }
+    setObservations((prev) => [obs, ...prev]);
+    setVue("atrier");
+    return true;
+  }
+
   async function completerObservation(obs) {
     const complete = { ...obs, statut: undefined };
     try {
@@ -10847,7 +11694,10 @@ function BioDex() {
       {(() => {
         const navVisible = (vue === "collection" || vue === "carte" || vue === "stats" || vue === "atrier" || vue === "cartes" || vue === "mur");
         if (!navVisible) return null;
-        const items = [["collection", "🗃️", "Boîte"], ["atrier", "📥", "Trier"], ["cartes", "🎮", "Jeu"], ...(MUR_ACTIF ? [["mur", "🌐", "Mur"]] : []), ["carte", "🗺️", "Carte"], ["stats", "📊", "Stats"]];
+        // « Trier » n'apparaît que s'il y a des photos en attente (ou si on y est déjà) :
+        // sinon il pointe vers un écran vide et prend une place précieuse sur la barre.
+        const montrerTrier = aTrier.length > 0 || vue === "atrier";
+        const items = [["collection", "🗃️", "Boîte"], ...(montrerTrier ? [["atrier", "📥", "Trier"]] : []), ["cartes", "🎮", "Jeu"], ...(MUR_ACTIF ? [["mur", "🌐", "Mur"]] : []), ["carte", "🗺️", "Carte"], ["stats", "📊", "Stats"]];
         return (
           <React.Fragment>
             <nav className="bd-nav" aria-label="Navigation principale">
@@ -10859,7 +11709,12 @@ function BioDex() {
                     {id === "atrier" && aTrier.length > 0 && (
                       <span className="bd-nav-badge" style={{ background: C.rouge, color: "#fff" }}>{aTrier.length}</span>
                     )}
-                    {id === "cartes" && cartes.length > 0 && (
+                    {/* Pastille « quiz du jour disponible » : elle apparaît et disparaît chaque
+                        jour, contrairement au compteur de cartes qui était toujours là. */}
+                    {id === "cartes" && quizDispo && (
+                      <span className="bd-nav-badge" style={{ background: "#7FA658", color: "#12160D", fontSize: 10 }}>🧠</span>
+                    )}
+                    {id === "cartes" && !quizDispo && cartes.length > 0 && (
                       <span className="bd-nav-badge" style={{ background: C.ambre, color: C.encre }}>{cartes.length}</span>
                     )}
                     {id === "mur" && murNouveau && (
@@ -10876,7 +11731,7 @@ function BioDex() {
         );
       })()}
 
-      {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} onOuvrirProfil={ouvrirProfil} onMarquerReactionsVues={() => { setNotifs((n) => ({ ...n, reactionsRecues: 0, total: Math.max(0, (n.total || 0) - (n.reactionsRecues || 0)) })); }} />}
+      {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} onOuvrirProfil={ouvrirProfil} onMarquerReactionsVues={null} />}
       {vue === "idees" && <BoiteIdees prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
       {vue === "missions" && <Missions observations={observations} prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
       {vue === "ligue" && (
@@ -10963,6 +11818,7 @@ function BioDex() {
           sousVueInitiale={retourCombat ? "combat" : "galerie"}
         />
       )}
+      {vue === "curieux" && <CoinDesCurieux onFermer={() => setVue("collection")} />}
       {vue === "stats" && <Stats observations={triees} raretes={raretesGlobal} onFermer={() => setVue("collection")} />}
       {vue === "atrier" && (
         <CaptureRapide aTrier={aTrier} onAjout={ajouterATrier}
@@ -10976,7 +11832,7 @@ function BioDex() {
 
       {vue === "aide" && <Aide onFermer={() => setVue("collection")} onImportTermine={chargerObservations} />}
       {vue === "connexion" && <Connexion onFermer={() => setVue("collection")} utilisateur={utilisateur} onDeconnexion={deconnexion} />}
-      {vue === "nouvelle" && <NouvelleObservation observations={observations} onSauver={sauverObservation} onAnnuler={() => setVue("collection")} />}
+      {vue === "nouvelle" && <NouvelleObservation observations={observations} onSauver={sauverObservation} onAnnuler={() => setVue("collection")} onMettreDeCote={mettreDeCote} />}
       {vue === "edition" && selection && (
         <NouvelleObservation
           key={"edit-" + selection.id}
@@ -11009,7 +11865,7 @@ function BioDex() {
               la collection hors de l'écran (408 px de bandeaux mesurés). */}
           <CarrouselBandeaux>
             {!saisonMasquee && conseilSaison() && (() => { let vu = false; try { vu = localStorage.getItem("biodex_saison_vue") === new Date().toDateString(); } catch {} return vu ? null : <ReveilSaisonnier key="saison" onMasquer={() => setSaisonMasquee(true)} />; })()}
-            {!anecdoteMasquee && <LeSaviasTu key="anecdote" onMasquer={() => setAnecdoteMasquee(true)} />}
+            {!anecdoteMasquee && <LeSaviasTu key="anecdote" onMasquer={() => setAnecdoteMasquee(true)} observations={observations} />}
           </CarrouselBandeaux>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
             <span style={{ fontFamily: serif, color: C.ambre, fontWeight: 700, fontSize: 26 }}>{triees.length}</span>
@@ -11018,6 +11874,15 @@ function BioDex() {
               {nbBiotopes > 0 && <span> · {nbBiotopes} biotope{nbBiotopes > 1 ? "s" : ""}</span>}
             </span>
           </div>
+
+          {/* L'onglet « Trier » étant masqué quand la file est vide, on garde ici un accès
+              à l'import en masse (retour de balade, plusieurs photos d'un coup). */}
+          {aTrier.length === 0 && triees.length > 0 && (
+            <button onClick={() => setVue("atrier")}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "9px 12px", marginBottom: 12, borderRadius: 10, cursor: "pointer", background: "transparent", border: `1px dashed ${C.bordure}`, color: C.papierSombre, fontFamily: sans, fontSize: 12.5 }}>
+              📥 Importer plusieurs photos d'un coup
+            </button>
+          )}
 
           {/* Rappel : observations en attente d'un nom (aide demandée ou non renseignée) */}
           {(() => {
