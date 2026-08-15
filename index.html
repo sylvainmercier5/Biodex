@@ -235,9 +235,9 @@ const bdRetour = (() => {
   return { enregistrer, definirGardeSortie, quitterVraiment };
 })();
 
-// ============ BioDex v1.68 (PWA) ============
+// ============ BioDex v1.69 (PWA) ============
 
-const VERSION = "v1.68";
+const VERSION = "v1.69";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1470,6 +1470,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.69", date: "2026-08", items: ["🐛 CORRECTIF MAJEUR : les écrans « Missions saisonnières » et « Boîte à idées » restaient noirs. Un bout de code destiné à la Ligue s'était glissé par erreur dans ces deux écrans, qui plantaient donc à l'ouverture. C'est réparé, et tous les écrans du menu ont été revérifiés un par un.", "📖 « Le coin des curieux » n'apparaît plus en double dans le menu."] },
   { v: "1.68", date: "2026-08", items: ["⏱️ CORRECTIF des écrans bloqués : quand le serveur tardait à répondre, la requête restait suspendue indéfiniment — la carte de la bande affichait « Chargement… » à vie, et les missions comme la boîte à idées restaient vides. Toutes les requêtes abandonnent désormais au bout de 15 secondes, avec un message clair et un bouton « Réessayer ».", "📉 La carte de la bande demande aussi beaucoup moins de données qu'avant, ce qui la rend nettement plus rapide à charger."] },
   { v: "1.67", date: "2026-08", items: ["🗺️ CORRECTIF carte : les points regroupés n'étaient plus cliquables. Chaque trouvaille créait en fait deux marqueurs superposés (le point visible et sa zone tactile), qui se séparaient à l'ouverture d'un groupe — d'où les branches vides et les points qui ne répondaient plus. Les compteurs de groupe étaient aussi doublés. C'est réparé.", "📖 « Le coin des curieux » est enfin accessible depuis le menu ☰ — l'entrée manquait alors que la rubrique existait !"] },
   { v: "1.66", date: "2026-08", items: ["📶 Notifications plus fiables en mobilité : l'appli interrogeait le serveur toutes les minutes en rapatriant 200 publications complètes — trop lourd sur un réseau mobile, et le moindre trou de connexion faisait disparaître la cloche. Elle demande maintenant beaucoup moins de données, moins souvent, et garde tes notifications même si le réseau lâche un instant."] },
@@ -7808,7 +7809,6 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {/* Compte */}
         {MUR_ACTIF && titreSection("Mon compte")}
         {MUR_ACTIF && item("🎨", "Mon profil", "Emblème, titre, couleur, insecte fétiche", () => onAller("monprofil"), 0)}
-        {item("📖", "Le coin des curieux", "Mythes, rôle des insectes, records étonnants", () => onAller("curieux"), 0)}
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Ma collection publique" : "Se connecter", utilisateur ? "Tes espèces sur ton profil" : "Connexion facultative par email", () => onAller("connexion"), 0)}
 
         {/* Faire vivre BioDex */}
@@ -8264,15 +8264,6 @@ function Missions({ observations, prenom, onDefinirPrenom, onFermer }) {
     catch { setEtat("echec"); }
   }
   useEffect(() => { rafraichir(); }, []);
-  useEffect(() => {
-    if (onglet !== "journal" || !prenom) return;
-    let vivant = true;
-    setJournalEtat("chargement");
-    chargerMesDefis(prenom)
-      .then((l) => { if (vivant) { setJournal(l); setJournalEtat("ok"); } })
-      .catch(() => { if (vivant) setJournalEtat("echec"); });
-    return () => { vivant = false; };
-  }, [onglet, prenom]);
 
   // Validation auto : dès que la collection remplit une mission non encore validée par moi, on l'enregistre.
   useEffect(() => {
@@ -9166,15 +9157,6 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
   }
 
   useEffect(() => { rafraichir(); }, []);
-  useEffect(() => {
-    if (onglet !== "journal" || !prenom) return;
-    let vivant = true;
-    setJournalEtat("chargement");
-    chargerMesDefis(prenom)
-      .then((l) => { if (vivant) { setJournal(l); setJournalEtat("ok"); } })
-      .catch(() => { if (vivant) setJournalEtat("echec"); });
-    return () => { vivant = false; };
-  }, [onglet, prenom]);
 
   async function envoyer() {
     const auteur = (saisiePrenom || "").trim();
