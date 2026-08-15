@@ -235,9 +235,9 @@ const bdRetour = (() => {
   return { enregistrer, definirGardeSortie, quitterVraiment };
 })();
 
-// ============ BioDex v1.69 (PWA) ============
+// ============ BioDex v1.70 (PWA) ============
 
-const VERSION = "v1.69";
+const VERSION = "v1.70";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -824,15 +824,29 @@ function BadgePourcent({ confiance, style }) {
 
 // ---------- Mur commun (Supabase) ----------
 let _sb = null;
+// Vrai si la bibliothèque Supabase n'a pas pu être chargée (souvent une copie
+// corrompue en cache sur la version installée). Sert à l'afficher clairement
+// au lieu de laisser les écrans tourner indéfiniment.
+let LIB_SUPABASE_KO = false;
 function clientSupabase() {
   if (!MUR_ACTIF) return null;
   if (_sb) return _sb;
   try {
     if (window.supabase && window.supabase.createClient) {
       _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      LIB_SUPABASE_KO = false;
       return _sb;
     }
-  } catch {}
+    // La bibliothèque n'est pas là : on le signale une seule fois.
+    if (!LIB_SUPABASE_KO) {
+      LIB_SUPABASE_KO = true;
+      try { noterErreur("clientSupabase", "La bibliothèque Supabase n'a pas pu être chargée (cache corrompu ?)"); } catch {}
+      try { window.dispatchEvent(new CustomEvent("biodex-lib-ko")); } catch {}
+    }
+  } catch (e) {
+    LIB_SUPABASE_KO = true;
+    try { noterErreur("clientSupabase", e); } catch {}
+  }
   return null;
 }
 
@@ -1470,6 +1484,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.70", date: "2026-08", items: ["🔧 Bouton de réparation : quand l'appli n'arrive plus à joindre le serveur (mur, carte de la bande, missions et boîte à idées qui tournent sans jamais charger), un bandeau rouge l'explique enfin et propose un bouton « Réparer et recharger » qui remet tout d'aplomb. Avant, les écrans tournaient dans le vide sans aucun message.", "📦 La bibliothèque réseau n'est plus conservée en mémoire par l'appli : c'était la cause probable de ces blocages sur la version installée sur téléphone."] },
   { v: "1.69", date: "2026-08", items: ["🐛 CORRECTIF MAJEUR : les écrans « Missions saisonnières » et « Boîte à idées » restaient noirs. Un bout de code destiné à la Ligue s'était glissé par erreur dans ces deux écrans, qui plantaient donc à l'ouverture. C'est réparé, et tous les écrans du menu ont été revérifiés un par un.", "📖 « Le coin des curieux » n'apparaît plus en double dans le menu."] },
   { v: "1.68", date: "2026-08", items: ["⏱️ CORRECTIF des écrans bloqués : quand le serveur tardait à répondre, la requête restait suspendue indéfiniment — la carte de la bande affichait « Chargement… » à vie, et les missions comme la boîte à idées restaient vides. Toutes les requêtes abandonnent désormais au bout de 15 secondes, avec un message clair et un bouton « Réessayer ».", "📉 La carte de la bande demande aussi beaucoup moins de données qu'avant, ce qui la rend nettement plus rapide à charger."] },
   { v: "1.67", date: "2026-08", items: ["🗺️ CORRECTIF carte : les points regroupés n'étaient plus cliquables. Chaque trouvaille créait en fait deux marqueurs superposés (le point visible et sa zone tactile), qui se séparaient à l'ouverture d'un groupe — d'où les branches vides et les points qui ne répondaient plus. Les compteurs de groupe étaient aussi doublés. C'est réparé.", "📖 « Le coin des curieux » est enfin accessible depuis le menu ☰ — l'entrée manquait alors que la rubrique existait !"] },
@@ -7624,6 +7639,46 @@ function SelecteurPoint({ point, onChange, onFermer }) {
 }
 
 // ---------- Centre de notifications ----------
+// Bandeau d'alerte quand la bibliothèque réseau n'a pas pu se charger : sans lui,
+// les écrans restent en « chargement » sans que rien n'explique pourquoi.
+function AlerteLibKo() {
+  const [ko, setKo] = useState(false);
+  const [enCours, setEnCours] = useState(false);
+  useEffect(() => {
+    const h = () => setKo(true);
+    window.addEventListener("biodex-lib-ko", h);
+    // Vérification directe au démarrage (la bibliothèque doit être là très vite)
+    const t = setTimeout(() => { try { if (MUR_ACTIF && !(window.supabase && window.supabase.createClient)) setKo(true); } catch {} }, 4000);
+    return () => { window.removeEventListener("biodex-lib-ko", h); clearTimeout(t); };
+  }, []);
+  if (!ko) return null;
+
+  async function reparer() {
+    setEnCours(true);
+    try {
+      if ("caches" in window) { const noms = await caches.keys(); await Promise.all(noms.map((n) => caches.delete(n))); }
+      if (navigator.serviceWorker) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+    } catch {}
+    try { location.reload(true); } catch { location.reload(); }
+  }
+
+  return (
+    <div style={{ margin: "10px 12px", padding: "13px 15px", borderRadius: 12, background: "linear-gradient(#3A241C, #2A1A14)", border: "1px solid #B5654A" }}>
+      <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: "#E8A88F", marginBottom: 5 }}>📡 Connexion au serveur impossible</div>
+      <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papier, lineHeight: 1.55, marginBottom: 11 }}>
+        Le mur, la carte de la bande, les missions et la boîte à idées ne peuvent pas se charger.
+        C'est en général un fichier abîmé dans la mémoire de l'appli — une réparation suffit.
+      </div>
+      <Bouton variante="primaire" onClick={reparer} disabled={enCours} style={{ width: "100%" }}>
+        {enCours ? "Réparation…" : "🔧 Réparer et recharger"}
+      </Bouton>
+    </div>
+  );
+}
+
 function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees, onAllerLigue }) {
   // On FIGE le contenu à l'ouverture. Sans ça, le marquage « vu » déclenchait un
   // recalcul qui renvoyait 0, et le centre se vidait sous les yeux de la personne
@@ -11784,6 +11839,8 @@ function BioDex() {
           </React.Fragment>
         );
       })()}
+
+      <AlerteLibKo />
 
       {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} onOuvrirProfil={ouvrirProfil} onMarquerReactionsVues={null} />}
       {vue === "idees" && <BoiteIdees prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}

@@ -1,6 +1,6 @@
 // BioDex v1.24 — Service Worker
 // © 2026 Sylvain Mercier. Tous droits réservés.
-const CACHE = "biodex-v1-69";
+const CACHE = "biodex-v1-70";
 const SHELL = [
   "./",
   "./index.html",
@@ -15,14 +15,17 @@ const SHELL = [
   "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css",
   "https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css",
-  "https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js",
-  "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"
+  "https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"
 ];
 
 self.addEventListener("install", (e) => {
   // On NE fait plus skipWaiting() automatiquement : le nouveau SW attend en "waiting"
   // jusqu'à ce que l'utilisateur accepte la mise à jour via la bannière.
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+  // addAll() échoue en bloc si UN seul fichier manque : on met en cache un par un
+  // pour qu'un CDN momentanément indisponible n'empêche pas l'installation.
+  e.waitUntil(caches.open(CACHE).then((c) => Promise.all(
+    SHELL.map((u) => c.add(u).catch(() => null))
+  )));
 });
 
 // L'appli demande l'activation de la nouvelle version (bouton "Mettre à jour")
@@ -47,7 +50,9 @@ self.addEventListener("fetch", (e) => {
     url.hostname.endsWith("supabase.co") ||            // base de données + auth + photos du mur
     url.pathname.startsWith("/.netlify/functions/") || // config, identification IA
     url.hostname.includes("open-meteo.com") ||          // météo du moment
-    url.hostname.includes("inaturalist.org")            // autocomplétion espèces
+    url.hostname.includes("inaturalist.org") ||          // autocomplétion espèces
+    url.hostname.includes("jsdelivr.net")               // bibliothèque Supabase : jamais en cache
+                                                        // (une copie abîmée bloquait toute l'appli)
   ) return;
   // App shell + CDN : cache d'abord, réseau en secours (puis mise en cache)
   e.respondWith(
