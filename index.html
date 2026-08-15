@@ -235,9 +235,9 @@ const bdRetour = (() => {
   return { enregistrer, definirGardeSortie, quitterVraiment };
 })();
 
-// ============ BioDex v1.67 (PWA) ============
+// ============ BioDex v1.68 (PWA) ============
 
-const VERSION = "v1.67";
+const VERSION = "v1.68";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -899,7 +899,7 @@ async function estAdminServeur() {
     const user = uData ? uData.user : null;
     if (!user || !user.email) return false;
     // La policy RLS ne laisse voir QUE sa propre ligne : si on la trouve, on est admin.
-    const { data, error } = await sb.from("admins").select("email").eq("email", user.email).maybeSingle();
+    const { data, error } = await avecDelai(sb.from("admins").select("email").eq("email", user.email).maybeSingle(), 15000, "estAdminServeur");
     if (error) return false;
     return !!data;
   } catch { return false; }
@@ -927,7 +927,7 @@ async function listerMonProfil() {
   const { data: uData } = await sb.auth.getUser();
   const user = uData ? uData.user : null;
   if (!user) return [];
-  const { data, error } = await sb.from("collections").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+  const { data, error } = await avecDelai(sb.from("collections").select("*").eq("user_id", user.id).order("created_at", { ascending: false }), 15000, "listerMonProfil");
   if (error) return [];
   return data || [];
 }
@@ -1118,7 +1118,7 @@ async function chargerProfils(forcer) {
   if (!sb) return {};
   if (_cacheProfils && !forcer) return _cacheProfils;
   try {
-    const { data, error } = await sb.from("profils").select("*");
+    const { data, error } = await avecDelai(sb.from("profils").select("*"), 15000, "chargerProfils");
     if (error) return _cacheProfils || {};
     const map = {};
     (data || []).forEach((p) => { if (p.prenom) map[String(p.prenom).trim().toLowerCase()] = p; });
@@ -1168,9 +1168,24 @@ async function enregistrerProfil(prenom, champs) {
 async function chargerMur(limite = 50) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Mur non configuré");
-  const { data, error } = await sb.from("posts").select("*").order("created_at", { ascending: false }).limit(limite);
+  const { data, error } = await avecDelai(sb.from("posts").select("id, auteur, espece, espece_sci, confiance, lieu, lat, lon, precision, photo_url, note, created_at, date_obs").order("created_at", { ascending: false }).limit(limite), 15000, "chargerMur");
   if (error) throw erreurSupabase("chargerMur", error, "Lecture du mur impossible");
   return data || [];
+}
+
+// Délai maximal sur une requête réseau. Sans ça, une requête peut rester suspendue
+// indéfiniment (fetch n'a aucun timeout par défaut) : l'écran affiche « Chargement… »
+// à vie, sans jamais basculer en erreur. C'était la cause des écrans vides.
+function avecDelai(promesse, ms, ou) {
+  return Promise.race([
+    promesse,
+    new Promise((_, rejeter) => setTimeout(() => {
+      const e = new Error("Le serveur met trop de temps à répondre");
+      e.timeout = true;
+      try { noterErreur(ou || "reseau/timeout", e); } catch {}
+      rejeter(e);
+    }, ms || 15000)),
+  ]);
 }
 
 // Version allégée pour les notifications : seulement les colonnes utiles.
@@ -1292,7 +1307,7 @@ async function chargerLigue() {
   const sb = clientSupabase();
   if (!sb) return [];
   try {
-    const { data, error } = await sb.from("cartes_ligue").select("*").order("victoires", { ascending: false });
+    const { data, error } = await avecDelai(sb.from("cartes_ligue").select("*").order("victoires", { ascending: false }), 15000, "chargerLigue");
     if (error || !data) return [];
     return data;
   } catch { return []; }
@@ -1302,7 +1317,7 @@ async function chargerScores() {
   const sb = clientSupabase();
   if (!sb) return [];
   try {
-    const { data, error } = await sb.from("ligue_scores").select("*").order("victoires", { ascending: false });
+    const { data, error } = await avecDelai(sb.from("ligue_scores").select("*").order("victoires", { ascending: false }), 15000, "chargerScores");
     if (error || !data) return [];
     return data;
   } catch { return []; }
@@ -1429,7 +1444,7 @@ async function chargerValidations(saisonCle) {
   const sb = clientSupabase();
   if (!sb) return [];
   try {
-    const { data, error } = await sb.from("missions_validees").select("mission_id, auteur, auto").eq("saison", saisonCle);
+    const { data, error } = await avecDelai(sb.from("missions_validees").select("mission_id, auteur, auto").eq("saison", saisonCle), 15000, "chargerValidations");
     if (error || !data) return [];
     return data;
   } catch { return []; }
@@ -1455,6 +1470,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.68", date: "2026-08", items: ["⏱️ CORRECTIF des écrans bloqués : quand le serveur tardait à répondre, la requête restait suspendue indéfiniment — la carte de la bande affichait « Chargement… » à vie, et les missions comme la boîte à idées restaient vides. Toutes les requêtes abandonnent désormais au bout de 15 secondes, avec un message clair et un bouton « Réessayer ».", "📉 La carte de la bande demande aussi beaucoup moins de données qu'avant, ce qui la rend nettement plus rapide à charger."] },
   { v: "1.67", date: "2026-08", items: ["🗺️ CORRECTIF carte : les points regroupés n'étaient plus cliquables. Chaque trouvaille créait en fait deux marqueurs superposés (le point visible et sa zone tactile), qui se séparaient à l'ouverture d'un groupe — d'où les branches vides et les points qui ne répondaient plus. Les compteurs de groupe étaient aussi doublés. C'est réparé.", "📖 « Le coin des curieux » est enfin accessible depuis le menu ☰ — l'entrée manquait alors que la rubrique existait !"] },
   { v: "1.66", date: "2026-08", items: ["📶 Notifications plus fiables en mobilité : l'appli interrogeait le serveur toutes les minutes en rapatriant 200 publications complètes — trop lourd sur un réseau mobile, et le moindre trou de connexion faisait disparaître la cloche. Elle demande maintenant beaucoup moins de données, moins souvent, et garde tes notifications même si le réseau lâche un instant."] },
   { v: "1.65", date: "2026-08", items: ["🔔 CORRECTIF IMPORTANT sur les notifications : elles pouvaient s'effacer avant même que tu les lises. Ouvrir la cloche les marquait comme vues instantanément, si bien qu'elle affichait parfois « rien de neuf » alors que tu avais des commentaires ou des réactions. De même, un simple passage sur le mur effaçait les réactions reçues. C'est corrigé : le contenu reste affiché tant que la cloche est ouverte, et n'est marqué comme lu qu'à la fermeture."] },
@@ -1673,7 +1689,7 @@ async function chargerReactions() {
   const sb = clientSupabase();
   if (!sb) return {};
   try {
-    const { data, error } = await sb.from("reactions_detail").select("post_id, type, auteur");
+    const { data, error } = await avecDelai(sb.from("reactions_detail").select("post_id, type, auteur"), 15000, "chargerReactions");
     if (error || !data) return {};
     const parPost = {};
     for (const r of data) {
@@ -1708,7 +1724,7 @@ async function chargerReactionsRaw() {
   const sb = clientSupabase();
   if (!sb) return [];
   try {
-    const { data, error } = await sb.from("reactions_detail").select("post_id, type, auteur, created_at");
+    const { data, error } = await avecDelai(sb.from("reactions_detail").select("post_id, type, auteur, created_at"), 15000, "chargerReactionsRaw");
     if (error || !data) return [];
     return data;
   } catch { return []; }
@@ -1741,7 +1757,7 @@ function masquerInsultes(texte) {
 async function chargerCommentaires(postId) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
-  const { data, error } = await sb.from("commentaires").select("*").eq("post_id", postId).order("created_at", { ascending: true });
+  const { data, error } = await avecDelai(sb.from("commentaires").select("*").eq("post_id", postId).order("created_at", { ascending: true }), 15000, "chargerCommentaires");
   if (error) throw erreurSupabase("chargerCommentaires", error, "Lecture des commentaires impossible");
   return data || [];
 }
@@ -1751,7 +1767,7 @@ async function ajouterCommentaire(postId, auteur, texte) {
   if (!sb) throw new Error("Service non configuré");
   const propre = masquerInsultes((texte || "").trim()).slice(0, 400);
   if (!propre) throw new Error("Commentaire vide");
-  const { data, error } = await sb.from("commentaires").insert({ post_id: postId, auteur: (auteur || "Anonyme").slice(0, 40), texte: propre }).select();
+  const { data, error } = await avecDelai(sb.from("commentaires").insert({ post_id: postId, auteur: (auteur || "Anonyme").slice(0, 40), texte: propre }).select(), 15000, "ajouterCommentaire");
   if (error) throw erreurSupabase("ajouterCommentaire", error, "Envoi impossible");
   return data && data[0];
 }
@@ -1769,7 +1785,7 @@ async function compterCommentaires() {
   const sb = clientSupabase();
   if (!sb) return {};
   try {
-    const { data, error } = await sb.from("commentaires").select("post_id");
+    const { data, error } = await avecDelai(sb.from("commentaires").select("post_id"), 15000, "compterCommentaires");
     if (error || !data) return {};
     const map = {};
     data.forEach((c) => { map[c.post_id] = (map[c.post_id] || 0) + 1; });
@@ -1781,7 +1797,7 @@ async function compterCommentaires() {
 async function chargerTousCommentaires() {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
-  const { data, error } = await sb.from("commentaires").select("*").order("created_at", { ascending: false }).limit(300);
+  const { data, error } = await avecDelai(sb.from("commentaires").select("*").order("created_at", { ascending: false }).limit(300), 15000, "chargerTousCommentaires");
   if (error) throw erreurSupabase("chargerTousCommentaires", error, "Lecture impossible");
   return data || [];
 }
@@ -1887,7 +1903,7 @@ async function dernierPostMur() {
   const sb = clientSupabase();
   if (!sb) return null;
   try {
-    const { data, error } = await sb.from("posts").select("created_at").order("created_at", { ascending: false }).limit(1);
+    const { data, error } = await avecDelai(sb.from("posts").select("created_at").order("created_at", { ascending: false }).limit(1), 15000, "dernierPostMur");
     if (error || !data || !data.length) return null;
     return data[0].created_at;
   } catch { return null; }
@@ -1897,7 +1913,7 @@ async function dernierPostMur() {
 async function chargerIdees() {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
-  const { data, error } = await sb.from("idees").select("*").order("created_at", { ascending: false }).limit(100);
+  const { data, error } = await avecDelai(sb.from("idees").select("*").order("created_at", { ascending: false }).limit(100), 15000, "chargerIdees");
   if (error) throw erreurSupabase("chargerIdees", error, "Lecture des idées impossible");
   return data || [];
 }
@@ -1931,7 +1947,7 @@ async function marquerIdeeRealisee(id, realisee) {
 async function chargerAvis() {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
-  const { data, error } = await sb.from("satisfaction").select("*").order("created_at", { ascending: false }).limit(100);
+  const { data, error } = await avecDelai(sb.from("satisfaction").select("*").order("created_at", { ascending: false }).limit(100), 15000, "chargerAvis");
   if (error) throw erreurSupabase("chargerAvis", error, "Lecture des avis impossible");
   return data || [];
 }
@@ -5266,7 +5282,7 @@ async function chargerClassementQuiz() {
   const sb = clientSupabase();
   if (!sb) return [];
   try {
-    const { data, error } = await sb.from("quiz_scores").select("*").order("total", { ascending: false }).limit(30);
+    const { data, error } = await avecDelai(sb.from("quiz_scores").select("*").order("total", { ascending: false }).limit(30), 15000, "chargerClassementQuiz");
     if (error) { noterErreur("chargerClassementQuiz", error); return []; }
     return data || [];
   } catch { return []; }
@@ -8594,7 +8610,15 @@ function Carte({ observations, onOuvrirFiche }) {
       ) : (
         <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 10 }}>
           {etatBande === "chargement" && "Chargement des trouvailles de la bande…"}
-          {etatBande === "echec" && <span style={{ color: "#E8A88F" }}>Impossible de charger la carte de la bande.</span>}
+          {etatBande === "echec" && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ color: "#E8A88F" }}>Impossible de charger la carte de la bande.</span>
+              <button onClick={() => setEtatBande("idle")}
+                style={{ padding: "5px 12px", borderRadius: 8, cursor: "pointer", border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papier, fontFamily: sans, fontSize: 12.5, fontWeight: 600 }}>
+                ↻ Réessayer
+              </button>
+            </span>
+          )}
           {etatBande === "ok" && <span><span style={{ color: "#8AAE6B", fontWeight: 800 }}>{postsAvecPos.length}</span> trouvaille{postsAvecPos.length > 1 ? "s" : ""} de la bande · chacun choisit sa précision</span>}
         </div>
       )}
