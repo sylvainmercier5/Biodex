@@ -235,9 +235,9 @@ const bdRetour = (() => {
   return { enregistrer, definirGardeSortie, quitterVraiment };
 })();
 
-// ============ BioDex v1.70 (PWA) ============
+// ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.70";
+const VERSION = "v1.71";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -263,19 +263,49 @@ let SUPABASE_URL = "";
 let SUPABASE_KEY = "";
 let MUR_ACTIF = false;
 
-// Récupère la config depuis la fonction serveur. Renseigne les variables ci-dessus.
+// Récupère la config depuis la fonction serveur.
+// TOUT ce qui est partagé (mur, carte de la bande, profils, missions, idées, ligue)
+// dépend de cet appel : s'il échoue, l'appli se retrouve muette sans rien expliquer.
+// D'où : plusieurs tentatives, mémorisation locale en secours, et signalement visible.
+let CONFIG_KO = false;
+const CONFIG_CLE = "biodex_config";
 async function chargerConfig() {
-  try {
-    const r = await fetch("/.netlify/functions/config", { cache: "no-store" });
-    if (r.ok) {
-      const j = await r.json();
-      SUPABASE_URL = j.supabaseUrl || "";
-      SUPABASE_KEY = j.supabaseKey || "";
-      MUR_ACTIF = SUPABASE_URL.length > 0 && SUPABASE_KEY.length > 0;
-    }
-  } catch {
-    // Pas de config disponible : le mur reste simplement désactivé.
+  const appliquer = (url, key) => {
+    SUPABASE_URL = url || "";
+    SUPABASE_KEY = key || "";
+    MUR_ACTIF = SUPABASE_URL.length > 0 && SUPABASE_KEY.length > 0;
+    return MUR_ACTIF;
+  };
+  // Jusqu'à 3 tentatives, avec un délai maximal : un réseau lent ne doit pas
+  // désactiver définitivement tout le partage.
+  for (let essai = 0; essai < 3; essai++) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8000);
+      const r = await fetch("/.netlify/functions/config", { cache: "no-store", signal: ctrl.signal });
+      clearTimeout(t);
+      if (r.ok) {
+        const j = await r.json();
+        if (appliquer(j.supabaseUrl, j.supabaseKey)) {
+          // On mémorise pour pouvoir repartir même si la fonction est injoignable plus tard.
+          try { localStorage.setItem(CONFIG_CLE, JSON.stringify({ u: SUPABASE_URL, k: SUPABASE_KEY })); } catch {}
+          CONFIG_KO = false;
+          return;
+        }
+      }
+    } catch {}
+    if (essai < 2) await new Promise((r) => setTimeout(r, 800 * (essai + 1)));
   }
+  // Échec : on repart sur la dernière config connue plutôt que de tout désactiver.
+  try {
+    const memo = JSON.parse(localStorage.getItem(CONFIG_CLE) || "null");
+    if (memo && memo.u && memo.k && appliquer(memo.u, memo.k)) {
+      try { noterErreur("chargerConfig", "Config serveur injoignable — reprise de la config mémorisée"); } catch {}
+      return;
+    }
+  } catch {}
+  CONFIG_KO = true;
+  try { noterErreur("chargerConfig", "Config serveur injoignable : tout le partage est désactivé"); } catch {}
 }
 
 
@@ -1484,6 +1514,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.71", date: "2026-08", items: ["🛠️ CORRECTIF : tout ce qui est partagé (mur, carte de la bande, profils, missions, boîte à idées, ligue) pouvait se retrouver muet d'un coup. En cause : un seul appel au serveur au démarrage qui, s'il échouait, désactivait tout en silence. L'appli réessaie maintenant plusieurs fois, garde en mémoire la configuration pour repartir même si le serveur est injoignable, et affiche un message clair si vraiment rien ne passe.", "🔒 Rappel rassurant : tes observations et tes cartes sont enregistrées sur ton téléphone — elles ne dépendent pas du serveur et ne risquent rien dans ces cas-là."] },
   { v: "1.70", date: "2026-08", items: ["🔧 Bouton de réparation : quand l'appli n'arrive plus à joindre le serveur (mur, carte de la bande, missions et boîte à idées qui tournent sans jamais charger), un bandeau rouge l'explique enfin et propose un bouton « Réparer et recharger » qui remet tout d'aplomb. Avant, les écrans tournaient dans le vide sans aucun message.", "📦 La bibliothèque réseau n'est plus conservée en mémoire par l'appli : c'était la cause probable de ces blocages sur la version installée sur téléphone."] },
   { v: "1.69", date: "2026-08", items: ["🐛 CORRECTIF MAJEUR : les écrans « Missions saisonnières » et « Boîte à idées » restaient noirs. Un bout de code destiné à la Ligue s'était glissé par erreur dans ces deux écrans, qui plantaient donc à l'ouverture. C'est réparé, et tous les écrans du menu ont été revérifiés un par un.", "📖 « Le coin des curieux » n'apparaît plus en double dans le menu."] },
   { v: "1.68", date: "2026-08", items: ["⏱️ CORRECTIF des écrans bloqués : quand le serveur tardait à répondre, la requête restait suspendue indéfiniment — la carte de la bande affichait « Chargement… » à vie, et les missions comme la boîte à idées restaient vides. Toutes les requêtes abandonnent désormais au bout de 15 secondes, avec un message clair et un bouton « Réessayer ».", "📉 La carte de la bande demande aussi beaucoup moins de données qu'avant, ce qui la rend nettement plus rapide à charger."] },
@@ -7642,13 +7673,20 @@ function SelecteurPoint({ point, onChange, onFermer }) {
 // Bandeau d'alerte quand la bibliothèque réseau n'a pas pu se charger : sans lui,
 // les écrans restent en « chargement » sans que rien n'explique pourquoi.
 function AlerteLibKo() {
-  const [ko, setKo] = useState(false);
+  const [ko, setKo] = useState(false); // false | "config" | "lib"
   const [enCours, setEnCours] = useState(false);
   useEffect(() => {
     const h = () => setKo(true);
     window.addEventListener("biodex-lib-ko", h);
     // Vérification directe au démarrage (la bibliothèque doit être là très vite)
-    const t = setTimeout(() => { try { if (MUR_ACTIF && !(window.supabase && window.supabase.createClient)) setKo(true); } catch {} }, 4000);
+    // Deux pannes possibles : la config serveur injoignable (tout le partage est mort),
+    // ou la bibliothèque réseau absente. Les deux donnent le même symptôme.
+    const t = setTimeout(() => {
+      try {
+        if (CONFIG_KO) setKo("config");
+        else if (MUR_ACTIF && !(window.supabase && window.supabase.createClient)) setKo("lib");
+      } catch {}
+    }, 5000);
     return () => { window.removeEventListener("biodex-lib-ko", h); clearTimeout(t); };
   }, []);
   if (!ko) return null;
@@ -7669,8 +7707,12 @@ function AlerteLibKo() {
     <div style={{ margin: "10px 12px", padding: "13px 15px", borderRadius: 12, background: "linear-gradient(#3A241C, #2A1A14)", border: "1px solid #B5654A" }}>
       <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: "#E8A88F", marginBottom: 5 }}>📡 Connexion au serveur impossible</div>
       <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papier, lineHeight: 1.55, marginBottom: 11 }}>
-        Le mur, la carte de la bande, les missions et la boîte à idées ne peuvent pas se charger.
-        C'est en général un fichier abîmé dans la mémoire de l'appli — une réparation suffit.
+        Le mur, la carte de la bande, les profils, les missions et la boîte à idées ne peuvent
+        pas se charger. Tes observations et tes cartes, elles, sont bien là — elles sont
+        enregistrées sur ton téléphone et ne risquent rien.
+        {ko === "config"
+          ? " L'appli n'arrive pas à joindre son serveur de configuration."
+          : " Un fichier est probablement abîmé dans la mémoire de l'appli."}
       </div>
       <Bouton variante="primaire" onClick={reparer} disabled={enCours} style={{ width: "100%" }}>
         {enCours ? "Réparation…" : "🔧 Réparer et recharger"}
