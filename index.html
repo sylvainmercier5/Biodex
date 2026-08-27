@@ -237,7 +237,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.72";
+const VERSION = "v1.73";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1514,6 +1514,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.73", date: "2026-08", items: ["🎠 L'accueil s'anime ! Le bandeau qui défile passe de 2 à 6 encarts : en plus de « À guetter » et « Le savais-tu ? », tu y trouveras 🎯 ta mission de saison la plus proche d'être bouclée (avec la barre de progression), 🧠 un rappel du quiz du jour tant que tu ne l'as pas fait, 📸 un souvenir de chasse pioché dans ta collection (« tu te souviens de cette Rosalie, il y a 4 mois ? »), et 🌐 la dernière trouvaille partagée par la bande.", "👆 Chaque encart se touche pour aller directement au bon endroit (missions, quiz, ta fiche souvenir, le mur), et la croix le masque pour la journée. Les encarts qui n'ont rien à dire ne s'affichent pas — pas de bandeau vide."] },
   { v: "1.72", date: "2026-08", items: ["🔔 CORRECTIF : la cloche ne te prévenait jamais quand quelqu'un réagissait à tes trouvailles ou les commentait — tu découvrais tout par hasard en repassant sur le mur. En cause : une différence invisible dans la façon dont le serveur écrit les numéros de publication, qui empêchait l'appli de reconnaître TES publications. C'est réparé : réactions ❤️ et commentaires 💬 reçus arrivent maintenant bien dans ta cloche.", "🩺 Bonus : si un problème du même genre se reproduit un jour, il sera désormais visible dans le journal d'erreurs au lieu d'échouer en silence."] },
   { v: "1.71", date: "2026-08", items: ["🛠️ CORRECTIF : tout ce qui est partagé (mur, carte de la bande, profils, missions, boîte à idées, ligue) pouvait se retrouver muet d'un coup. En cause : un seul appel au serveur au démarrage qui, s'il échouait, désactivait tout en silence. L'appli réessaie maintenant plusieurs fois, garde en mémoire la configuration pour repartir même si le serveur est injoignable, et affiche un message clair si vraiment rien ne passe.", "🔒 Rappel rassurant : tes observations et tes cartes sont enregistrées sur ton téléphone — elles ne dépendent pas du serveur et ne risquent rien dans ces cas-là."] },
   { v: "1.70", date: "2026-08", items: ["🔧 Bouton de réparation : quand l'appli n'arrive plus à joindre le serveur (mur, carte de la bande, missions et boîte à idées qui tournent sans jamais charger), un bandeau rouge l'explique enfin et propose un bouton « Réparer et recharger » qui remet tout d'aplomb. Avant, les écrans tournaient dans le vide sans aucun message.", "📦 La bibliothèque réseau n'est plus conservée en mémoire par l'appli : c'était la cause probable de ces blocages sur la version installée sur téléphone."] },
@@ -4810,6 +4811,141 @@ function CarrouselBandeaux({ children, delai = 15000 }) {
         ))}
       </div>
     </div>
+  );
+}
+
+// ---------- Encarts supplémentaires du carrousel d'accueil ----------
+// Même règle que « À guetter » : la croix masque pour la journée (mémorisé en local),
+// et chaque encart disparaît de lui-même quand il n'a rien à dire — la VISIBILITÉ est
+// décidée à l'endroit où le carrousel est construit (un enfant qui rendrait null
+// laisserait sinon une diapositive vide).
+
+function encartMasqueAujourdhui(cle) {
+  try { return localStorage.getItem("biodex_encart_" + cle + "_vu") === new Date().toDateString(); } catch { return false; }
+}
+
+// Socle commun : cadre, croix « masquer pour aujourd'hui », étiquette, clic d'action.
+function EncartBase({ cle, emoji, etiquette, couleurEtiquette, fond, bordure, onMasquer, onClick, children }) {
+  const fermer = (e) => {
+    e.stopPropagation();
+    try { localStorage.setItem("biodex_encart_" + cle + "_vu", new Date().toDateString()); } catch {}
+    if (onMasquer) onMasquer();
+  };
+  return (
+    <div onClick={onClick} style={{ position: "relative", marginBottom: 16, padding: "14px 16px", borderRadius: 12,
+      background: fond, border: `1px solid ${bordure}`, boxShadow: "0 2px 10px rgba(0,0,0,.25)", cursor: onClick ? "pointer" : "default" }}>
+      <button onClick={fermer} aria-label="Masquer pour aujourd'hui"
+        style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", color: C.papierSombre, fontSize: 17, cursor: "pointer", lineHeight: 1, padding: 2 }}>×</button>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
+        <span style={{ fontSize: 17 }}>{emoji}</span>
+        <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: couleurEtiquette }}>{etiquette}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// La mission de la saison la plus proche d'être bouclée (non remplie).
+function missionAMettreEnAvant(observations) {
+  const saison = saisonActuelle();
+  const restantes = missionsDe(saison.cle).filter((m) => !missionRemplie(m, observations, saison));
+  if (!restantes.length) return null;
+  const avecRatio = restantes.map((m) => {
+    const p = missionProgres(m, observations, saison);
+    return { m, p, ratio: p && p.cible > 0 ? p.actuel / p.cible : 0 };
+  });
+  avecRatio.sort((a, b) => b.ratio - a.ratio);
+  return { saison, mission: avecRatio[0].m, progres: avecRatio[0].p };
+}
+
+function EncartMission({ info, onOuvrir, onMasquer }) {
+  const { mission, progres } = info;
+  return (
+    <EncartBase cle="mission" emoji="🎯" etiquette="Mission en cours" couleurEtiquette="#E0B341"
+      fond="linear-gradient(135deg, #2E2612, #221B0E)" bordure="#8A6E2E" onMasquer={onMasquer} onClick={onOuvrir}>
+      <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, lineHeight: 1.35, marginBottom: 5, paddingRight: 14 }}>
+        {mission.emoji} {mission.titre}
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierClair, lineHeight: 1.55, marginBottom: progres ? 9 : 0 }}>
+        {mission.desc}{progres ? ` — tu en es à ${progres.actuel}/${progres.cible} !` : " — pas encore validée cette saison."}
+      </div>
+      {progres && (
+        <div style={{ height: 6, borderRadius: 3, background: "#1A1508", overflow: "hidden" }}>
+          <div style={{ width: `${Math.round((progres.actuel / progres.cible) * 100)}%`, height: "100%", background: "linear-gradient(90deg, #8A6E2E, #E0B341)", transition: "width .3s" }} />
+        </div>
+      )}
+    </EncartBase>
+  );
+}
+
+function quizDuJourDejaFait() {
+  try { return !!localStorage.getItem("biodex:quiz:" + jourActuel()); } catch { return false; }
+}
+
+function EncartQuiz({ onOuvrir, onMasquer }) {
+  return (
+    <EncartBase cle="quiz" emoji="🧠" etiquette="Quiz du jour" couleurEtiquette="#B9A8D9"
+      fond="linear-gradient(135deg, #241F30, #1A1724)" bordure="#4E4368" onMasquer={onMasquer} onClick={onOuvrir}>
+      <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, lineHeight: 1.35, marginBottom: 5, paddingRight: 14 }}>
+        Le quiz du jour t'attend !
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierClair, lineHeight: 1.55 }}>
+        5 questions, les mêmes pour toute la bande — et certaines tirées de ta propre collection. Touche pour jouer.
+      </div>
+    </EncartBase>
+  );
+}
+
+// Le souvenir du jour : une ancienne trouvaille remise en avant (déterministe par jour,
+// de préférence vieille d'au moins un mois pour l'effet madeleine).
+function souvenirDuJour(observations) {
+  const nommees = observations.filter((o) => o.date && ((o.nom || "").trim() || (o.nomSci || "").trim()));
+  const anciennes = nommees.filter((o) => Date.now() - new Date(o.date).getTime() > 30 * 864e5);
+  const liste = anciennes.length ? anciennes : nommees;
+  if (!liste.length) return null;
+  return liste[jourActuel() % liste.length];
+}
+
+function texteAnciennete(dateIso) {
+  const jours = Math.floor((Date.now() - new Date(dateIso).getTime()) / 864e5);
+  if (jours < 1) return "aujourd'hui";
+  if (jours < 31) return `il y a ${jours} jour${jours > 1 ? "s" : ""}`;
+  const mois = Math.floor(jours / 30.44);
+  if (mois < 12) return `il y a ${mois} mois`;
+  const ans = Math.floor(mois / 12);
+  return `il y a ${ans} an${ans > 1 ? "s" : ""}`;
+}
+
+function EncartSouvenir({ obs, onOuvrir, onMasquer }) {
+  return (
+    <EncartBase cle="souvenir" emoji="📸" etiquette="Souvenir de chasse" couleurEtiquette="#A8C9C4"
+      fond="linear-gradient(135deg, #18262A, #121C20)" bordure="#31504E" onMasquer={onMasquer} onClick={onOuvrir}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        {obs.photo && <PhotoBlob blob={obs.photo} alt={obs.nom || "souvenir"} style={{ width: 54, height: 54, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, lineHeight: 1.35, marginBottom: 3, paddingRight: 14 }}>
+            {(obs.nom || obs.nomSci || "Une trouvaille").trim()}
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 13, color: C.papierClair, lineHeight: 1.5 }}>
+            Épinglé {texteAnciennete(obs.date)}, le {new Date(obs.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}. Tu te souviens ?
+          </div>
+        </div>
+      </div>
+    </EncartBase>
+  );
+}
+
+function EncartBande({ post, onOuvrir, onMasquer }) {
+  return (
+    <EncartBase cle="bande" emoji="🌐" etiquette="Dernière trouvaille de la bande" couleurEtiquette="#A8C97E"
+      fond="linear-gradient(135deg, #1F2A18, #182012)" bordure="#3E5A2E" onMasquer={onMasquer} onClick={onOuvrir}>
+      <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, lineHeight: 1.35, marginBottom: 5, paddingRight: 14 }}>
+        {(post.espece || "Un spécimen").trim()}
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierClair, lineHeight: 1.55 }}>
+        Partagé par {post.auteur || "quelqu'un de la bande"} {texteAnciennete(post.created_at)}. Va voir sur le mur !
+      </div>
+    </EncartBase>
   );
 }
 
@@ -9046,7 +9182,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>💡 Boîte à idées</div>
         <p style={p}>
-          Le menu ☰ regroupe trois espaces de lecture complémentaires : le « 🔍 Guide d'observation » (quand et où chercher au fil des saisons, et comment réussir ses photos), le « 🏡 Jardin refuge » (les gestes concrets pour accueillir les insectes chez toi, et pourquoi ça compte) et « 📖 Le coin des curieux » (mythes et idées reçues, rôle des insectes dans la nature, records étonnants). Sur l'écran d'accueil, l'encart « 💡 Le savais-tu ? » puise d'abord dans ta propre collection — il te parle des espèces que tu as photographiées et de tes badges en cours. Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Réagis aux idées (👍 bonne idée, ❤️ coup de cœur, 🚀 vivement !) pour montrer lesquelles t'emballent — ça aide à voir ce qui suscite le plus d'intérêt. Une idée réalisée peut être cochée « ✅ Réalisée » (visible par tous). Les meilleures finiront peut-être dans une prochaine version ! En haut de cet écran, tu peux aussi laisser un avis global sur l'appli : une note en étoiles (1 à 5) et un commentaire facultatif. Tu choisis de le signer ou de le publier anonymement en cochant la case prévue. Ces avis aident à savoir ce qui plaît et ce qui manque. Après plusieurs identifications, un petit encart peut aussi te proposer spontanément de donner ton avis — tu peux répondre ou choisir « Plus tard ».
+          Le menu ☰ regroupe trois espaces de lecture complémentaires : le « 🔍 Guide d'observation » (quand et où chercher au fil des saisons, et comment réussir ses photos), le « 🏡 Jardin refuge » (les gestes concrets pour accueillir les insectes chez toi, et pourquoi ça compte) et « 📖 Le coin des curieux » (mythes et idées reçues, rôle des insectes dans la nature, records étonnants). Sur l'écran d'accueil, un bandeau qui défile regroupe jusqu'à six encarts : « 🔔 À guetter » (le conseil de chasse du moment), « 💡 Le savais-tu ? » (qui puise d'abord dans ta propre collection — espèces photographiées, badges en cours), « 🎯 Mission en cours » (ta mission de saison la plus proche d'être bouclée, avec sa progression), « 🧠 Quiz du jour » (tant que tu ne l'as pas fait), « 📸 Souvenir de chasse » (une ancienne trouvaille remise en avant) et « 🌐 Dernière trouvaille de la bande ». Glisse ou touche les petits points pour passer de l'un à l'autre, touche un encart pour aller directement au bon endroit, et la croix le masque pour la journée. Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Réagis aux idées (👍 bonne idée, ❤️ coup de cœur, 🚀 vivement !) pour montrer lesquelles t'emballent — ça aide à voir ce qui suscite le plus d'intérêt. Une idée réalisée peut être cochée « ✅ Réalisée » (visible par tous). Les meilleures finiront peut-être dans une prochaine version ! En haut de cet écran, tu peux aussi laisser un avis global sur l'appli : une note en étoiles (1 à 5) et un commentaire facultatif. Tu choisis de le signer ou de le publier anonymement en cochant la case prévue. Ces avis aident à savoir ce qui plaît et ce qui manque. Après plusieurs identifications, un petit encart peut aussi te proposer spontanément de donner ton avis — tu peux répondre ou choisir « Plus tard ».
         </p>
       </SectionPliable>
 
@@ -11530,6 +11666,25 @@ function BioDex() {
   // Confirmation avant de quitter l'appli (quand un retour surviendrait alors que tout est fermé).
   const [saisonMasquee, setSaisonMasquee] = useState(false);
   const [anecdoteMasquee, setAnecdoteMasquee] = useState(false);
+  // Encarts supplémentaires du carrousel : masqués pour la session (le repère
+  // « pour la journée » est écrit en local par la croix de chaque encart).
+  const [encartsMasques, setEncartsMasques] = useState({});
+  const masquerEncart = (cle) => setEncartsMasques((p) => ({ ...p, [cle]: true }));
+  // Ouverture directe du quiz depuis l'encart d'accueil (sous-vue de l'onglet Jeu).
+  const [quizDemande, setQuizDemande] = useState(false);
+  useEffect(() => { if (vue !== "cartes" && quizDemande) setQuizDemande(false); }, [vue]);
+  // Dernière trouvaille publiée par la bande, pour l'encart d'accueil. Une seule
+  // requête légère (1 ligne) ; on attend un peu que la config Supabase soit chargée.
+  const [dernierPostBande, setDernierPostBande] = useState(null);
+  useEffect(() => {
+    let actif = true;
+    (async () => {
+      for (let i = 0; i < 4 && !MUR_ACTIF; i++) await new Promise((r) => setTimeout(r, 1500));
+      if (!MUR_ACTIF || !actif) return;
+      try { const p = await chargerMurLeger(1); if (actif && p && p[0]) setDernierPostBande(p[0]); } catch {}
+    })();
+    return () => { actif = false; };
+  }, []);
   // Le quiz du jour est-il encore à faire ? (sert la pastille de l'onglet Jeu)
   const [quizDispo, setQuizDispo] = useState(false);
   useEffect(() => {
@@ -11980,7 +12135,7 @@ function BioDex() {
           prenom={prenom}
           onDefinirPrenom={definirPrenom}
           onDefier={(carte) => { setCarteDefiee(carte); setVue("defi"); }}
-          sousVueInitiale={retourCombat ? "combat" : "galerie"}
+          sousVueInitiale={quizDemande ? "quiz" : retourCombat ? "combat" : "galerie"}
         />
       )}
       {vue === "curieux" && <CoinDesCurieux onFermer={() => setVue("collection")} />}
@@ -12031,6 +12186,21 @@ function BioDex() {
           <CarrouselBandeaux>
             {!saisonMasquee && conseilSaison() && (() => { let vu = false; try { vu = localStorage.getItem("biodex_saison_vue") === new Date().toDateString(); } catch {} return vu ? null : <ReveilSaisonnier key="saison" onMasquer={() => setSaisonMasquee(true)} />; })()}
             {!anecdoteMasquee && <LeSaviasTu key="anecdote" onMasquer={() => setAnecdoteMasquee(true)} observations={observations} />}
+            {/* Nouveaux encarts : la visibilité se décide ICI (un enfant rendant null laisserait une diapo vide). */}
+            {!encartsMasques.mission && !encartMasqueAujourdhui("mission") && (() => {
+              const info = missionAMettreEnAvant(observations);
+              return info ? <EncartMission key="mission" info={info} onOuvrir={() => setVue("missions")} onMasquer={() => masquerEncart("mission")} /> : null;
+            })()}
+            {!encartsMasques.quiz && !encartMasqueAujourdhui("quiz") && !quizDuJourDejaFait() && (
+              <EncartQuiz key="quiz" onOuvrir={() => { setQuizDemande(true); setVue("cartes"); }} onMasquer={() => masquerEncart("quiz")} />
+            )}
+            {!encartsMasques.souvenir && !encartMasqueAujourdhui("souvenir") && (() => {
+              const obs = souvenirDuJour(observations);
+              return obs ? <EncartSouvenir key="souvenir" obs={obs} onOuvrir={() => { setSelectionId(obs.id); setVue("detail"); }} onMasquer={() => masquerEncart("souvenir")} /> : null;
+            })()}
+            {!encartsMasques.bande && !encartMasqueAujourdhui("bande") && dernierPostBande && (
+              <EncartBande key="bande" post={dernierPostBande} onOuvrir={() => setVue("mur")} onMasquer={() => masquerEncart("bande")} />
+            )}
           </CarrouselBandeaux>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
             <span style={{ fontFamily: serif, color: C.ambre, fontWeight: 700, fontSize: 26 }}>{triees.length}</span>
