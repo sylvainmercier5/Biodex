@@ -237,7 +237,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.71";
+const VERSION = "v1.72";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1514,6 +1514,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.72", date: "2026-08", items: ["🔔 CORRECTIF : la cloche ne te prévenait jamais quand quelqu'un réagissait à tes trouvailles ou les commentait — tu découvrais tout par hasard en repassant sur le mur. En cause : une différence invisible dans la façon dont le serveur écrit les numéros de publication, qui empêchait l'appli de reconnaître TES publications. C'est réparé : réactions ❤️ et commentaires 💬 reçus arrivent maintenant bien dans ta cloche.", "🩺 Bonus : si un problème du même genre se reproduit un jour, il sera désormais visible dans le journal d'erreurs au lieu d'échouer en silence."] },
   { v: "1.71", date: "2026-08", items: ["🛠️ CORRECTIF : tout ce qui est partagé (mur, carte de la bande, profils, missions, boîte à idées, ligue) pouvait se retrouver muet d'un coup. En cause : un seul appel au serveur au démarrage qui, s'il échouait, désactivait tout en silence. L'appli réessaie maintenant plusieurs fois, garde en mémoire la configuration pour repartir même si le serveur est injoignable, et affiche un message clair si vraiment rien ne passe.", "🔒 Rappel rassurant : tes observations et tes cartes sont enregistrées sur ton téléphone — elles ne dépendent pas du serveur et ne risquent rien dans ces cas-là."] },
   { v: "1.70", date: "2026-08", items: ["🔧 Bouton de réparation : quand l'appli n'arrive plus à joindre le serveur (mur, carte de la bande, missions et boîte à idées qui tournent sans jamais charger), un bandeau rouge l'explique enfin et propose un bouton « Réparer et recharger » qui remet tout d'aplomb. Avant, les écrans tournaient dans le vide sans aucun message.", "📦 La bibliothèque réseau n'est plus conservée en mémoire par l'appli : c'était la cause probable de ces blocages sur la version installée sur téléphone."] },
   { v: "1.69", date: "2026-08", items: ["🐛 CORRECTIF MAJEUR : les écrans « Missions saisonnières » et « Boîte à idées » restaient noirs. Un bout de code destiné à la Ligue s'était glissé par erreur dans ces deux écrans, qui plantaient donc à l'ouverture. C'est réparé, et tous les écrans du menu ont été revérifiés un par un.", "📖 « Le coin des curieux » n'apparaît plus en double dans le menu."] },
@@ -1772,9 +1773,16 @@ async function chargerReactionsRaw() {
   if (!sb) return [];
   try {
     const { data, error } = await avecDelai(sb.from("reactions_detail").select("post_id, type, auteur, created_at"), 15000, "chargerReactionsRaw");
-    if (error || !data) return [];
+    if (error || !data) {
+      // Avant, un échec ici (ex. colonne created_at absente) rendait les notifications
+      // de réaction muettes SANS RIEN DIRE. On trace l'erreur et on replie sur une
+      // lecture sans date : le comptage de secours de calculerNotifications prend le relais.
+      if (error) noterErreur("chargerReactionsRaw", error);
+      const repli = await avecDelai(sb.from("reactions_detail").select("post_id, type, auteur"), 15000, "chargerReactionsRawRepli");
+      return (repli && repli.data) || [];
+    }
     return data;
-  } catch { return []; }
+  } catch (e) { noterErreur("chargerReactionsRaw", e); return []; }
 }
 
 // ── Commentaires du mur ──
@@ -1872,8 +1880,12 @@ async function calculerNotifications(prenom) {
     if (prenom) {
       const moi = prenom.trim().toLowerCase();
       const mesPosts = posts.filter((p) => (p.auteur || "").trim().toLowerCase() === moi);
-      const mapEspece = {}; mesPosts.forEach((p) => { mapEspece[p.id] = p.espece || "ta trouvaille"; });
-      const idsMoi = new Set(mesPosts.map((p) => p.id));
+      // Les identifiants sont normalisés en TEXTE des deux côtés : posts.id est un bigint
+      // (nombre côté JS) mais post_id peut arriver en texte selon le schéma de la table
+      // liée — et Set.has() compare strictement. C'était la cause des notifications de
+      // réactions et de commentaires qui restaient muettes.
+      const mapEspece = {}; mesPosts.forEach((p) => { mapEspece[String(p.id)] = p.espece || "ta trouvaille"; });
+      const idsMoi = new Set(mesPosts.map((p) => String(p.id)));
       if (idsMoi.size > 0) {
         const raw = await chargerReactionsRaw();
         let vuDate = lire("biodex_reactions_vu_date");
@@ -1883,7 +1895,7 @@ async function calculerNotifications(prenom) {
         // de n'en montrer aucune. On trace le cas pour pouvoir le corriger.
         const datees = raw.filter((r) => r.created_at);
         if (raw.length > 0 && datees.length === 0) noterErreur("reactions/sans-date", "La table reactions_detail ne renvoie pas created_at : les notifications de réaction ne peuvent pas être datées.");
-        const mesReacts = raw.filter((r) => idsMoi.has(r.post_id) && (r.auteur || "").trim().toLowerCase() !== moi);
+        const mesReacts = raw.filter((r) => idsMoi.has(String(r.post_id)) && (r.auteur || "").trim().toLowerCase() !== moi);
         let nouvelles;
         if (datees.length === 0 && mesReacts.length > 0) {
           // Repli : on compare au total déjà vu, mémorisé localement.
@@ -1894,7 +1906,7 @@ async function calculerNotifications(prenom) {
         }
         reactionsRecues = nouvelles.length;
         reactionsTotal = mesReacts.length;
-        reactionsDetail = nouvelles.slice(0, 6).map((r) => ({ qui: r.auteur || "Quelqu'un", emoji: (REACTIONS.find((x) => x.type === r.type) || {}).emoji || "❤️", espece: mapEspece[r.post_id] || "ta trouvaille" }));
+        reactionsDetail = nouvelles.slice(0, 6).map((r) => ({ qui: r.auteur || "Quelqu'un", emoji: (REACTIONS.find((x) => x.type === r.type) || {}).emoji || "❤️", espece: mapEspece[String(r.post_id)] || "ta trouvaille" }));
       }
 
       // 2 bis) Commentaires reçus sur MES posts (nouveaux, écrits par quelqu'un d'autre)
@@ -1904,9 +1916,9 @@ async function calculerNotifications(prenom) {
         const tousComs = await chargerTousCommentaires().catch(() => []);
         let vuComDate = lire("biodex_commentaires_vu_date");
         if (!vuComDate) { vuComDate = new Date().toISOString(); ecrire("biodex_commentaires_vu_date", vuComDate); }
-        const nouvComs = tousComs.filter((c) => idsMoi.has(c.post_id) && (c.auteur || "").trim().toLowerCase() !== moi && c.created_at && new Date(c.created_at) > new Date(vuComDate));
+        const nouvComs = tousComs.filter((c) => idsMoi.has(String(c.post_id)) && (c.auteur || "").trim().toLowerCase() !== moi && c.created_at && new Date(c.created_at) > new Date(vuComDate));
         commentairesRecus = nouvComs.length;
-        commentairesDetail = nouvComs.slice(0, 6).map((c) => ({ qui: c.auteur || "Quelqu'un", espece: mapEspece[c.post_id] || "ta trouvaille", extrait: (c.texte || "").slice(0, 60) }));
+        commentairesDetail = nouvComs.slice(0, 6).map((c) => ({ qui: c.auteur || "Quelqu'un", espece: mapEspece[String(c.post_id)] || "ta trouvaille", extrait: (c.texte || "").slice(0, 60) }));
       }
       } catch (e) { noterErreur("calculerNotifications/commentaires", e); }
 
@@ -8998,7 +9010,7 @@ function Aide({ onFermer, onImportTermine }) {
       <SectionPliable titre="🌐 La communauté">
         <div style={t}>🔔 Centre de notifications</div>
         <p style={p}>
-          La cloche 🔔 en haut regroupe tout ce qui s'est passé depuis ta dernière visite, avec le détail : quelles nouvelles trouvailles (espèce + auteur) sur le mur, qui a réagi à tes photos et avec quelle réaction, quelles nouvelles idées et de qui, et un « Quoi de neuf » qui liste les nouveautés de l'appli. Une pastille rouge indique le nombre d'éléments non vus. Si tu as installé BioDex sur ton écran d'accueil, une pastille apparaît aussi sur l'icône de l'appli (selon ton téléphone). Note : cette pastille se met à jour quand l'appli tourne, pas en temps réel quand elle est fermée (ce ne sont pas des notifications push).
+          La cloche 🔔 en haut regroupe tout ce qui s'est passé depuis ta dernière visite, avec le détail : quelles nouvelles trouvailles (espèce + auteur) sur le mur, qui a réagi à tes photos et avec quelle réaction, qui a commenté tes trouvailles (avec un extrait du commentaire), qui a défié tes cartes de ligue pendant ton absence, quelles nouvelles idées et de qui, et un « Quoi de neuf » qui liste les nouveautés de l'appli. Une pastille rouge indique le nombre d'éléments non vus. Si tu as installé BioDex sur ton écran d'accueil, une pastille apparaît aussi sur l'icône de l'appli (selon ton téléphone). Note : cette pastille se met à jour quand l'appli tourne, pas en temps réel quand elle est fermée (ce ne sont pas des notifications push).
         </p>
         <div style={t}>👤 Connexion (facultative)</div>
         <p style={p}>
