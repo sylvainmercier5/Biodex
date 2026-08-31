@@ -237,7 +237,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.73";
+const VERSION = "v1.74";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1514,6 +1514,7 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.74", date: "2026-08", items: ["🧹 CORRECTIF : deux caractères parasites « )} » s'affichaient depuis des mois en plein milieu de l'écran de ta collection, juste au-dessus des vignettes. C'était un bout de code oublié lors d'une ancienne modification. Envolé.", "🌲 Le biotope, obligatoire pour épingler une trouvaille, était mal signalé : le message renvoyait vers la section « Détails du terrain », alors que les boutons sont juste au-dessus. Maintenant, s'il manque, c'est le bloc Biotope lui-même qui s'encadre en doré.", "👋 Nouveau venu dans la bande ? Un encart « Tes premiers pas » s'affiche en tête d'accueil tant que ta collection est vide : il montre le bouton doré ＋ et propose le quiz du jour, jouable même sans la moindre photo."] },
   { v: "1.73", date: "2026-08", items: ["🎠 L'accueil s'anime ! Le bandeau qui défile passe de 2 à 6 encarts : en plus de « À guetter » et « Le savais-tu ? », tu y trouveras 🎯 ta mission de saison la plus proche d'être bouclée (avec la barre de progression), 🧠 un rappel du quiz du jour tant que tu ne l'as pas fait, 📸 un souvenir de chasse pioché dans ta collection (« tu te souviens de cette Rosalie, il y a 4 mois ? »), et 🌐 la dernière trouvaille partagée par la bande.", "👆 Chaque encart se touche pour aller directement au bon endroit (missions, quiz, ta fiche souvenir, le mur), et la croix le masque pour la journée. Les encarts qui n'ont rien à dire ne s'affichent pas — pas de bandeau vide."] },
   { v: "1.72", date: "2026-08", items: ["🔔 CORRECTIF : la cloche ne te prévenait jamais quand quelqu'un réagissait à tes trouvailles ou les commentait — tu découvrais tout par hasard en repassant sur le mur. En cause : une différence invisible dans la façon dont le serveur écrit les numéros de publication, qui empêchait l'appli de reconnaître TES publications. C'est réparé : réactions ❤️ et commentaires 💬 reçus arrivent maintenant bien dans ta cloche.", "🩺 Bonus : si un problème du même genre se reproduit un jour, il sera désormais visible dans le journal d'erreurs au lieu d'échouer en silence."] },
   { v: "1.71", date: "2026-08", items: ["🛠️ CORRECTIF : tout ce qui est partagé (mur, carte de la bande, profils, missions, boîte à idées, ligue) pouvait se retrouver muet d'un coup. En cause : un seul appel au serveur au démarrage qui, s'il échouait, désactivait tout en silence. L'appli réessaie maintenant plusieurs fois, garde en mémoire la configuration pour repartir même si le serveur est injoignable, et affiche un message clair si vraiment rien ne passe.", "🔒 Rappel rassurant : tes observations et tes cartes sont enregistrées sur ton téléphone — elles ne dépendent pas du serveur et ne risquent rien dans ces cas-là."] },
@@ -4949,6 +4950,32 @@ function EncartBande({ post, onOuvrir, onMasquer }) {
   );
 }
 
+// Encart d'amorçage : tant que la collection est vide, le jour 1 n'a rien à montrer
+// (Jeu, Carte et Stats sont vides par construction). Celui-ci donne deux choses à faire.
+function EncartPremiersPas({ onQuiz, onMasquer }) {
+  const quizFait = quizDuJourDejaFait();
+  return (
+    <EncartBase cle="premiers-pas" emoji="👋" etiquette="Tes premiers pas" couleurEtiquette="#E0B341"
+      fond="linear-gradient(135deg, #2A2412, #1E1A0D)" bordure="#8A6E2E" onMasquer={onMasquer}>
+      <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, lineHeight: 1.35, marginBottom: 6, paddingRight: 14 }}>
+        Bienvenue ! Deux façons de commencer
+      </div>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierClair, lineHeight: 1.6 }}>
+        <div style={{ marginBottom: 5 }}>
+          <b style={{ color: C.ambreClair }}>1.</b> Touche le bouton doré <b style={{ color: C.ambre }}>＋</b> en bas à droite et photographie un insecte : l'IA te dira qui c'est.
+        </div>
+        <div>
+          <b style={{ color: C.ambreClair }}>2.</b> Pas de bestiole sous la main ?{" "}
+          {quizFait
+            ? <span>Tu as déjà fait le quiz du jour — reviens demain !</span>
+            : <span onClick={(e) => { e.stopPropagation(); onQuiz(); }} style={{ color: C.ambre, fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}>Fais le quiz du jour</span>}
+          , il est jouable sans aucune photo.
+        </div>
+      </div>
+    </EncartBase>
+  );
+}
+
 function ReveilSaisonnier({ onMasquer }) {
   const conseil = conseilSaison();
   const [ferme, setFerme] = useState(() => {
@@ -6496,7 +6523,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
     // Garde-fou souple contre les fautes de frappe sur l'année (2016 au lieu de 2026…)
     if (d.getFullYear() < 1990) return "Cette date semble erronée (avant 1990). Vérifie l'année.";
     // 2) Biotope : une seule touche, et c'est la base des corrélations
-    if (!biotope) return "Choisis un biotope (dans « 🔎 Détails du terrain ») — sans lui, tes statistiques par milieu sont faussées.";
+    if (!biotope) return "Choisis un biotope juste au-dessus des boutons — sans lui, tes statistiques par milieu sont faussées.";
     // 3) Espèce : soit un nom, soit une demande d'aide ASSUMÉE. Ce qu'on refuse, c'est
     // l'oubli silencieux — pas l'ignorance, qui fait partie du jeu naturaliste.
     if (!nom.trim() && !nomSci.trim() && !(aideForcee || aideDemandee)) return "__ESPECE__";
@@ -7021,9 +7048,11 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
         );
       })()}
 
-      {/* Biotope */}
-      <div style={{ marginBottom: 14 }}>
-        <label style={libelle}>Biotope</label>
+      {/* Biotope — champ OBLIGATOIRE, gardé au premier niveau (jamais dans une section
+          repliée). Quand le garde-fou a mordu, c'est CE bloc qui se signale : avant, le
+          message renvoyait vers « Détails du terrain », où le biotope ne se trouve pas. */}
+      <div style={{ marginBottom: 14, ...(forcerOuvert && !biotope ? { border: "1px solid #B8862E", borderRadius: 10, padding: "10px 12px", background: "#241E10" } : null) }}>
+        <label style={libelle}>Biotope {forcerOuvert && !biotope && <span style={{ color: "#E4C878", fontWeight: 700 }}>· à choisir</span>}</label>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {BIOTOPES.map((b) => (
             <button key={b.id} onClick={() => setBiotope(b.id)}
@@ -7045,7 +7074,6 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
       <SectionPliable
         titre="🔎 Détails du terrain"
         ouvertParDefaut={forcerOuvert}
-        alerte={!biotope}
         resume={[
           moment && (MOMENTS.find((m) => m.id === moment) || {}).label,
           taille && (TAILLES.find((t) => t.id === taille) || {}).label,
@@ -9182,7 +9210,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>💡 Boîte à idées</div>
         <p style={p}>
-          Le menu ☰ regroupe trois espaces de lecture complémentaires : le « 🔍 Guide d'observation » (quand et où chercher au fil des saisons, et comment réussir ses photos), le « 🏡 Jardin refuge » (les gestes concrets pour accueillir les insectes chez toi, et pourquoi ça compte) et « 📖 Le coin des curieux » (mythes et idées reçues, rôle des insectes dans la nature, records étonnants). Sur l'écran d'accueil, un bandeau qui défile regroupe jusqu'à six encarts : « 🔔 À guetter » (le conseil de chasse du moment), « 💡 Le savais-tu ? » (qui puise d'abord dans ta propre collection — espèces photographiées, badges en cours), « 🎯 Mission en cours » (ta mission de saison la plus proche d'être bouclée, avec sa progression), « 🧠 Quiz du jour » (tant que tu ne l'as pas fait), « 📸 Souvenir de chasse » (une ancienne trouvaille remise en avant) et « 🌐 Dernière trouvaille de la bande ». Glisse ou touche les petits points pour passer de l'un à l'autre, touche un encart pour aller directement au bon endroit, et la croix le masque pour la journée. Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Réagis aux idées (👍 bonne idée, ❤️ coup de cœur, 🚀 vivement !) pour montrer lesquelles t'emballent — ça aide à voir ce qui suscite le plus d'intérêt. Une idée réalisée peut être cochée « ✅ Réalisée » (visible par tous). Les meilleures finiront peut-être dans une prochaine version ! En haut de cet écran, tu peux aussi laisser un avis global sur l'appli : une note en étoiles (1 à 5) et un commentaire facultatif. Tu choisis de le signer ou de le publier anonymement en cochant la case prévue. Ces avis aident à savoir ce qui plaît et ce qui manque. Après plusieurs identifications, un petit encart peut aussi te proposer spontanément de donner ton avis — tu peux répondre ou choisir « Plus tard ».
+          Le menu ☰ regroupe trois espaces de lecture complémentaires : le « 🔍 Guide d'observation » (quand et où chercher au fil des saisons, et comment réussir ses photos), le « 🏡 Jardin refuge » (les gestes concrets pour accueillir les insectes chez toi, et pourquoi ça compte) et « 📖 Le coin des curieux » (mythes et idées reçues, rôle des insectes dans la nature, records étonnants). Sur l'écran d'accueil, un bandeau qui défile regroupe jusqu'à six encarts : « 👋 Tes premiers pas » (uniquement tant que ta collection est vide, pour savoir par où commencer), « 🔔 À guetter » (le conseil de chasse du moment), « 💡 Le savais-tu ? » (qui puise d'abord dans ta propre collection — espèces photographiées, badges en cours), « 🎯 Mission en cours » (ta mission de saison la plus proche d'être bouclée, avec sa progression), « 🧠 Quiz du jour » (tant que tu ne l'as pas fait), « 📸 Souvenir de chasse » (une ancienne trouvaille remise en avant) et « 🌐 Dernière trouvaille de la bande ». Glisse ou touche les petits points pour passer de l'un à l'autre, touche un encart pour aller directement au bon endroit, et la croix le masque pour la journée. Le bouton 💡 en haut ouvre la boîte à idées : un espace partagé où toute la bande peut proposer des améliorations, signaler un bug ou suggérer une fonctionnalité. Chaque idée est signée du prénom. Réagis aux idées (👍 bonne idée, ❤️ coup de cœur, 🚀 vivement !) pour montrer lesquelles t'emballent — ça aide à voir ce qui suscite le plus d'intérêt. Une idée réalisée peut être cochée « ✅ Réalisée » (visible par tous). Les meilleures finiront peut-être dans une prochaine version ! En haut de cet écran, tu peux aussi laisser un avis global sur l'appli : une note en étoiles (1 à 5) et un commentaire facultatif. Tu choisis de le signer ou de le publier anonymement en cochant la case prévue. Ces avis aident à savoir ce qui plaît et ce qui manque. Après plusieurs identifications, un petit encart peut aussi te proposer spontanément de donner ton avis — tu peux répondre ou choisir « Plus tard ».
         </p>
       </SectionPliable>
 
@@ -12184,6 +12212,10 @@ function BioDex() {
           {/* Encarts d'ambiance regroupés en carrousel : sans ça, ils repoussaient
               la collection hors de l'écran (408 px de bandeaux mesurés). */}
           <CarrouselBandeaux>
+            {/* En tête tant que rien n'est épinglé : c'est la seule diapo qui dit quoi faire. */}
+            {observations.length === 0 && !encartsMasques.premiersPas && !encartMasqueAujourdhui("premiers-pas") && (
+              <EncartPremiersPas key="premiers-pas" onQuiz={() => { setQuizDemande(true); setVue("cartes"); }} onMasquer={() => masquerEncart("premiersPas")} />
+            )}
             {!saisonMasquee && conseilSaison() && (() => { let vu = false; try { vu = localStorage.getItem("biodex_saison_vue") === new Date().toDateString(); } catch {} return vu ? null : <ReveilSaisonnier key="saison" onMasquer={() => setSaisonMasquee(true)} />; })()}
             {!anecdoteMasquee && <LeSaviasTu key="anecdote" onMasquer={() => setAnecdoteMasquee(true)} observations={observations} />}
             {/* Nouveaux encarts : la visibilité se décide ICI (un enfant rendant null laisserait une diapo vide). */}
@@ -12266,8 +12298,6 @@ function BioDex() {
                 🌟 Espèces rares {nbRares}
               </button>
             </div>
-          )}
-
           )}
 
           {triees.length > 1 && (
