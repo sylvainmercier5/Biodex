@@ -237,7 +237,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.77";
+const VERSION = "v1.78";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1710,6 +1710,9 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.78", date: "2026-09", items: [
+    "📖 Le bandeau d'accueil a maintenant un encart « Le coin des curieux » : chaque jour, un extrait d'article — un mythe, une histoire, une culture, un record — avec le début du texte et « Lire l'article → » qui t'emmène directement dessus. « Une autre » pour feuilleter. Vingt-cinq aperçus tournent pour l'instant, ils s'ajoutent à chaque article nouveau.",
+  ] },
   { v: "1.77", date: "2026-09", items: [
     "🟢🟡🔴🟠 « Ça pique ? » : chaque identification dit maintenant si la bestiole se manipule sans risque, si elle peut piquer ou pincer quand on la saisit, si sa piqûre est douloureuse, ou si elle est urticante (à ne pas toucher, même morte). Tu le vois sur la proposition de l'IA, sur la fiche de chaque spécimen, et sur le mur. Deux garde-fous : les espèces à risque connues (guêpes, frelons, processionnaires, scolopendres…) ne peuvent jamais s'afficher en vert quoi que dise l'IA, et sous 60 % de confiance on ne dit jamais « inoffensif » — on prévient. Tes anciennes fiches ont l'indicateur quand le nom suffit à trancher ; pour les autres, relance l'identification.",
     "📖 Le coin des curieux s'étoffe de deux articles : « Les insectes dans les cultures » (le scarabée qui poussait le soleil, la cigale de Platon à la Provence, le lucane porteur de foudre, les grillons en cage de la Chine impériale, les abeilles d'or de Napoléon, les monarques du Día de Muertos) et « Des insectes qui ont fait l'Histoire » (la soie, le rouge cochenille, manger des insectes — et le chiffre de la FAO qui était faux —, et Fabre, l'homme qui regardait). Chaque fait a été vérifié.",
@@ -5502,8 +5505,53 @@ function useMemoAnecdotes(observations, profils, posts) {
 
 
 // Rubrique de lecture : liste d'articles, puis lecture d'un article.
-function CoinDesCurieux({ onFermer }) {
-  const [ouvert, setOuvert] = useState(null);
+// v1.78 — Aperçus pour l'accueil : chaque paragraphe d'article devient un teaser
+// (son titre en gras + le début du texte), avec un lien vers l'article entier.
+let _teasersCache = null;
+function teasersArticles() {
+  if (_teasersCache) return _teasersCache;
+  const out = [];
+  ARTICLES.forEach((a) => a.paras.forEach((para, k) => {
+    const m = para.match(/^\*\*([^*]+)\*\*\s*(.*)$/s);
+    if (!m) return;
+    const titre = m[1].replace(/\s*[.:]\s*$/, "").trim(); // on garde les « ? » et « ! »
+    // Deux phrases max, ~170 caractères, coupé sur une fin de phrase.
+    const brut = m[2].replace(/\*/g, "").trim();
+    const phrases = (brut.match(/[^.!?…]+[.!?…]+(?:\s|$)|[^.!?…]+$/g) || [brut]).map((x) => x.trim()).filter(Boolean); // sans lookbehind (vieux WebView)
+    let extrait = "";
+    for (const ph of phrases) { if (extrait && (extrait + " " + ph).length > 170) break; extrait = extrait ? extrait + " " + ph : ph; }
+    if (extrait.length > 210) extrait = extrait.slice(0, 200).replace(/\s+\S*$/, "") + "…";
+    out.push({ articleId: a.id, emoji: a.emoji, rubrique: a.titre, titre, extrait, index: k });
+  }));
+  _teasersCache = out;
+  return out;
+}
+function EncartCurieux({ onOuvrir, onMasquer }) {
+  const liste = teasersArticles();
+  // Un aperçu différent chaque jour, et « Une autre » pour feuilleter.
+  const jour = Math.floor(Date.now() / 864e5);
+  const [i, setI] = useState(() => (liste.length ? jour % liste.length : 0));
+  if (!liste.length) return null;
+  const t = liste[i % liste.length];
+  return (
+    <EncartBase cle="curieux" emoji={t.emoji} etiquette="Le coin des curieux" couleurEtiquette="#D9B46A"
+      fond="linear-gradient(135deg, #2A2418, #1E1A10)" bordure="#5A4A22" onMasquer={onMasquer} onClick={() => onOuvrir(t.articleId)}>
+      <div style={{ fontFamily: serif, fontSize: 16.5, fontWeight: 700, color: C.papier, lineHeight: 1.25, marginBottom: 2 }}>{t.titre}</div>
+      <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: C.lichen, marginBottom: 6 }}>{t.rubrique}</div>
+      <div style={{ fontFamily: sans, fontSize: 13.5, color: C.papierClair, lineHeight: 1.5, marginBottom: 10 }}>{t.extrait}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 800, color: C.ambreClair }}>Lire l'article →</span>
+        <button onClick={(e) => { e.stopPropagation(); setI((v) => (v + 1) % liste.length); }} className="bd-press"
+          style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.papierSombre, background: "transparent", border: `1px solid ${C.bordure}`, borderRadius: 16, padding: "4px 11px", cursor: "pointer" }}>
+          🔀 Une autre
+        </button>
+      </div>
+    </EncartBase>
+  );
+}
+
+function CoinDesCurieux({ onFermer, articleInitial }) {
+  const [ouvert, setOuvert] = useState(articleInitial || null);
   // Rend le gras **texte** sans dépendance externe.
   const enrichir = (txt) => txt.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g).map((bout, i) =>
     bout.startsWith("**") && bout.endsWith("**")
@@ -12060,6 +12108,7 @@ function BioDex() {
   // Encarts supplémentaires du carrousel : masqués pour la session (le repère
   // « pour la journée » est écrit en local par la croix de chaque encart).
   const [encartsMasques, setEncartsMasques] = useState({});
+  const [curieuxArticle, setCurieuxArticle] = useState(null); // v1.78 — article ouvert depuis l'accueil
   const masquerEncart = (cle) => setEncartsMasques((p) => ({ ...p, [cle]: true }));
   // Ouverture directe du quiz depuis l'encart d'accueil (sous-vue de l'onglet Jeu).
   const [quizDemande, setQuizDemande] = useState(false);
@@ -12552,7 +12601,7 @@ function BioDex() {
           sousVueInitiale={quizDemande ? "quiz" : retourCombat ? "combat" : "galerie"}
         />
       )}
-      {vue === "curieux" && <CoinDesCurieux onFermer={() => setVue("collection")} />}
+      {vue === "curieux" && <CoinDesCurieux articleInitial={curieuxArticle} onFermer={() => { setCurieuxArticle(null); setVue("collection"); }} />}
       {vue === "stats" && <Stats observations={triees} raretes={raretesGlobal} onFermer={() => setVue("collection")} />}
       {vue === "atrier" && (
         <CaptureRapide aTrier={aTrier} onAjout={ajouterATrier}
@@ -12604,6 +12653,10 @@ function BioDex() {
             )}
             {!saisonMasquee && conseilSaison() && (() => { let vu = false; try { vu = localStorage.getItem("biodex_saison_vue") === new Date().toDateString(); } catch {} return vu ? null : <ReveilSaisonnier key="saison" onMasquer={() => setSaisonMasquee(true)} />; })()}
             {!anecdoteMasquee && <LeSaviasTu key="anecdote" onMasquer={() => setAnecdoteMasquee(true)} observations={observations} />}
+            {/* v1.78 — Un aperçu du coin des curieux (mythes, cultures, histoire…) avec le lien vers l'article entier. */}
+            {!encartsMasques.curieux && !encartMasqueAujourdhui("curieux") && (
+              <EncartCurieux key="curieux" onOuvrir={(id) => { setCurieuxArticle(id); setVue("curieux"); }} onMasquer={() => masquerEncart("curieux")} />
+            )}
             {/* Nouveaux encarts : la visibilité se décide ICI (un enfant rendant null laisserait une diapo vide). */}
             {!encartsMasques.mission && !encartMasqueAujourdhui("mission") && (() => {
               const info = missionAMettreEnAvant(observations);
