@@ -237,7 +237,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.76";
+const VERSION = "v1.77";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -868,6 +868,90 @@ function infoConfiance(confiance, niveau) {
   const base = table[cle] || { label: "Certitude inconnue", court: "—", couleur: "#8A8065", barres: 0, emoji: "·" };
   const suffixeNiveau = niveau ? ` · au niveau ${niveau}` : "";
   return { ...base, label: base.label + suffixeNiveau };
+}
+
+// ═══════ v1.77 — « Ça pique ? » : indicateur de contact ═══════
+// Quatre niveaux, parce que « pique / pique pas » est trop pauvre : une chenille
+// processionnaire ne pique pas, elle est urticante — et c'est bien plus dangereux
+// qu'une abeille pour un enfant ou un chien.
+const NIVEAUX_CONTACT = {
+  inoffensif: { rang: 0, emoji: "🟢", label: "Inoffensif",  court: "Sans risque", couleur: "#7FA658", fond: "rgba(127,166,88,.14)",  conseil: "Tu peux le laisser marcher sur ta main." },
+  defensif:   { rang: 1, emoji: "🟡", label: "Défensif",    court: "Peut piquer", couleur: "#D9A441", fond: "rgba(217,164,65,.14)",  conseil: "Il peut piquer, mordre ou pincer si on le manipule. Observe-le sans le saisir." },
+  douloureux: { rang: 2, emoji: "🔴", label: "Douloureux",  court: "Ne pas manipuler", couleur: "#D8613E", fond: "rgba(216,97,62,.16)", conseil: "Piqûre ou morsure douloureuse. Ne le prends pas dans la main." },
+  urticant:   { rang: 3, emoji: "🟠", label: "Urticant",    court: "Ne pas toucher", couleur: "#E58A3A", fond: "rgba(229,138,58,.16)", conseil: "Poils ou sécrétions irritants : ne le touche pas, même mort, et tiens les enfants et les chiens à distance." },
+};
+// L'IA propose, cette liste IMPOSE un niveau minimum. Si elle prend un frelon pour un
+// syrphe, le mot « frelon » dans le nom ne pourra jamais s'afficher en vert. Mots en
+// minuscules sans accents ; on cherche dans le nom vernaculaire ET le nom scientifique.
+const RISQUES_CONTACT = [
+  { niveau: "urticant",   mots: ["processionnaire", "thaumetopoea", "cul-brun", "cul brun", "euproctis", "lymantria", "chenille urticante", "hyponomeute"] },
+  { niveau: "douloureux", mots: ["frelon", "vespa ", "guepe", "vespula", "polistes", "dolichovespula", "poliste",
+                                  "scolopendre", "scolopendra", "taon", "tabanus", "chrysops", "haematopota",
+                                  "veuve noire", "malmignatte", "latrodectus", "segestrie", "segestria", "cheiracanthium", "chiracanthe",
+                                  "pompile", "pompilidae", "reduve", "reduvius", "notonecte", "notonecta", "nepe ", "nepa cinerea", "ranatre"] },
+  { niveau: "defensif",   mots: ["abeille", "apis ", "bourdon", "bombus", "osmie", "osmia", "halicte", "andrene", "megachile", "xylocope", "xylocopa",
+                                  "fourmi", "formica", "myrmica", "lasius", "carabe", "carabus", "staphylin", "ocypus", "cicindele", "cicindela",
+                                  "dytique", "dytiscus", "punaise", "araignee", "araneus", "epeire", "tegenaire", "eratigena", "argiope", "lycose", "lycosa", "pisaure", "saltique",
+                                  "mante", "mantis", "perce-oreille", "forficula", "sauterelle", "tettigonia", "dectique", "libellule", "aeshna", "anax ", "scorpion", "buthus", "euscorpius"] },
+];
+const normaliserContact = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+// Faux amis : des espèces inoffensives qui portent le nom d'une espèce dangereuse
+// (l'argiope frelon est une araignée, la sésie apiforme un papillon, les syrphes des
+// mouches déguisées en guêpes). Pour elles, la liste ci-dessus ne s'applique pas.
+const EXCEPTIONS_CONTACT = [
+  { mots: ["argiope frelon", "argiope bruennichi", "argiope fasciee"], niveau: "defensif" },
+  { mots: ["sesie", "sesia", "synanthedon", "syrphe", "syrphus", "episyrphus", "volucelle", "volucella", "eristale", "eristalis", "chrysotoxum", "temnostoma"], niveau: "inoffensif" },
+];
+function niveauImposeParNom(nom, nomSci) {
+  const t = " " + normaliserContact(nom) + " " + normaliserContact(nomSci) + " ";
+  for (const x of EXCEPTIONS_CONTACT) if (x.mots.some((m) => t.includes(m))) return x.niveau;
+  let meilleur = null;
+  for (const r of RISQUES_CONTACT) {
+    if (r.mots.some((m) => t.includes(m))) {
+      if (!meilleur || NIVEAUX_CONTACT[r.niveau].rang > NIVEAUX_CONTACT[meilleur].rang) meilleur = r.niveau;
+    }
+  }
+  return meilleur;
+}
+// Renvoie { id, info, impose, incertain } ou null si on ne sait rien.
+// Règle : sous 60 % de confiance, on ne dit jamais « inoffensif » — on prévient.
+function evaluerContact({ nom, nomSci, contact, confiance }) {
+  const ia = NIVEAUX_CONTACT[normaliserContact(contact)] ? normaliserContact(contact) : null;
+  const impose = niveauImposeParNom(nom, nomSci);
+  let id = ia;
+  if (impose && (!id || NIVEAUX_CONTACT[impose].rang > NIVEAUX_CONTACT[id].rang)) id = impose;
+  if (!id) return null;
+  const pct = pourcentConfiance(confiance);
+  const incertain = id === "inoffensif" && pct !== null && pct < 60;
+  return { id, info: NIVEAUX_CONTACT[id], impose: !!impose, incertain };
+}
+// Badge compact (dans une ligne) ou encart (avec le conseil).
+function BadgeContact({ nom, nomSci, contact, contactNote, confiance, compact, style }) {
+  const e = evaluerContact({ nom, nomSci, contact, confiance });
+  if (!e) return null;
+  const info = e.incertain
+    ? { ...NIVEAUX_CONTACT.defensif, label: "À confirmer", court: "Peut piquer ?", conseil: "L'identification est incertaine : dans le doute, considère qu'il peut piquer et ne le manipule pas." }
+    : e.info;
+  if (compact) {
+    return (
+      <span title={info.conseil} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: sans, fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 10, border: `1px solid ${info.couleur}`, color: info.couleur, background: info.fond, whiteSpace: "nowrap", ...(style || {}) }}>
+        {info.emoji} {info.court}
+      </span>
+    );
+  }
+  return (
+    <div style={{ display: "flex", gap: 9, alignItems: "flex-start", padding: "10px 12px", borderRadius: 9, background: info.fond, border: `1px solid ${info.couleur}`, ...(style || {}) }}>
+      <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.2 }}>{info.emoji}</span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: info.couleur, marginBottom: 2 }}>
+          Ça pique ? · {info.label}
+        </div>
+        <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.45 }}>
+          {(!e.incertain && contactNote && String(contactNote).trim().length > 3) ? String(contactNote).trim() : info.conseil}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function JaugeConfiance({ confiance, niveau, compact }) {
@@ -1626,6 +1710,10 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.77", date: "2026-09", items: [
+    "🟢🟡🔴🟠 « Ça pique ? » : chaque identification dit maintenant si la bestiole se manipule sans risque, si elle peut piquer ou pincer quand on la saisit, si sa piqûre est douloureuse, ou si elle est urticante (à ne pas toucher, même morte). Tu le vois sur la proposition de l'IA, sur la fiche de chaque spécimen, et sur le mur. Deux garde-fous : les espèces à risque connues (guêpes, frelons, processionnaires, scolopendres…) ne peuvent jamais s'afficher en vert quoi que dise l'IA, et sous 60 % de confiance on ne dit jamais « inoffensif » — on prévient. Tes anciennes fiches ont l'indicateur quand le nom suffit à trancher ; pour les autres, relance l'identification.",
+    "📖 Le coin des curieux s'étoffe de deux articles : « Les insectes dans les cultures » (le scarabée qui poussait le soleil, la cigale de Platon à la Provence, le lucane porteur de foudre, les grillons en cage de la Chine impériale, les abeilles d'or de Napoléon, les monarques du Día de Muertos) et « Des insectes qui ont fait l'Histoire » (la soie, le rouge cochenille, manger des insectes — et le chiffre de la FAO qui était faux —, et Fabre, l'homme qui regardait). Chaque fait a été vérifié.",
+  ] },
   { v: "1.76", date: "2026-09", items: [
     "🏟️ L'arène a enfin de vrais adversaires ! Avant, elle piochait dans TA propre collection : avec cinq cartes, tu te battais contre toi-même (même photo, même nom). Dix-sept espèces européennes t'attendent maintenant — grillon, épeire, dytique, sphinx tête-de-mort, mante, frelon, lucane… — de plus en plus coriaces au fil des manches.",
     "📊 CORRECTIF : le classement de la ligue était trié par nombre de victoires mais affichait un pourcentage de réussite — on pouvait lire 64 % classé derrière 55 %. Il est maintenant classé au taux de réussite, avec au moins 3 défis joués pour y figurer (en dessous, tu es « en qualification »). Ton record d'arène y apparaît aussi.",
@@ -5340,6 +5428,20 @@ const ARTICLES = [
     "**La base des chaînes alimentaires.** Les insectes nourrissent oiseaux, chauves-souris, hérissons, amphibiens et poissons. Une seule nichée de mésanges consomme des milliers de chenilles. Quand les insectes s'effondrent, tout ce qui est au-dessus vacille.",
     "**Pourquoi tes observations comptent.** Contrairement aux oiseaux, les insectes sont peu suivis sur le long terme. Chaque photo datée et localisée a une vraie valeur : versée à iNaturalist ou aux enquêtes de l'OPIE, elle enrichit les bases nationales.",
   ]},
+  { id: "cultures", emoji: "🏺", titre: "Les insectes dans les cultures", sous: "Dieux, porte-bonheur et âmes qui reviennent", paras: [
+    "**Le scarabée qui poussait le soleil.** Pour les Égyptiens, le bousier roulant sa boule de crottin était l'image même du soleil poussé chaque matin dans le ciel. Ils en ont fait un dieu, Khépri, à tête de scarabée. Le scarabée devint l'amulette la plus courante d'Égypte, et on en glissait un sur le cœur des momies pour qu'il plaide en leur faveur au jugement des morts. Le même bousier roule encore ses boules dans nos prairies — regarde bien.",
+    "**La cigale, de Platon à la Provence.** Chez les Grecs, Platon raconte que les cigales étaient autrefois des humains, tellement enivrés par le chant des Muses qu'ils en oubliaient de manger et de boire ; les Muses les changèrent en cigales, pour qu'ils chantent sans jamais avoir faim. Vingt-cinq siècles plus tard, elle est devenue l'emblème de la Provence et la devise des poètes du Félibrige : « Lou soulèu me fai canta », le soleil me fait chanter. La Fontaine, lui, l'a calomniée : la cigale ne mendie rien à la fourmi, elle se nourrit de sève, et l'adulte ne vit que quelques semaines avant de mourir à l'automne.",
+    "**Le lucane, porteur de foudre.** Nos ancêtres se méfiaient du lucane cerf-volant : on l'accusait d'attirer la foudre et de transporter des charbons ardents entre ses mandibules pour mettre le feu aux toits de chaume. On le craignait, et en même temps on lui prêtait des pouvoirs : une tête de lucane portée au cou d'un enfant était censée le protéger des maladies. Aujourd'hui il ne fait plus peur à personne — et c'est l'emblème de BioDex.",
+    "**Le grillon en cage, en Chine.** Dès la dynastie Tang, au VIIIᵉ siècle, les dames du palais impérial capturaient des grillons et les gardaient dans de petites cages pour écouter leur chant la nuit. Sous les Song, trois siècles plus tard, on est passé du concert au combat : des grillons sélectionnés, entraînés, mis face à face dans un pot de porcelaine devant un arbitre — un empereur en réclamait même les meilleurs en tribut. Les cages en os sculpté et les combats existent toujours.",
+    "**Les abeilles d'or de Napoléon.** En 1653, à Tournai, on découvre la tombe de Childéric Iᵉʳ, le père de Clovis : parmi le trésor, près de trois cents petites abeilles en or et grenat. Cent cinquante ans plus tard, Napoléon cherche un symbole qui rattache son Empire aux premiers rois francs en sautant par-dessus les Bourbons : ce sera l'abeille, « une république qui a un chef », disait son Conseil d'État. Elle recouvre son manteau du sacre à la place des fleurs de lys. La plupart des abeilles d'origine ont été volées et fondues en 1831 ; les rescapées sont à la Bibliothèque nationale.",
+    "**Les monarques, âmes des défunts.** Chaque année, des millions de papillons monarques descendent du Canada et des États-Unis pour hiverner dans les forêts du Michoacán, au Mexique. Ils y arrivent début novembre — pile pour le Día de Muertos. Pour les Purépecha et les Mazahua, ce n'est pas un hasard : les monarques sont les âmes des ancêtres qui reviennent rendre visite aux vivants. Un papillon qui fait 4 000 km pour ramener les morts à la maison : aucune fête n'a de meilleur invité.",
+  ]},
+  { id: "histoire", emoji: "🧵", titre: "Des insectes qui ont fait l'Histoire", sous: "Soie, rouge impérial, assiettes et observateurs", paras: [
+    "**Le ver qui valait un empire.** La légende chinoise veut qu'une impératrice, Leizu, ait vu un cocon tomber dans son thé et se dérouler en un fil sans fin : la soie était née. Vraie ou non, la Chine a gardé le secret du *Bombyx mori* pendant des millénaires, sous peine de mort pour qui exportait un œuf. Au VIᵉ siècle, raconte un chroniqueur byzantin, deux moines auraient rapporté des œufs à Constantinople cachés dans leurs cannes de bambou. La chenille d'un papillon de nuit a donné son nom à la plus longue route commerciale du monde.",
+    "**Le rouge qui venait d'une cochenille.** Le rouge le plus éclatant de la Renaissance — celui des cardinaux, des tuniques anglaises, des tableaux — était fait d'insectes écrasés : la cochenille du nopal, élevée par les peuples du Mexique bien avant l'arrivée des Espagnols. Montezuma en exigeait des sacs entiers en tribut. Les Espagnols en ont fait un monopole et l'ont vendue jusqu'en Russie et en Perse : c'était l'une des exportations les plus précieuses de leur empire, juste derrière l'or et l'argent. Elle existe toujours : c'est le colorant E120, dans les yaourts, les bonbons et les rouges à lèvres.",
+    "**Manger des insectes — et le chiffre qui a fait le tour du monde.** En 2013, un rapport de la FAO affirmait que deux milliards de personnes mangent des insectes. Le chiffre a été repris partout. En 2022, des chercheurs — dont certains de l'équipe d'origine — ont voulu le vérifier : impossible d'en retrouver la source, et une estimation honnête tourne plutôt autour de quelques centaines de millions. Ça reste énorme : criquets au Mexique, vers mopane en Afrique australe, larves de scarabée en Asie du Sud-Est. L'Europe, elle, a arrêté d'en manger il y a quelques siècles à peine — Pline décrivait déjà, chez les Romains, de grosses larves de coléoptères engraissées à la farine comme un mets de choix.",
+    "**Fabre, l'homme qui regardait.** Jean-Henri Fabre n'avait ni laboratoire ni fortune : un jardin en friche à Sérignan, dans le Vaucluse, qu'il appelait l'Harmas, et une patience infinie. Pendant trente ans, il s'est couché dans l'herbe pour regarder vivre les bousiers, les guêpes chasseuses, les cigales, et il a tout raconté dans dix volumes de *Souvenirs entomologiques*, écrits pour être lus par n'importe qui. Darwin l'appelait « l'inimitable observateur ». Chaque fois que tu notes un biotope et un moment de la journée dans BioDex, tu fais exactement ce qu'il faisait — avec un téléphone en plus.",
+  ]},
   { id: "records", emoji: "🏆", titre: "Records et curiosités", sous: "Les champions du monde des arthropodes", paras: [
     "**Le plus ancien vol.** Les insectes ont conquis les airs il y a plus de 300 millions d'années — bien avant les oiseaux, les chauves-souris et les dinosaures. Certaines libellules fossiles atteignaient 70 cm d'envergure.",
     "**La plus grande diversité.** Les coléoptères représentent à eux seuls environ un quart de toutes les espèces animales décrites. On en découvre encore chaque année.",
@@ -5403,10 +5505,12 @@ function useMemoAnecdotes(observations, profils, posts) {
 function CoinDesCurieux({ onFermer }) {
   const [ouvert, setOuvert] = useState(null);
   // Rend le gras **texte** sans dépendance externe.
-  const enrichir = (txt) => txt.split(/(\*\*[^*]+\*\*)/g).map((bout, i) =>
+  const enrichir = (txt) => txt.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g).map((bout, i) =>
     bout.startsWith("**") && bout.endsWith("**")
       ? <b key={i} style={{ color: C.ambreClair }}>{bout.slice(2, -2)}</b>
-      : <React.Fragment key={i}>{bout}</React.Fragment>
+      : bout.startsWith("*") && bout.endsWith("*") && bout.length > 2
+        ? <i key={i} style={{ fontFamily: serif }}>{bout.slice(1, -1)}</i>
+        : <React.Fragment key={i}>{bout}</React.Fragment>
   );
 
   useEffect(() => { if (ouvert) return bdRetour.enregistrer(70, () => setOuvert(null)); }, [ouvert]);
@@ -6309,6 +6413,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
   const [confiance, setConfiance] = useState(base ? (base.confiance !== undefined ? base.confiance : null) : null);
   const [notable, setNotable] = useState(base ? base.notable || "" : "");
   const [role, setRole] = useState(base ? base.role || "" : "");
+  const [contact, setContact] = useState(base ? base.contact || "" : "");           // v1.77
+  const [contactNote, setContactNote] = useState(base ? base.contactNote || "" : "");
   const [ordreIA, setOrdreIA] = useState(base ? base.ordre || "" : "");
   const [biotope, setBiotope] = useState(base ? base.biotope || "" : "");
   const [moment, setMoment] = useState(base ? (base.moment || momentDepuisDate(base.date || Date.now())) : momentDepuisDate(new Date()));
@@ -6589,6 +6695,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
     if (res.inhabituel && String(res.inhabituel).trim().length > 3) setNotable(String(res.inhabituel).trim());
     if (res.role && String(res.role).trim().length > 3) setRole(String(res.role).trim());
     if (res.ordre && String(res.ordre).trim()) setOrdreIA(String(res.ordre).trim().toLowerCase());
+    if (res.contact && NIVEAUX_CONTACT[normaliserContact(res.contact)]) setContact(normaliserContact(res.contact));
+    if (res.contact_note) setContactNote(String(res.contact_note).trim().slice(0, 200));
   }
 
   function contexteTerrain() {
@@ -6649,6 +6757,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
     if (affinageFinal.nom) setNom(affinageFinal.nom);
     if (affinageFinal.nomSci) setNomSci(affinageFinal.nomSci);
     if (affinageFinal.confiance !== undefined) setConfiance(affinageFinal.confiance);
+    if (affinageFinal.contact && NIVEAUX_CONTACT[normaliserContact(affinageFinal.contact)]) setContact(normaliserContact(affinageFinal.contact));
+    if (affinageFinal.contact_note) setContactNote(String(affinageFinal.contact_note).trim().slice(0, 200));
     setAffinageActif(false);
   }
 
@@ -6706,6 +6816,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
           notable: notable || "",
           role: role || "",
           ordre: ordreIA || "",
+          contact: contact || "",
+          contactNote: contactNote || "",
           aideDemandee: !nom.trim() && !nomSci.trim() ? (aideForcee === true || aideDemandee) : false,
           gps: gpsEtat === "ok" ? gps : null,
           photo: photoBlob,
@@ -6730,6 +6842,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
           notable: notable || "",
           role: role || "",
           ordre: ordreIA || "",
+          contact: contact || "",
+          contactNote: contactNote || "",
           aideDemandee: !nom.trim() && !nomSci.trim() ? (aideForcee === true || aideDemandee) : false,
           photo: photoBlob,
           photosSupp: photosSupp,
@@ -6751,6 +6865,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
           notable: notable || "",
           role: role || "",
           ordre: ordreIA || "",
+          contact: contact || "",
+          contactNote: contactNote || "",
           aideDemandee: !nom.trim() && !nomSci.trim() ? (aideForcee === true || aideDemandee) : false,
           gps: gpsEtat === "ok" ? gps : null,
           date: (() => { const d = dateObs ? new Date(dateObs) : null; return d && !isNaN(d.getTime()) ? d.toISOString() : (base && base.date ? base.date : new Date().toISOString()); })(),
@@ -6995,6 +7111,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
                   </div>
                 </div>
               )}
+              {/* v1.77 — Ça pique ? */}
+              <BadgeContact nom={cloudResultat.nom} nomSci={cloudResultat.nomSci} contact={cloudResultat.contact} contactNote={cloudResultat.contact_note} confiance={cloudResultat.confiance} style={{ marginBottom: 10 }} />
               {cloudResultat.inhabituel && String(cloudResultat.inhabituel).trim().length > 3 && (
                 <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "10px 12px", marginBottom: 10, borderRadius: 9, background: "linear-gradient(#2E2410, #241C0C)", border: "1px solid #B8862E" }}>
                   <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.2 }}>🌟</span>
@@ -7686,6 +7804,10 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
           </div>
         </div>
       )}
+      {/* v1.77 — Ça pique ? (niveau de l'IA, relevé par la liste locale des espèces à risque ; par le nom seul pour les anciennes fiches) */}
+      {identifie && (
+        <BadgeContact nom={obs.nom} nomSci={obs.nomSci} contact={obs.contact || (obs.fiche && obs.fiche.contact)} contactNote={obs.contactNote || (obs.fiche && obs.fiche.contact_note)} confiance={obs.confiance} style={{ marginTop: 8 }} />
+      )}
 
       {/* Passerelle science participative (OPIE + iNaturalist), repliable */}
       {identifie && (
@@ -7835,11 +7957,8 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
           ) : (
             <div style={{ padding: "12px 14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
               <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 8 }}>🌐 Mur commun</div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-                <span style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, whiteSpace: "nowrap" }}>Ton prénom :</span>
-                <input value={prenomSaisi} onChange={(e) => setPrenomSaisi(e.target.value)} placeholder="ex : Sylvain" maxLength={40}
-                  style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
-              </div>
+              {/* v1.77 — même ligne compacte que sur le mur, la ligue et les missions */}
+              <LignePrenom etiquette="Tu publies en tant que" prenom={prenom} saisie={prenomSaisi} onSaisie={setPrenomSaisi} onValider={(v) => { setPrenomSaisi(v); if (v && onDefinirPrenom) onDefinirPrenom(v); }} style={{ marginBottom: 10 }} />
 
               {obs.gps && (
                 <div style={{ marginBottom: 10 }}>
@@ -9364,7 +9483,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🌿 Pourquoi il compte</div>
         <p style={p}>
-          Dès qu'une espèce est identifiée, un encart vert « 🌿 À quoi il sert » apparaît automatiquement sous la proposition : une phrase sur son rôle écologique (pollinisation, recyclage, régulation…), sans rien à cliquer. Pour aller plus loin, le bouton « 📖 Générer la fiche naturaliste » (sur la fiche du spécimen) produit une fiche complète : description, alimentation, période, habitat, répartition, statut de conservation, rôle détaillé et un geste simple pour l'aider (« Un geste pour l'aider »). Une façon de rappeler que même la plus petite bestiole a son utilité — et qu'on peut agir à son échelle.
+          Dès qu'une espèce est identifiée, un encart « Ça pique ? » indique le niveau de contact : 🟢 inoffensif (se manipule sans risque), 🟡 défensif (peut piquer, mordre ou pincer si on le saisit), 🔴 douloureux (ne pas manipuler) ou 🟠 urticant (poils irritants, ne pas toucher même mort). L'IA propose un niveau, mais une liste d'espèces à risque connues impose un minimum — une guêpe ne s'affichera jamais en vert — et sous 60 % de confiance l'appli ne dit jamais « inoffensif ». Ce n'est pas un avis médical : dans le doute, ne touche pas. Un encart vert « 🌿 À quoi il sert » apparaît aussi automatiquement sous la proposition : une phrase sur son rôle écologique (pollinisation, recyclage, régulation…), sans rien à cliquer. Pour aller plus loin, le bouton « 📖 Générer la fiche naturaliste » (sur la fiche du spécimen) produit une fiche complète : description, alimentation, période, habitat, répartition, statut de conservation, rôle détaillé et un geste simple pour l'aider (« Un geste pour l'aider »). Une façon de rappeler que même la plus petite bestiole a son utilité — et qu'on peut agir à son échelle.
         </p>
         <div style={t}>✍️ Noms & autocomplétion</div>
         <p style={p}>
@@ -9888,6 +10007,7 @@ function DetailPost({ post, reactions, onReagir, onFermer, monPrenom, onOuvrirPr
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier, lineHeight: 1.2 }}>{p.espece || "❓ À identifier"}</span>
             <BadgePourcent confiance={p.confiance} style={{ fontSize: 13, padding: "2px 9px" }} />
+            <BadgeContact compact nom={p.espece} nomSci={p.espece_sci} confiance={p.confiance} />
             {(() => { const c = litCacheRarete(cleEspeceMur(p)); return c && typeof c.count === "number" ? <BadgeRarete count={c.count} style={{ fontSize: 11.5, padding: "2px 8px" }} /> : null; })()}
           </div>
           {p.espece_sci && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 16, color: C.ambre, marginTop: 2 }}>{p.espece_sci}</div>}
