@@ -1,12 +1,90 @@
-// netlify/functions/identifier.js
+// netlify/functions/identifier.js — v2.01
+// Ajout v2.01 : champ « contact » (ça pique ?) dans identification, fiche et affinage.
+// Ajouts v2.00 : budget IA mensuel, CORS restreint, modèles adaptés par tâche,
+// nombre de tours d'affinage plafonné côté serveur.
 // Fonction serverless BioDex : identification d'insecte + fiche naturaliste, via l'API Claude (Sonnet).
 // La clé API vit UNIQUEMENT ici (variable d'environnement Netlify), jamais dans le navigateur.
 
-// Modèle pour les tâches VISUELLES où la précision compte (identification, affinage).
-// Opus 4.8 : le plus précis d'après le benchmark sur photos de terrain.
-const MODELE_VISION = "claude-opus-4-8";
-// Modèle pour les tâches TEXTE (fiches, forge de cartes) : moins cher, largement suffisant.
-const MODELE_TEXTE = "claude-sonnet-5";
+// ── CHOIX DES MODÈLES (v2.00) ────────────────────────────────────────────
+// Le bon modèle au bon endroit : c'est le premier levier sur la facture.
+// VISION  : identification et affinage. Opus reste indispensable ici — c'est
+//           la seule tâche où la précision décide de la valeur de l'appli.
+const MODELE_VISION = process.env.BIODEX_MODELE_VISION || "claude-opus-4-8";
+// FICHE   : la fiche naturaliste AFFIRME des faits (statut de conservation,
+//           répartition, période de vol). On garde Sonnet : c'est le seul
+//           texte où une approximation serait un mensonge.
+const MODELE_FICHE  = process.env.BIODEX_MODELE_FICHE  || "claude-sonnet-5";
+// CARTE   : stats de jeu inventées, aucun enjeu factuel. Haiku suffit.
+const MODELE_CARTE  = process.env.BIODEX_MODELE_CARTE  || "claude-haiku-4-5";
+
+// Tarifs publics, en dollars par million de tokens. Sert au calcul du budget.
+// À remettre à jour si Anthropic change sa grille.
+const TARIFS = {
+  "claude-opus-4-8":  { entree: 5, sortie: 25 },
+  "claude-opus-5":    { entree: 5, sortie: 25 },
+  "claude-sonnet-5":  { entree: 2, sortie: 10 },
+  "claude-haiku-4-5": { entree: 1, sortie: 5 },
+};
+// Si un modèle inconnu est configuré, on facture au tarif le plus cher :
+// mieux vaut sur-réserver du budget que de le laisser filer.
+const TARIF_DEFAUT = { entree: 5, sortie: 25 };
+function tarif(modele) { return TARIFS[modele] || TARIF_DEFAUT; }
+
+// Coût en MICRO-DOLLARS (1e-6 $) — même unité que la table ia_budget.
+function microDollars(modele, tokensEntree, tokensSortie) {
+  const t = tarif(modele);
+  return Math.ceil(tokensEntree * t.entree + tokensSortie * t.sortie);
+}
+// Estimation d'une image avant envoi : formule officielle de facturation,
+// ceil(l/28) x ceil(h/28). On ne connaît pas les dimensions réelles côté
+// serveur, donc on prend le pire cas de ce que le client envoie (1024 px).
+const TOKENS_IMAGE_MAX = Math.ceil(1024 / 28) * Math.ceil(1024 / 28); // 1369
+// Un caractère de prompt ~ 1/3,8 token en français.
+function tokensTexte(s) { return Math.ceil(String(s || "").length / 3.8); }
+
+// ── GARDE-FOU BUDGÉTAIRE ─────────────────────────────────────────────────
+// Deuxième couche de protection, après le plafond de dépense du workspace
+// dans la console Claude. Celle-ci freine AVANT le mur, et permet un message
+// clair à la personne au lieu d'une erreur brute.
+const SB_URL = process.env.SUPABASE_URL || "";
+const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const BUDGET_ACTIF = Boolean(SB_URL && SB_SERVICE);
+
+async function rpc(nom, corps) {
+  const r = await fetch(SB_URL.replace(/\/$/, "") + "/rest/v1/rpc/" + nom, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SB_SERVICE,
+      Authorization: "Bearer " + SB_SERVICE,
+    },
+    body: JSON.stringify(corps),
+  });
+  if (!r.ok) throw new Error("rpc " + nom + " : " + r.status);
+  return r.json();
+}
+
+// Réserve le coût estimé. Renvoie null si le budget du mois est épuisé.
+async function reserverBudget(micro) {
+  if (!BUDGET_ACTIF) return { autorise: true, micro_restant: null }; // pas encore configuré
+  try {
+    const d = await rpc("reserver_budget_ia", { p_micro: micro });
+    const l = Array.isArray(d) ? d[0] : d;
+    return l && l.autorise ? l : null;
+  } catch (e) {
+    // Si Supabase est injoignable, on laisse passer : le plafond du workspace
+    // reste derrière. Couper l'appli parce que le compteur est en panne
+    // serait pire que le risque budgétaire.
+    console.error("budget: réservation impossible, on laisse passer", String(e));
+    return { autorise: true, micro_restant: null };
+  }
+}
+// Corrige la réservation avec la consommation réelle (delta négatif le plus souvent).
+async function ajusterBudget(delta) {
+  if (!BUDGET_ACTIF || !delta) return;
+  try { await rpc("ajuster_budget_ia", { p_delta: Math.round(delta) }); }
+  catch (e) { console.error("budget: ajustement impossible", String(e)); }
+}
 
 // Garde-fou léger (anti-accident, pas anti-attaque déterminée) : limite par IP.
 // Stockage en mémoire de l'instance ; se réinitialise quand la fonction "dort". Suffisant pour un cercle privé.
@@ -23,13 +101,28 @@ function limiteAtteinte(ip) {
   return false;
 }
 
+// Origines autorisées à appeler cette fonction. Sans ça, n'importe quel site
+// du web pouvait faire tourner l'IA sur TON budget depuis le navigateur de
+// ses visiteurs. Variable Netlify BIODEX_ORIGINES, séparées par des virgules.
+const ORIGINES = (process.env.BIODEX_ORIGINES || "https://lucanus.netlify.app")
+  .split(",").map((o) => o.trim()).filter(Boolean);
+
 exports.handler = async (event) => {
+  const origine = (event.headers && (event.headers.origin || event.headers.Origin)) || "";
+  // Une TWA Android envoie l'origine du site ; une requête sans origine
+  // (curl, appli native) est acceptée ici mais reste soumise au quota et au budget.
+  const origineOk = !origine || ORIGINES.includes(origine);
   const enTetes = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Origin": origineOk && origine ? origine : ORIGINES[0],
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
     "Content-Type": "application/json",
   };
+
+  if (!origineOk) {
+    return { statusCode: 403, headers: enTetes, body: JSON.stringify({ erreur: "Origine non autorisée." }) };
+  }
 
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: enTetes, body: "" };
   if (event.httpMethod !== "POST") {
@@ -73,19 +166,24 @@ exports.handler = async (event) => {
     if (!corps.image || !corps.media_type) {
       return { statusCode: 400, headers: enTetes, body: JSON.stringify({ erreur: "Image manquante." }) };
     }
-    const historique = Array.isArray(corps.historique) ? corps.historique.slice(0, 8) : [];
+    // Le prompt DEMANDE de conclure au bout de 3 questions, mais rien ne l'y
+    // obligeait : l'affinage est le poste le plus cher (photo renvoyée à
+    // chaque tour, sur le modèle vision). On plafonne ici, pour de vrai.
+    const MAX_TOURS = 3;
+    const historique = Array.isArray(corps.historique) ? corps.historique.slice(0, MAX_TOURS) : [];
     const nbPoses = historique.length;
+    const doitConclure = nbPoses >= MAX_TOURS;
     systeme =
       "Tu es un entomologiste qui mène une clé de détermination interactive avec l'observateur. " +
       "Tu disposes de la photo et des réponses déjà données. Ton but : converger vers l'identification la plus précise possible. " +
       "À chaque tour, DEUX possibilités :\n" +
       "1) S'il reste une ambiguïté que l'observateur peut lever, pose UNE seule question ciblée sur un critère observable à l'œil " +
       "(antennes, pattes, taille réelle, motif, comportement, plante-hôte...). Propose 2 à 4 réponses courtes et exclusives. " +
-      "2) Si tu es désormais suffisamment sûr, OU si tu as déjà posé " + (nbPoses >= 3 ? "assez de" : "plusieurs") + " questions, conclus par une identification finale. " +
-      (nbPoses >= 3 ? "Tu as déjà posé au moins 3 questions : tu DOIS conclure maintenant. " : "") +
+      "2) Si tu es désormais suffisamment sûr, OU si tu as déjà posé " + (doitConclure ? "assez de" : "plusieurs") + " questions, conclus par une identification finale. " +
+      (doitConclure ? "Tu as atteint le nombre maximum de questions : tu DOIS conclure maintenant par une identification finale. " : "") +
       "Réponds UNIQUEMENT par un objet JSON valide, sans texte ni Markdown autour :\n" +
       'soit {"type":"question","question":"...","options":["...","..."],"pourquoi":"ce que ce critère permet de trancher"}\n' +
-      'soit {"type":"final","nom":"nom vernaculaire FR","nomSci":"binôme latin","confiance":un nombre entier de 0 à 100 exprimant ton pourcentage de certitude réel,"niveau":"espèce|genre|famille|ordre","note":"synthèse de la détermination"}. ' +
+      'soit {"type":"final","nom":"nom vernaculaire FR","nomSci":"binôme latin","confiance":un nombre entier de 0 à 100 exprimant ton pourcentage de certitude réel,"niveau":"espèce|genre|famille|ordre","note":"synthèse de la détermination","contact":"inoffensif|defensif|douloureux|urticant|inconnu (dans le doute, le plus élevé)","contact_note":"conseil de manipulation en une phrase, vide si inoffensif"}. ' +
       "L'observateur peut répondre \"Je ne sais pas\" : dans ce cas ne réinsiste pas sur le même critère.";
     const contenu = [
       { type: "image", source: { type: "base64", media_type: corps.media_type, data: corps.image } },
@@ -152,14 +250,16 @@ exports.handler = async (event) => {
       '"role_ecosysteme":"pourquoi cet insecte compte : son rôle écologique concret, 1-2 phrases valorisantes et justes",' +
       '"geste":"une action simple et concrète pour l\'aider, formulée de façon encourageante (1 phrase)",' +
       '"faits":"un ou deux faits marquants ou remarquables",' +
+      '"contact":"UN mot parmi exactement : inoffensif (se manipule sans risque), defensif (peut piquer, mordre ou pincer si on le manipule), douloureux (piqûre ou morsure douloureuse, ne pas manipuler), urticant (poils ou sécrétions irritants, ne pas toucher), inconnu. Sois prudent : dans le doute entre deux niveaux, choisis le plus élevé.",' +
+      '"contact_note":"une phrase courte et concrète de conseil de manipulation (ex : Ne le prends pas dans la main, sa piqûre est douloureuse), vide si inoffensif",' +
       '"fiabilite":"élevée|moyenne|faible — ta confiance globale dans cette fiche selon que le taxon est commun/bien connu ou non"}';
     messages = [{ role: "user", content: [{ type: "text", text: "Espèce à documenter : " + nom + (nomSci ? " (" + nomSci + ")" : "") + "." }] }];
-    maxTokens = 1100;
+    maxTokens = 1180;
   } else {
     // Identification poussée à partir d'UNE OU PLUSIEURS photos (angles différents).
     // Rétrocompatible : accepte l'ancien format { image, media_type } ou le nouveau { images: [{data, media_type}] }.
     const photos = Array.isArray(corps.images) && corps.images.length
-      ? corps.images.filter((p) => p && p.data && p.media_type).slice(0, 4)
+      ? corps.images.filter((p) => p && p.data && p.media_type).slice(0, 3)
       : (corps.image && corps.media_type ? [{ data: corps.image, media_type: corps.media_type }] : []);
     if (!photos.length) {
       return { statusCode: 400, headers: enTetes, body: JSON.stringify({ erreur: "Image manquante." }) };
@@ -189,6 +289,8 @@ exports.handler = async (event) => {
       '"role":"UNE phrase courte et concrète (max ~15 mots) sur le rôle écologique / l\'utilité de cet arthropode : pollinisation, recyclage de matière, régulation d\'autres espèces, maillon alimentaire, aération du sol, etc. Formulation grand public, sans jargon. Vide si vraiment inconnu.",' +
       '"ordre":"le grand groupe d\'arthropodes, en UN seul mot parmi exactement : lepidopteres, coleopteres, hymenopteres, dipteres, hemipteres, orthopteres, odonates, arachnides, myriapodes. Si aucun ne convient ou incertain : autres.",' +
       '"inhabituel":"vide si de présence normale pour la zone ; SINON une phrase expliquant pourquoi cette observation est notable (ex : espèce invasive en expansion, hors de son aire habituelle, échappée...)",' +
+      '"contact":"UN mot parmi exactement : inoffensif (se manipule sans risque), defensif (peut piquer, mordre ou pincer si on le manipule), douloureux (piqûre ou morsure douloureuse, ne pas manipuler), urticant (poils ou sécrétions irritants, ne pas toucher), inconnu. Sois prudent : dans le doute entre deux niveaux, choisis le plus élevé.",' +
+      '"contact_note":"une phrase courte et concrète de conseil de manipulation (ex : Ne le prends pas dans la main, sa piqûre est douloureuse), vide si inoffensif",' +
       '"alternatives":[{"nom":"","nomSci":"","pourquoi":"ce qui distinguerait cette hypothèse"}]}. ' +
       "Le tableau alternatives contient 0 à 2 hypothèses secondaires (vide si tu es très sûr).";
     const contenuId = photos.map((p) => ({ type: "image", source: { type: "base64", media_type: p.media_type, data: p.data } }));
@@ -199,11 +301,36 @@ exports.handler = async (event) => {
         : "Identifie cet arthropode.") + blocCtx,
     });
     messages = [{ role: "user", content: contenuId }];
-    maxTokens = 700;
+    maxTokens = 780;
   }
 
-  // Choix du modèle : texte (fiche, carte) = Sonnet 5 ; vision (identification, affinage) = Opus.
-  const modeleUtilise = (mode === "fiche" || mode === "carte") ? MODELE_TEXTE : MODELE_VISION;
+  // Choix du modèle, poste par poste (voir l'en-tête pour le raisonnement).
+  const modeleUtilise = mode === "fiche" ? MODELE_FICHE
+                      : mode === "carte" ? MODELE_CARTE
+                      : MODELE_VISION;
+
+  // ── Réservation du budget ──────────────────────────────────────────────
+  // On estime haut : nombre d'images x pire cas, plus le prompt système, plus
+  // max_tokens en sortie. On corrigera vers le bas avec la conso réelle.
+  const nbImages = messages.reduce(
+    (n, m) => n + (Array.isArray(m.content) ? m.content.filter((b) => b.type === "image").length : 0), 0);
+  const tokensEntreeEstimes = tokensTexte(systeme)
+    + nbImages * TOKENS_IMAGE_MAX
+    + messages.reduce((n, m) => n + (Array.isArray(m.content)
+        ? m.content.filter((b) => b.type === "text").reduce((s, b) => s + tokensTexte(b.text), 0) : 0), 0);
+  const microEstime = microDollars(modeleUtilise, tokensEntreeEstimes, maxTokens);
+
+  const reservation = await reserverBudget(microEstime);
+  if (!reservation) {
+    return {
+      statusCode: 429,
+      headers: enTetes,
+      body: JSON.stringify({
+        erreur: "L'enveloppe d'identifications du mois est épuisée. Elle se recharge le 1er du mois prochain.",
+        budget_epuise: true,
+      }),
+    };
+  }
 
   try {
     const ctrl = new AbortController();
@@ -222,10 +349,30 @@ exports.handler = async (event) => {
 
     if (!reponse.ok) {
       const txt = await reponse.text();
+      // Appel refusé : rien n'a été facturé, on rend la réservation.
+      await ajusterBudget(-microEstime);
+      // 429 côté Anthropic = plafond de dépense du workspace atteint.
+      // C'est le mur dur : on le traduit en message compréhensible.
+      if (reponse.status === 429) {
+        return { statusCode: 429, headers: enTetes, body: JSON.stringify({
+          erreur: "Le service d'identification a atteint sa limite mensuelle. Il repart le 1er du mois prochain.",
+          budget_epuise: true,
+        }) };
+      }
       return { statusCode: 502, headers: enTetes, body: JSON.stringify({ erreur: "L'API a renvoyé une erreur.", detail: txt.slice(0, 300) }) };
     }
 
     const data = await reponse.json();
+
+    // Consommation réelle : on remplace l'estimation par le chiffre exact.
+    if (data && data.usage) {
+      const microReel = microDollars(
+        modeleUtilise,
+        (data.usage.input_tokens || 0) + (data.usage.cache_read_input_tokens || 0),
+        data.usage.output_tokens || 0
+      );
+      await ajusterBudget(microReel - microEstime);
+    }
     const texte = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
 
     let resultat = null;
@@ -240,6 +387,9 @@ exports.handler = async (event) => {
 
     return { statusCode: 200, headers: enTetes, body: JSON.stringify({ ok: true, mode, resultat }) };
   } catch (e) {
+    // Échec réseau ou délai dépassé : on ne sait pas si Anthropic a facturé.
+    // On rend la moitié de la réservation — prudent sans être punitif.
+    await ajusterBudget(-Math.round(microEstime / 2));
     if (e && e.name === "AbortError") {
       return { statusCode: 504, headers: enTetes, body: JSON.stringify({ erreur: "L'analyse a pris trop de temps. Réessaie dans un instant." }) };
     }
