@@ -237,7 +237,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.74";
+const VERSION = "v1.76";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -269,6 +269,21 @@ let MUR_ACTIF = false;
 // D'où : plusieurs tentatives, mémorisation locale en secours, et signalement visible.
 let CONFIG_KO = false;
 const CONFIG_CLE = "biodex_config";
+// v1.76 — Applique tout de suite la dernière config connue (localStorage), de façon
+// SYNCHRONE. L'appli peut ainsi s'afficher sans attendre le serveur : avant, sur un
+// réseau capricieux, l'écran restait vide jusqu'à 26 s (3 essais × 8 s + attentes).
+function appliquerConfigMemorisee() {
+  try {
+    const memo = JSON.parse(localStorage.getItem(CONFIG_CLE) || "null");
+    if (memo && memo.u && memo.k) {
+      SUPABASE_URL = memo.u; SUPABASE_KEY = memo.k;
+      MUR_ACTIF = true;
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 async function chargerConfig() {
   const appliquer = (url, key) => {
     SUPABASE_URL = url || "";
@@ -414,7 +429,19 @@ function wmoVersCiel(code) {
 const DB_NOM = "biodex";
 const DB_STORE = "observations";
 
+// v1.76 — Chaque appel ouvrait une NOUVELLE connexion jamais refermée. On garde
+// la première et on la réutilise ; si elle se ferme (autre onglet, mise à jour), on rouvre.
+let _dbPromesse = null;
 function ouvrirDB() {
+  if (_dbPromesse) return _dbPromesse;
+  _dbPromesse = ouvrirDBBrut().then((db) => {
+    db.onclose = () => { _dbPromesse = null; };
+    db.onversionchange = () => { try { db.close(); } catch {} _dbPromesse = null; };
+    return db;
+  }).catch((e) => { _dbPromesse = null; throw e; });
+  return _dbPromesse;
+}
+function ouvrirDBBrut() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NOM, 1);
     req.onupgradeneeded = () => {
@@ -641,6 +668,10 @@ function formatDate(iso) {
   } catch { return iso; }
 }
 const biotopeOf = (id) => BIOTOPES.find((b) => b.id === id) || BIOTOPES[BIOTOPES.length - 1];
+// v1.75 — Un GPS de téléphone est précis à quelques mètres : afficher 15 décimales
+// (45.869137636345265) était illisible, débordait de la ligne, et annonçait une
+// précision qui n'existe pas. 5 décimales ≈ 1 mètre.
+const arrondiGps = (v) => (typeof v === "number" ? v.toFixed(5).replace(/0+$/, "").replace(/\.$/, "") : v);
 const cielOf = (id) => CIELS.find((c) => c.id === id) || null;
 
 
@@ -770,7 +801,27 @@ const ELEMENTS = {
   "Prédateur": { emoji: "🦂", c: "#C0603D" },
   Butineur: { emoji: "🌼", c: "#D9B441" },
 };
-function elementInfo(e) { return ELEMENTS[e] || { emoji: "🐞", c: "#94A97B" }; }
+// v1.75 — Les cartes générées depuis l'arrivée du système de combat renvoient un
+// élément parmi les 8 ids en minuscules de TYPES_COMBAT ("volant", "cuirasse"...),
+// alors que la table ELEMENTS ci-dessus est l'ancien vocabulaire capitalisé.
+// L'intersection des deux est VIDE : toutes les cartes récentes tombaient donc sur
+// le repli 🐞. On normalise et on cherche d'abord dans les types de combat.
+function elementInfo(e) {
+  const brut = String(e || "").trim();
+  if (!brut) return { emoji: "🐞", c: "#94A97B" };
+  if (ELEMENTS[brut]) return ELEMENTS[brut];                       // ancienne carte
+  const bas = brut.toLowerCase();
+  // TYPES_COMBAT est déclaré plus bas dans le fichier : au moment où cette fonction
+  // est appelée (au rendu) il est initialisé, mais on protège quand même.
+  try {
+    const t = TYPES_COMBAT.find((x) => x.id === bas || x.label.toLowerCase() === bas);
+    if (t) return { emoji: t.emoji, c: t.couleur, label: t.label };
+  } catch (e) { /* pas encore initialisé */ }
+  // Ancien vocabulaire écrit en minuscules ("volant" au lieu de "Volant")
+  const cle = Object.keys(ELEMENTS).find((k) => k.toLowerCase() === bas);
+  if (cle) return ELEMENTS[cle];
+  return { emoji: "🐞", c: "#94A97B" };
+}
 
 // Normalise une confiance (nombre 0..1, nombre 0..100, ou texte "élevée/moyenne/faible") en pourcentage 0..100, ou null si inconnu.
 function pourcentConfiance(confiance) {
@@ -1221,15 +1272,20 @@ async function chargerMur(limite = 50) {
 // indéfiniment (fetch n'a aucun timeout par défaut) : l'écran affiche « Chargement… »
 // à vie, sans jamais basculer en erreur. C'était la cause des écrans vides.
 function avecDelai(promesse, ms, ou) {
-  return Promise.race([
-    promesse,
-    new Promise((_, rejeter) => setTimeout(() => {
+  // v1.76 — Le minuteur n'était jamais annulé : 15 s après CHAQUE requête réussie,
+  // il se déclenchait quand même et écrivait un faux « trop de temps à répondre »
+  // dans le journal d'erreurs. Avec 19 appels et un journal plafonné à 50 lignes,
+  // les vraies erreurs étaient noyées en quelques minutes d'usage.
+  let minuteur = null;
+  const garde = new Promise((_, rejeter) => {
+    minuteur = setTimeout(() => {
       const e = new Error("Le serveur met trop de temps à répondre");
       e.timeout = true;
       try { noterErreur(ou || "reseau/timeout", e); } catch {}
       rejeter(e);
-    }, ms || 15000)),
-  ]);
+    }, ms || 15000);
+  });
+  return Promise.race([Promise.resolve(promesse), garde]).finally(() => { if (minuteur) clearTimeout(minuteur); });
 }
 
 // Version allégée pour les notifications : seulement les colonnes utiles.
@@ -1414,7 +1470,7 @@ async function retirerCarteLigue(proprietaire, carteId) {
 }
 
 // Enregistre le résultat d'un défi : met à jour les compteurs de la carte défendue et les scores des deux joueurs.
-async function enregistrerResultatDefi(carteLigue, defieur, defieurGagne) {
+async function enregistrerResultatDefi(carteLigue, defieur, defieurGagne, idCarteDefieur) {
   const sb = clientSupabase();
   if (!sb) return;
   try {
@@ -1423,6 +1479,22 @@ async function enregistrerResultatDefi(carteLigue, defieur, defieurGagne) {
       ? { defaites: (carteLigue.defaites || 0) + 1 }
       : { victoires: (carteLigue.victoires || 0) + 1 };
     await sb.from("cartes_ligue").update(majCarte).eq("id", carteLigue.id);
+
+    // 1 bis) v1.76 — Compteurs de la carte du DÉFIEUR, si elle est engagée dans la
+    // ligue. Avant, seule la défense comptait : vingt défis gagnés laissaient ta
+    // carte à 0V/0D, alors que le libellé laissait croire à son palmarès complet.
+    if (idCarteDefieur && defieur) {
+      try {
+        const { data: mienne } = await sb.from("cartes_ligue").select("id, victoires, defaites")
+          .eq("proprietaire", defieur).eq("carte_id", String(idCarteDefieur)).maybeSingle();
+        if (mienne) {
+          const majMienne = defieurGagne
+            ? { victoires: (mienne.victoires || 0) + 1 }
+            : { defaites: (mienne.defaites || 0) + 1 };
+          await sb.from("cartes_ligue").update(majMienne).eq("id", mienne.id);
+        }
+      } catch { /* bonus : ne bloque pas le défi */ }
+    }
 
     // 2) Scores des deux joueurs (upsert incrémental)
     async function majScore(proprietaire, gagne) {
@@ -1450,6 +1522,46 @@ async function enregistrerResultatDefi(carteLigue, defieur, defieurGagne) {
         defieur_gagne: !!defieurGagne,
       });
     } catch { /* l'historique est un bonus : on n'échoue pas le défi si ça rate */ }
+  } catch {}
+}
+
+// v1.76 — Pousse l'XP locale d'une carte vers sa copie en ligue (si engagée).
+// Avant, quand TU attaquais, seule ta copie locale gagnait de l'XP ; quand ON
+// t'attaquait, seule la copie ligue en gagnait. Les deux niveaux divergeaient à vie.
+async function majXpLigue(prenom, idCarte, xp) {
+  const sb = clientSupabase();
+  if (!sb || !prenom || !idCarte) return;
+  try {
+    await sb.from("cartes_ligue").update({ xp: Number(xp) || 0 })
+      .eq("proprietaire", prenom.trim()).eq("carte_id", String(idCarte))
+      .lt("xp", Number(xp) || 0); // on ne fait que monter, jamais redescendre
+  } catch {}
+}
+// Réconcilie dans les deux sens au chargement de la ligue : la valeur la plus haute gagne.
+async function synchroniserXpLigue(ligue, observations, prenom, onMajXp) {
+  const moi = (prenom || "").trim().toLowerCase();
+  if (!moi) return;
+  for (const c of ligue) {
+    if ((c.proprietaire || "").trim().toLowerCase() !== moi) continue;
+    const obs = observations.find((o) => String(o.id) === String(c.carte_id));
+    if (!obs || !obs.carte) continue;
+    const xpLocal = Number(obs.carte.xp) || 0, xpLigue = Number(c.xp) || 0;
+    if (xpLigue > xpLocal && onMajXp) onMajXp(obs.id, xpLigue);
+    else if (xpLocal > xpLigue) majXpLigue(prenom, obs.id, xpLocal);
+  }
+}
+
+// Enregistre le record d'arène partagé (colonne record_arene de ligue_scores).
+// Silencieux si la colonne n'existe pas encore (SQL v1.76 pas passé) : le record
+// local continue de fonctionner.
+async function enregistrerRecordArene(prenom, record) {
+  const sb = clientSupabase();
+  const p = (prenom || "").trim();
+  if (!sb || !p || !record) return;
+  try {
+    const { data } = await sb.from("ligue_scores").select("record_arene").eq("proprietaire", p).maybeSingle();
+    if (data && (Number(data.record_arene) || 0) >= record) return;
+    await sb.from("ligue_scores").upsert({ proprietaire: p, record_arene: record, maj: new Date().toISOString() }, { onConflict: "proprietaire" });
   } catch {}
 }
 
@@ -1514,6 +1626,26 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.76", date: "2026-09", items: [
+    "🏟️ L'arène a enfin de vrais adversaires ! Avant, elle piochait dans TA propre collection : avec cinq cartes, tu te battais contre toi-même (même photo, même nom). Dix-sept espèces européennes t'attendent maintenant — grillon, épeire, dytique, sphinx tête-de-mort, mante, frelon, lucane… — de plus en plus coriaces au fil des manches.",
+    "📊 CORRECTIF : le classement de la ligue était trié par nombre de victoires mais affichait un pourcentage de réussite — on pouvait lire 64 % classé derrière 55 %. Il est maintenant classé au taux de réussite, avec au moins 3 défis joués pour y figurer (en dessous, tu es « en qualification »). Ton record d'arène y apparaît aussi.",
+    "⚔️ CORRECTIF : les compteurs V/D d'une carte ne comptaient que les défis SUBIS. Vingt défis lancés et gagnés laissaient ta carte à 0V/0D. Tes attaques comptent désormais aussi.",
+    "⭐ CORRECTIF : une carte pouvait afficher « niveau 3 » sur ton téléphone et « niveau 1 » pour tes copains, pour toujours — l'XP gagnée en attaquant et celle gagnée en défendant n'étaient jamais mises en commun. C'est réconcilié : la valeur la plus haute gagne, partout.",
+    "🎉 Les bannières « Mission accomplie » s'affichaient PAR-DESSUS le titre et le bouton Retour, et pouvaient s'empiler à l'infini. Elles passent sous l'en-tête, deux à la fois maximum.",
+    "🐛 Ton prénom apparaissait sous forme de champ de saisie sur trois écrans (mur, ligue, missions), en tête de page, à chaque visite. Quand il est connu, ce n'est plus qu'un rappel discret avec « modifier ».",
+    "🃏 Les noms complets s'affichent sur les petites cartes (fini « Lucane cer… »), les étoiles de niveau non atteintes sont enfin visibles, et les bandeaux de type sous les cartes ne débordent plus.",
+    "🏅 Classement des chasseurs : les ex æquo ont le même rang (et la même médaille), au lieu d'un or-argent-bronze tiré au hasard entre six joueurs à égalité.",
+    "☰ Menu réordonné : « Apprendre » (guide, jardin refuge, coin des curieux, suivi des espèces) passe en premier — c'est ce qui fait BioDex. Et l'entrée « Classement » s'appelle « Meilleurs chasseurs », pour ne plus la confondre avec le classement de la ligue.",
+    "🛠️ Sous le capot : le journal d'erreurs n'est plus pollué par de faux « trop de temps à répondre » (le minuteur de garde n'était jamais annulé après une requête réussie) ; l'appli s'affiche immédiatement quand elle connaît déjà sa configuration au lieu d'attendre le serveur (jusqu'à 26 s d'écran vide sur un mauvais réseau) ; la sauvegarde de la collection n'existe plus en deux copies divergentes ; les boutons de l'en-tête sont un peu plus gros.",
+  ] },
+  { v: "1.75", date: "2026-09", items: [
+    "🃏 CORRECTIF : toutes tes cartes affichaient la même petite coccinelle en haut à droite, quel que soit le type de l'insecte. Volant, Cuirassé, Venimeux… tout le monde avait le même badge depuis l'arrivée des combats. Chaque carte porte enfin l'emoji et la couleur de son vrai type — et l'adversaire qui surgit en combat aussi.",
+    "🖼️ L'icône des cartes ressemblait à une image qui n'avait pas chargé sur beaucoup de téléphones (un rectangle rouge et gris). Elle est remplacée partout par une vraie carte à jouer.",
+    "📍 Les coordonnées d'une observation s'affichaient avec quinze chiffres après la virgule et débordaient de la ligne. Cinq suffisent largement : c'est déjà une précision d'un mètre.",
+    "🔔 Un nouveau venu ouvrait BioDex et trouvait déjà une pile de notifications en retard, alors qu'il n'avait encore rien fait. Désormais, la cloche ne compte que ce qui arrive APRÈS ton arrivée.",
+    "📷 Sur l'écran d'une nouvelle observation, les deux champs de nom s'affichaient avant même qu'il y ait une photo — comme s'il fallait savoir soi-même ce qu'on avait vu. Ils n'apparaissent plus qu'une fois la photo prise ; si tu connais déjà l'espèce, un bouton « ✏️ Je connais déjà l'espèce » les rouvre à tout moment.",
+    "🗃️ Ta collection remonte : le bandeau du haut est plus compact et le bouton d'import s'est rangé au bout de la ligne du compteur. Tu vois tes bestioles plus tôt en ouvrant l'appli.",
+  ] },
   { v: "1.74", date: "2026-08", items: ["🧹 CORRECTIF : deux caractères parasites « )} » s'affichaient depuis des mois en plein milieu de l'écran de ta collection, juste au-dessus des vignettes. C'était un bout de code oublié lors d'une ancienne modification. Envolé.", "🌲 Le biotope, obligatoire pour épingler une trouvaille, était mal signalé : le message renvoyait vers la section « Détails du terrain », alors que les boutons sont juste au-dessus. Maintenant, s'il manque, c'est le bloc Biotope lui-même qui s'encadre en doré.", "👋 Nouveau venu dans la bande ? Un encart « Tes premiers pas » s'affiche en tête d'accueil tant que ta collection est vide : il montre le bouton doré ＋ et propose le quiz du jour, jouable même sans la moindre photo."] },
   { v: "1.73", date: "2026-08", items: ["🎠 L'accueil s'anime ! Le bandeau qui défile passe de 2 à 6 encarts : en plus de « À guetter » et « Le savais-tu ? », tu y trouveras 🎯 ta mission de saison la plus proche d'être bouclée (avec la barre de progression), 🧠 un rappel du quiz du jour tant que tu ne l'as pas fait, 📸 un souvenir de chasse pioché dans ta collection (« tu te souviens de cette Rosalie, il y a 4 mois ? »), et 🌐 la dernière trouvaille partagée par la bande.", "👆 Chaque encart se touche pour aller directement au bon endroit (missions, quiz, ta fiche souvenir, le mur), et la croix le masque pour la journée. Les encarts qui n'ont rien à dire ne s'affichent pas — pas de bandeau vide."] },
   { v: "1.72", date: "2026-08", items: ["🔔 CORRECTIF : la cloche ne te prévenait jamais quand quelqu'un réagissait à tes trouvailles ou les commentait — tu découvrais tout par hasard en repassant sur le mur. En cause : une différence invisible dans la façon dont le serveur écrit les numéros de publication, qui empêchait l'appli de reconnaître TES publications. C'est réparé : réactions ❤️ et commentaires 💬 reçus arrivent maintenant bien dans ta cloche.", "🩺 Bonus : si un problème du même genre se reproduit un jour, il sera désormais visible dans le journal d'erreurs au lieu d'échouer en silence."] },
@@ -1873,8 +2005,13 @@ async function calculerNotifications(prenom) {
   try {
     const posts = await chargerMurLeger(120);
     // 1) Nouveaux posts depuis la dernière visite du mur
-    const vuMur = lire("biodex_mur_vu");
-    const nouveauxPosts = vuMur ? posts.filter((p) => p.created_at && new Date(p.created_at) > new Date(vuMur)) : posts.slice(0, 20);
+    // v1.75 — Au tout premier lancement, "biodex_mur_vu" n'existe pas : on comptait
+    // alors les 20 dernières publications comme "nouvelles". Un inconnu qui installait
+    // l'appli recevait donc jusqu'à 20 notifications avant d'avoir rien fait. On pose
+    // le repère à maintenant et on ne signale que ce qui arrive APRÈS son arrivée.
+    let vuMur = lire("biodex_mur_vu");
+    if (!vuMur) { vuMur = new Date().toISOString(); ecrire("biodex_mur_vu", vuMur); }
+    const nouveauxPosts = posts.filter((p) => p.created_at && new Date(p.created_at) > new Date(vuMur));
     murNouveaux = nouveauxPosts.length;
     murDetail = nouveauxPosts.slice(0, 6).map((p) => ({ espece: p.espece || "Spécimen", auteur: p.auteur || "Anonyme" }));
 
@@ -1944,8 +2081,10 @@ async function calculerNotifications(prenom) {
   try {
     // 3) Nouvelles idées depuis la dernière visite
     const idees = await chargerIdees();
-    const vuIdees = lire("biodex_idees_vu");
-    const nouvelles = vuIdees ? idees.filter((i) => i.created_at && new Date(i.created_at) > new Date(vuIdees)) : idees.slice(0, 20);
+    // Même principe que le mur : rien n'est "nouveau" avant d'être arrivé.
+    let vuIdees = lire("biodex_idees_vu");
+    if (!vuIdees) { vuIdees = new Date().toISOString(); ecrire("biodex_idees_vu", vuIdees); }
+    const nouvelles = idees.filter((i) => i.created_at && new Date(i.created_at) > new Date(vuIdees));
     ideesNouvelles = nouvelles.length;
     ideesDetail = nouvelles.slice(0, 6).map((i) => ({ auteur: i.auteur || "Anonyme", idee: (i.idee || "").slice(0, 70) }));
   } catch {}
@@ -2598,7 +2737,7 @@ function Stats({ observations, raretes, onFermer }) {
     { seuil: 6, emoji: "🧭", label: "6 ordres différents", atteint: nbOrdres >= 6, valeur: nbOrdres },
     { seuil: 50, emoji: "🏆", label: "50 observations", atteint: total >= 50 },
     { seuil: 20, emoji: "💎", label: "20 espèces différentes", atteint: especesUniques >= 20, valeur: especesUniques },
-    { seuil: 5, emoji: "🎴", label: "5 cartes forgées", atteint: cartesForgees >= 5, valeur: cartesForgees },
+    { seuil: 5, emoji: "🃏", label: "5 cartes forgées", atteint: cartesForgees >= 5, valeur: cartesForgees },
     { seuil: 1, emoji: "🌟", label: "Une espèce rare", atteint: nbEspecesRares >= 1, valeur: nbEspecesRares },
     { seuil: 5, emoji: "💠", label: "5 espèces rares", atteint: nbEspecesRares >= 5, valeur: nbEspecesRares },
     { seuil: 100, emoji: "👑", label: "100 observations", atteint: total >= 100 },
@@ -2636,7 +2775,7 @@ function Stats({ observations, raretes, onFermer }) {
 
       {/* Ligne d'indicateurs secondaires */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
-        {[["Notables", notables, "🌟"], ["Cartes", cartesForgees, "🎴"], ["Fiches", fichesGenerees, "📖"]].map(([lab, val, emo]) => (
+        {[["Notables", notables, "🌟"], ["Cartes", cartesForgees, "🃏"], ["Fiches", fichesGenerees, "📖"]].map(([lab, val, emo]) => (
           <div key={lab} style={{ ...carte, padding: "12px 8px", textAlign: "center" }}>
             <div style={{ fontSize: 18 }}>{emo}</div>
             <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.ambreClair, lineHeight: 1, marginTop: 2 }}>{val}</div>
@@ -4650,11 +4789,14 @@ function Classement({ onFermer, onOuvrirProfil }) {
       {etat === "ok" && classement.length > 0 && (
         <div style={{ display: "grid", gap: 8 }}>
           {classement.map((c, i) => {
-            const r = rangStyle(i);
+            // v1.76 — Ex æquo : même rang (et même médaille). Avant, six joueurs à 4 points
+            // recevaient or, argent, bronze puis 4, 5, 6 dans un ordre arbitraire.
+            const rang = classement.findIndex((x) => x.points === c.points);
+            const r = rangStyle(rang);
             return (
               <div key={c.auteur} onClick={() => onOuvrirProfil && onOuvrirProfil(c.auteur)}
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 11, background: i < 3 ? "linear-gradient(#20281A, #1A2015)" : C.panneau, border: `1px solid ${i < 3 ? "#3A4A2C" : C.bordure}`, cursor: onOuvrirProfil ? "pointer" : "default" }}>
-                <div style={{ minWidth: 30, textAlign: "center", fontFamily: serif, fontSize: i < 3 ? 22 : 16, fontWeight: 700, color: r.coul }}>{r.emoji}</div>
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 11, background: rang < 3 ? "linear-gradient(#20281A, #1A2015)" : C.panneau, border: `1px solid ${rang < 3 ? "#3A4A2C" : C.bordure}`, cursor: onOuvrirProfil ? "pointer" : "default" }}>
+                <div style={{ minWidth: 30, textAlign: "center", fontFamily: serif, fontSize: rang < 3 ? 22 : 16, fontWeight: 700, color: r.coul }}>{r.emoji}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{emblemeDe(c.auteur, profils)} {c.auteur}</div>
                   <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre }}>{c.trouvailles} trouvaille{c.trouvailles > 1 ? "s" : ""}</div>
@@ -4833,7 +4975,7 @@ function EncartBase({ cle, emoji, etiquette, couleurEtiquette, fond, bordure, on
     if (onMasquer) onMasquer();
   };
   return (
-    <div onClick={onClick} style={{ position: "relative", marginBottom: 16, padding: "14px 16px", borderRadius: 12,
+    <div onClick={onClick} style={{ position: "relative", marginBottom: 12, padding: "11px 14px", borderRadius: 12,
       background: fond, border: `1px solid ${bordure}`, boxShadow: "0 2px 10px rgba(0,0,0,.25)", cursor: onClick ? "pointer" : "default" }}>
       <button onClick={fermer} aria-label="Masquer pour aujourd'hui"
         style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", color: C.papierSombre, fontSize: 17, cursor: "pointer", lineHeight: 1, padding: 2 }}>×</button>
@@ -5066,9 +5208,11 @@ function Celebrations({ sonActif = true }) {
         );
       })}
 
-      {/* Bannières */}
-      <div style={{ position: "absolute", top: 14, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "0 14px" }}>
-        {file.map((c) => {
+      {/* Bannières — v1.76 : en BAS, au-dessus de la barre de navigation, comme un toast
+          Android (elles recouvraient le titre et le bouton Retour), deux au maximum ;
+          les suivantes attendent leur tour. */}
+      <div style={{ position: "absolute", bottom: "calc(92px + env(safe-area-inset-bottom))", left: 0, right: 0, display: "flex", flexDirection: "column-reverse", alignItems: "center", gap: 8, padding: "0 14px" }}>
+        {file.slice(0, 2).map((c) => {
           const doré = c.ton === "legendaire";
           return (
             <div key={c.id} className="bd-celebration"
@@ -5813,7 +5957,7 @@ function Presentation({ onCommencer, prenomActuel, onDefinirPrenom }) {
   const carac = [
     { emoji: "📷", titre: "Identifie", texte: "Photographie un insecte, l'IA te dit qui c'est — en un instant." },
     { emoji: "🗃️", titre: "Collectionne", texte: "Chaque trouvaille rejoint ta boîte, ton cabinet de curiosités numérique." },
-    { emoji: "🎴", titre: "Joue & partage", texte: "Mur commun, réactions, classement, cartes à forger, combats et quiz du jour." },
+    { emoji: "🃏", titre: "Joue & partage", texte: "Mur commun, réactions, classement, cartes à forger, combats et quiz du jour." },
     { emoji: "🔬", titre: "Contribue", texte: "Tes observations peuvent servir la vraie science : iNaturalist, enquêtes OPIE…" },
   ];
 
@@ -6209,6 +6353,10 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
   const [affinageFinal, setAffinageFinal] = useState(null);
   const [affinageLibre, setAffinageLibre] = useState("");
   const [ciblage, setCiblage] = useState(false);
+  // v1.75 — Sans photo, les deux champs de nom donnaient l'impression qu'il fallait
+  // savoir soi-même ce qu'on avait vu, juste après la promesse "l'IA te dit qui c'est".
+  // On les replie tant qu'il n'y a pas de photo ; la saisie manuelle reste à un clic.
+  const [saisieManuelle, setSaisieManuelle] = useState(false);
   const [zone, setZone] = useState({ x: 0.2, y: 0.2, w: 0.6, h: 0.6 });
   const [montrerZoom, setMontrerZoom] = useState(false);
   const [choixPoint, setChoixPoint] = useState(false);
@@ -6998,7 +7146,16 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
         </div>
       )}
 
-      {/* Identification */}
+      {/* Identification — masquée tant qu'aucune photo n'est là (voir saisieManuelle) */}
+      {!photoBlob && !base && !saisieManuelle && (
+        <button onClick={() => setSaisieManuelle(true)}
+          style={{ width: "100%", marginBottom: 14, padding: "11px 13px", borderRadius: 10, cursor: "pointer", textAlign: "left",
+            background: "transparent", border: `1px dashed ${C.bordure}`, color: C.papierSombre, fontFamily: sans, fontSize: 13 }}>
+          ✏️ Je connais déjà l'espèce — saisir le nom à la main
+        </button>
+      )}
+      {(photoBlob || base || saisieManuelle) && (
+      <React.Fragment>
       <div style={{ marginBottom: 14, position: "relative" }}>
         <label style={libelle}>
           Nom (vernaculaire)
@@ -7027,6 +7184,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
         <label style={libelle}>Nom scientifique (optionnel)</label>
         <input style={{ ...champ, fontFamily: serif, fontStyle: "italic" }} value={nomSci} onChange={(e) => setNomSci(e.target.value)} placeholder="ex : Lucanus cervus" />
       </div>
+      </React.Fragment>
+      )}
 
       {/* Indicateur : nouvelle espèce ou déjà photographiée */}
       {(() => {
@@ -7273,7 +7432,12 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, padding: compact ? "0 2px 4px" : "1px 3px 6px" }}>
           {/* Nom sur toute la largeur (il était tronqué : « Lucane cerf… »), le type
               se réduit à son emoji — l'intitulé complet reste sur le bandeau sous la carte. */}
-          <span style={{ flex: 1, minWidth: 0, fontFamily: serif, fontSize: compact ? 12 : 15, fontWeight: 700, color: "#2A2416", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textShadow: "0 1px 0 rgba(255,255,255,.25)" }} title={obs.nom || "Spécimen"}>{obs.nom || "Spécimen"}</span>
+          {/* v1.76 — En compact, le nom tient sur deux lignes (hauteur fixe, pour que les
+              cartes restent alignées) au lieu d'être tronqué en « Lucane cer… ». */}
+          <span style={compact
+            ? { flex: 1, minWidth: 0, fontFamily: serif, fontSize: 11.5, lineHeight: 1.15, height: "2.3em", fontWeight: 700, color: "#2A2416", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", textShadow: "0 1px 0 rgba(255,255,255,.25)", alignSelf: "flex-start" }
+            : { flex: 1, minWidth: 0, fontFamily: serif, fontSize: 15, fontWeight: 700, color: "#2A2416", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textShadow: "0 1px 0 rgba(255,255,255,.25)" }}
+            title={obs.nom || "Spécimen"}>{obs.nom || "Spécimen"}</span>
           <span title={c.element} style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", background: "rgba(42,36,22,.85)", border: `1px solid ${el.c}`, color: el.c, fontFamily: sans, fontSize: compact ? 9 : 11, fontWeight: 800, padding: compact ? "1px 4px" : "2px 5px", borderRadius: 10 }}>
             {el.emoji}
           </span>
@@ -7296,7 +7460,9 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
         {(
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, padding: compact ? "1px 0 0" : "2px 0 0" }}>
             {Array.from({ length: NIVEAU_MAX }).map((_, i) => (
-              <span key={i} style={{ fontSize: compact ? 8 : 10, opacity: i < niveauDeXp(c.xp) ? 1 : 0.22, filter: i < niveauDeXp(c.xp) ? "none" : "grayscale(1)" }}>⭐</span>
+              i < niveauDeXp(c.xp)
+                ? <span key={i} style={{ fontSize: compact ? 8 : 10 }}>⭐</span>
+                : <span key={i} style={{ fontSize: compact ? 9 : 11.5, lineHeight: 1, color: "rgba(42,36,22,.45)" }}>☆</span>
             ))}
           </div>
         )}
@@ -7498,7 +7664,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
         {obs.gps ? (
           <a href={`https://www.openstreetmap.org/?mlat=${obs.gps.lat}&mlon=${obs.gps.lon}#map=16/${obs.gps.lat}/${obs.gps.lon}`}
              target="_blank" rel="noopener noreferrer" style={{ ...val, color: C.ambre, textDecoration: "underline" }}>
-            {obs.gps.lat}, {obs.gps.lon} 🗺️
+            {arrondiGps(obs.gps.lat)}, {arrondiGps(obs.gps.lon)} 🗺️
           </a>
         ) : (
           <span style={val}>Non enregistrée</span>
@@ -7603,7 +7769,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
       <div style={{ marginTop: 18 }}>
         {obs.carte ? (
           <div>
-            <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 10 }}>🎴 Carte de collection</div>
+            <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 10 }}>🃏 Carte de collection</div>
             {cadrage ? (
               <div>
                 <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, marginBottom: 8, lineHeight: 1.45 }}>
@@ -7641,7 +7807,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
         ) : identifie ? (
           <div>
             <Bouton variante="primaire" onClick={lancerCarte} disabled={carteEtat === "recherche"} style={{ width: "100%" }}>
-              {carteEtat === "recherche" ? "🎴 Forge de la carte…" : "🎴 Forger une carte de collection"}
+              {carteEtat === "recherche" ? "🃏 Forge de la carte…" : "🃏 Forger une carte de collection"}
             </Bouton>
             {carteErreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 8 }}>{carteErreur}</div>}
             {avertAuth && (
@@ -8065,19 +8231,20 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
           <button onClick={onFermer} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
         </div>
         <div style={{ overflowY: "auto", overscrollBehavior: "contain", WebkitOverflowScrolling: "touch", flex: 1 }}>
-        {/* La bande — ce qu'on consulte souvent */}
-        {titreSection("La bande")}
-        {item("🎯", "Missions saisonnières", "Défis d'observation de la bande", () => onAller("missions"), missionsNouv)}
-        {MUR_ACTIF && item("🏅", "Classement", "Les meilleurs chasseurs de la bande", () => onAller("classement"), 0)}
-        {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
-        {MUR_ACTIF && item("📈", "Suivi des espèces", "Quand la bande voit quoi (phénologie)", () => onAller("suivi"), 0)}
-
-        {/* Apprendre */}
+        {/* v1.76 — Réordonné par ce qu'un utilisateur cherche. Apprendre en premier :
+            c'est ce qui distingue BioDex. Le suivi des espèces (phénologie) rejoint
+            cette section, c'est de la science, pas du social. */}
         {titreSection("Apprendre")}
         {item("🔍", "Guide d'observation", "Quand, où observer — et réussir ses photos", () => onAller("guide"), 0)}
         {item("🏡", "Jardin refuge", "Accueillir les insectes chez toi, et pourquoi", () => onAller("refuge"), 0)}
         {item("📖", "Le coin des curieux", "Mythes, rôle des insectes, records étonnants", () => onAller("curieux"), 0)}
-        {onRevoirPresentation && item("✨", "Revoir la présentation", "L'écran de bienvenue de BioDex", () => { onFermer(); onRevoirPresentation(); }, 0)}
+        {MUR_ACTIF && item("📈", "Suivi des espèces", "Quand la bande voit quoi (phénologie)", () => onAller("suivi"), 0)}
+
+        {/* La bande */}
+        {MUR_ACTIF && titreSection("La bande")}
+        {MUR_ACTIF && item("🏅", "Meilleurs chasseurs", "Le classement des trouvailles partagées", () => onAller("classement"), 0)}
+        {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
+        {item("🎯", "Missions saisonnières", "Défis d'observation de la bande", () => onAller("missions"), missionsNouv)}
 
         {/* Compte */}
         {MUR_ACTIF && titreSection("Mon compte")}
@@ -8092,6 +8259,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {/* À propos — rarement consulté */}
         {titreSection("À propos")}
         {item("🔒", "Confidentialité", "Quelles données, et ce que j'en fais", () => onAller("confidentialite"), 0)}
+        {onRevoirPresentation && item("✨", "Revoir la présentation", "L'écran de bienvenue de BioDex", () => { onFermer(); onRevoirPresentation(); }, 0)}
         {estAdmin && item("🔐", "Administration", "Modération, stats, maintenance", () => onAller("admin"), 0)}
 
         <div style={{ padding: "14px 16px 16px", textAlign: "center" }}>
@@ -8104,8 +8272,34 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
   );
 }
 
+// v1.76 — Ligne de prénom partagée (Mur, Ligue, Missions). Le prénom apparaissait
+// sous forme de champ de saisie sur trois écrans, avec trois formulations différentes,
+// en tête de page à chaque visite. Quand il est connu, on n'affiche plus qu'un rappel
+// discret avec « modifier » ; le champ ne s'impose que s'il manque.
+function LignePrenom({ etiquette, prenom, saisie, onSaisie, onValider, alerte, style }) {
+  const [edition, setEdition] = useState(false);
+  const connu = !!(prenom || "").trim() && !edition;
+  if (connu) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontFamily: sans, fontSize: 12.5, color: C.papierSombre, ...(style || {}) }}>
+        <span>🐛 {etiquette || "Tu joues en tant que"} <b style={{ color: C.papier }}>{prenom.trim()}</b></span>
+        <button onClick={() => setEdition(true)} style={{ background: "none", border: "none", color: C.ambre, fontFamily: sans, fontSize: 12.5, cursor: "pointer", padding: "2px 4px", textDecoration: "underline" }}>modifier</button>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: alerte ? 6 : 14, padding: "10px 12px", background: C.panneau, border: `1px solid ${alerte || !prenom ? C.ambre : C.bordure}`, borderRadius: 10, ...(style || {}) }}>
+      <span style={{ fontFamily: sans, fontSize: 13, color: C.lichen, fontWeight: 600, whiteSpace: "nowrap" }}>{etiquette || "Ton prénom"} :</span>
+      <input value={saisie} autoFocus={edition} onChange={(e) => onSaisie(e.target.value)}
+        onBlur={() => { const v = (saisie || "").trim(); onValider(v); if (v) setEdition(false); }}
+        placeholder="ex : Sylvain" maxLength={40}
+        style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
+    </div>
+  );
+}
+
 // ---------- Vue : Ligue (défis sociaux) ----------
-function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, embarque }) {
+function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, embarque, onSyncXp }) {
   const [onglet, setOnglet] = useState("champions"); // champions | mescartes | classement
   const [ligue, setLigue] = useState([]);
   const [scores, setScores] = useState([]);
@@ -8125,6 +8319,7 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
     try {
       const [l, s] = await Promise.all([chargerLigue(), chargerScores()]);
       setLigue(l); setScores(s); setEtat("ok");
+      synchroniserXpLigue(l, observations, prenom, onSyncXp).catch(() => {});
     } catch { setEtat("echec"); }
   }
   useEffect(() => { rafraichir(); }, []);
@@ -8173,17 +8368,16 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
         <span style={{ fontSize: 28 }}>🏆</span>
         <div className="serif" style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier }}>La Ligue</div>
       </div>
-      <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 14, lineHeight: 1.5 }}>
-        Engage tes meilleures cartes, défie celles de la bande. Quand tu défies une carte, son propriétaire n'a pas besoin d'être là : l'appli la joue pour lui.
-      </div>
-
-      {/* Prénom */}
-      {MUR_ACTIF && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, padding: "10px 12px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
-          <span style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, whiteSpace: "nowrap" }}>Ton prénom :</span>
-          <input value={saisiePrenom} onChange={(e) => setSaisiePrenom(e.target.value)} onBlur={() => onDefinirPrenom((saisiePrenom || "").trim())} placeholder="ex : Sylvain" maxLength={40}
-            style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "7px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
+      {/* v1.76 — L'explication n'est utile qu'à l'arrivée (onglet Défier) : répétée sur
+          les quatre onglets, elle repoussait le classement à mi-écran. */}
+      {onglet === "champions" && (
+        <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginBottom: 14, lineHeight: 1.5 }}>
+          Engage tes meilleures cartes, défie celles de la bande. Quand tu défies une carte, son propriétaire n'a pas besoin d'être là : l'appli la joue pour lui.
         </div>
+      )}
+
+      {MUR_ACTIF && (
+        <LignePrenom prenom={prenom} saisie={saisiePrenom} onSaisie={setSaisiePrenom} onValider={onDefinirPrenom} />
       )}
 
       {!MUR_ACTIF && (
@@ -8196,7 +8390,7 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
 
       {/* Onglets */}
       <div style={{ display: "flex", gap: 6, marginBottom: 16, background: C.panneau, padding: 4, borderRadius: 10, border: `1px solid ${C.bordure}` }}>
-        {[["champions", "⚔️ Défier"], ["mescartes", "🎴 Mes cartes"], ["classement", "📊 Classement"], ["journal", "📜 Journal"]].map(([id, lab]) => (
+        {[["champions", "⚔️ Défier"], ["mescartes", "🃏 Mes cartes"], ["classement", "📊 Classement"], ["journal", "📜 Défis"]].map(([id, lab]) => (
           <button key={id} onClick={() => setOnglet(id)} style={{ flex: 1, padding: "8px 6px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: 700, background: onglet === id ? "linear-gradient(#C9A24B, #B8912F)" : "transparent", color: onglet === id ? C.encre : C.papierSombre }}>{lab}</button>
         ))}
       </div>
@@ -8253,7 +8447,7 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: C.papier }}>{c.nom} {c.authentique === false && <span title="Photo non vérifiée" style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 800, color: "#FFDDD4", background: "rgba(140,40,30,.92)", border: "1px solid #E5603E", borderRadius: 8, padding: "1px 5px", verticalAlign: "middle" }}>⚠ non vérifiée</span>}</div>
-                      <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>{t.emoji} {t.label} · <span style={{ color: "#8AAE6B" }}>{c.victoires || 0}V</span>/<span style={{ color: "#E5603E" }}>{c.defaites || 0}D</span> en défense</div>
+                      <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>{t.emoji} {t.label} · <span style={{ color: "#8AAE6B" }}>{c.victoires || 0}V</span>/<span style={{ color: "#E5603E" }}>{c.defaites || 0}D</span></div>
                     </div>
                     <button onClick={() => retirer(c)} disabled={enCours === "retirer-" + c.id} style={{ flexShrink: 0, background: "none", border: `1px solid ${C.bordure}`, color: C.papierSombre, borderRadius: 8, padding: "6px 10px", fontFamily: sans, fontSize: 12, cursor: "pointer" }}>Retirer</button>
                   </div>
@@ -8303,7 +8497,7 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
           )}
           {prenom && journalEtat === "ok" && journal.length === 0 && (
             <div style={{ textAlign: "center", color: C.papierSombre, fontSize: 14, padding: "24px 16px", background: C.panneau, borderRadius: 10, lineHeight: 1.5 }}>
-              Aucun combat enregistré pour l'instant.<br />Lance un défi, il apparaîtra ici !
+              Aucun défi enregistré pour l'instant.<br />Lance un défi, il apparaîtra ici !
             </div>
           )}
           {prenom && journalEtat === "ok" && journal.length > 0 && (() => {
@@ -8359,24 +8553,49 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
             <div style={{ textAlign: "center", color: C.papierSombre, fontSize: 14, padding: "24px 16px", background: C.panneau, borderRadius: 10 }}>
               Aucun défi joué pour l'instant. Lance le premier combat !
             </div>
-          ) : (
-            scores.map((s, i) => {
-              const total = (s.victoires || 0) + (s.defaites || 0);
-              const ratio = total > 0 ? Math.round((s.victoires / total) * 100) : 0;
+          ) : (() => {
+            // v1.76 — Le classement était trié par NOMBRE de victoires mais affichait
+            // un TAUX de réussite : on pouvait lire 64 % classé derrière 55 %. Il est
+            // maintenant trié par taux (puis victoires), avec un minimum de 3 combats
+            // pour être classé — en dessous, on est « en qualification ».
+            const MIN_COMBATS = 3;
+            const enrichi = scores.map((s) => {
+              const v = s.victoires || 0, d = s.defaites || 0, total = v + d;
+              return { ...s, v, d, total, ratio: total > 0 ? Math.round((v / total) * 100) : 0, record: Number(s.record_arene) || 0 };
+            });
+            const classes = enrichi.filter((s) => s.total >= MIN_COMBATS).sort((a, b) => b.ratio - a.ratio || b.v - a.v || a.d - b.d);
+            const qualif = enrichi.filter((s) => s.total < MIN_COMBATS).sort((a, b) => b.total - a.total || b.record - a.record);
+            const ligne = (s, i, classe) => {
               const estMoi = (s.proprietaire || "").trim().toLowerCase() === moi;
-              const medaille = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+              const medaille = !classe ? "·" : i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
               return (
-                <div key={s.proprietaire} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", marginBottom: 7, background: estMoi ? "linear-gradient(#2C3623, #232B1D)" : C.panneau, border: `1px solid ${estMoi ? "#A8863A" : C.bordure}`, borderRadius: 10 }}>
-                  <span style={{ fontSize: 18, width: 28, textAlign: "center" }}>{medaille}</span>
-                  <span style={{ flex: 1, fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: estMoi ? C.ambreClair : C.papier }}>{s.proprietaire}{estMoi && " (toi)"}</span>
-                  <span style={{ fontFamily: sans, fontSize: 13 }}>
-                    <span style={{ color: "#8AAE6B", fontWeight: 700 }}>{s.victoires || 0}V</span> <span style={{ color: C.papierSombre }}>/</span> <span style={{ color: "#E5603E", fontWeight: 700 }}>{s.defaites || 0}D</span>
-                    <span style={{ color: C.papierSombre, marginLeft: 6 }}>({ratio}%)</span>
+                <div key={s.proprietaire} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", marginBottom: 7, background: estMoi ? "linear-gradient(#2C3623, #232B1D)" : C.panneau, border: `1px solid ${estMoi ? "#A8863A" : C.bordure}`, borderRadius: 10, opacity: classe ? 1 : .8 }}>
+                  <span style={{ fontSize: 18, width: 28, textAlign: "center", color: C.papierSombre }}>{medaille}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: estMoi ? C.ambreClair : C.papier }}>{s.proprietaire}{estMoi && " (toi)"}</span>
+                    <span style={{ display: "block", fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 1 }}>
+                      {classe ? `${s.total} défi${s.total > 1 ? "s" : ""}` : `${s.total}/${MIN_COMBATS} défis pour être classé`}
+                      {s.record > 0 && <span> · 🏟️ arène : {s.record} manche{s.record > 1 ? "s" : ""}</span>}
+                    </span>
+                  </span>
+                  <span style={{ fontFamily: sans, fontSize: 13, textAlign: "right", flexShrink: 0 }}>
+                    <span style={{ display: "block", fontFamily: serif, fontSize: 19, fontWeight: 700, color: classe ? C.ambreClair : C.papierSombre, lineHeight: 1 }}>{s.total > 0 ? s.ratio + " %" : "—"}</span>
+                    <span style={{ display: "block", marginTop: 3 }}><span style={{ color: "#8AAE6B", fontWeight: 700 }}>{s.v}V</span> <span style={{ color: C.papierSombre }}>/</span> <span style={{ color: "#E5603E", fontWeight: 700 }}>{s.d}D</span></span>
                   </span>
                 </div>
               );
-            })
-          )}
+            };
+            return (
+              <div>
+                <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginBottom: 8 }}>Classé au taux de réussite · au moins {MIN_COMBATS} défis joués</div>
+                {classes.map((s, i) => ligne(s, i, true))}
+                {qualif.length > 0 && (
+                  <div style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: C.lichen, margin: "14px 0 8px" }}>En qualification</div>
+                )}
+                {qualif.map((s, i) => ligne(s, i, false))}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
@@ -8614,11 +8833,7 @@ function Missions({ observations, prenom, onDefinirPrenom, onFermer }) {
       </div>
 
       {MUR_ACTIF && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, padding: "10px 12px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
-          <span style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, whiteSpace: "nowrap" }}>Ton prénom :</span>
-          <input value={saisiePrenom} onChange={(e) => setSaisiePrenom(e.target.value)} onBlur={() => onDefinirPrenom((saisiePrenom || "").trim())} placeholder="ex : Sylvain" maxLength={40}
-            style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "7px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
-        </div>
+        <LignePrenom etiquette="Tu valides en tant que" prenom={prenom} saisie={saisiePrenom} onSaisie={setSaisiePrenom} onValider={onDefinirPrenom} />
       )}
 
       {!MUR_ACTIF && (
@@ -8798,12 +9013,13 @@ function Carte({ observations, onOuvrirFiche }) {
         const m = L.marker(pt, { icon: pastilleIcone(exacte ? "#C9A24B" : "#8AAE6B") });
         const conteneur = document.createElement("div");
         conteneur.style.width = "150px";
-        conteneur.innerHTML =
-          (p.photo_url ? '<img src="' + p.photo_url + '" alt="Photo partagée" style="width:100%;border-radius:6px;display:block;margin-bottom:6px;" />' : "") +
-          '<div style="font-weight:700;font-size:13px;color:#2A2519;">' + (p.espece ? String(p.espece).replace(/</g, "&lt;") : "Spécimen non identifié") + "</div>" +
-          '<div style="font-size:11px;color:#8A8065;">' +
-          "🐛 " + (p.auteur ? String(p.auteur).replace(/</g, "&lt;") : "Anonyme") + (p.lieu ? " · " + String(p.lieu).replace(/</g, "&lt;") : "") + "</div>" +
-          '<div style="font-size:10px;color:#A89A78;margin-top:4px;">' + (exacte ? "📍 Position exacte" : "🌫️ Zone approximative") + "</div>";
+        // v1.76 — Construit avec le DOM plutôt qu'innerHTML : photo_url et les textes
+        // viennent de la base partagée, on ne les insère plus dans du HTML brut.
+        const el = (tag, style, texte) => { const e = document.createElement(tag); if (style) e.style.cssText = style; if (texte != null) e.textContent = texte; return e; };
+        if (p.photo_url) { const im = el("img", "width:100%;border-radius:6px;display:block;margin-bottom:6px;"); im.alt = "Photo partagée"; im.src = String(p.photo_url); conteneur.appendChild(im); }
+        conteneur.appendChild(el("div", "font-weight:700;font-size:13px;color:#2A2519;", p.espece ? String(p.espece) : "Spécimen non identifié"));
+        conteneur.appendChild(el("div", "font-size:11px;color:#8A8065;", "🐛 " + (p.auteur ? String(p.auteur) : "Anonyme") + (p.lieu ? " · " + String(p.lieu) : "")));
+        conteneur.appendChild(el("div", "font-size:10px;color:#A89A78;margin-top:4px;", exacte ? "📍 Position exacte" : "🌫️ Zone approximative"));
         m.bindPopup(conteneur);
         ajouterMarqueur(m);
       });
@@ -9004,6 +9220,47 @@ function SectionPliable({ titre, ouvertParDefaut, resume, alerte, children }) {
 }
 
 // État de la dernière sauvegarde (date relative + niveau d'alerte).
+// v1.76 — Export de la collection : UNE seule implémentation. Elle existait en double
+// (panneau Aide + bannière de rappel), et les deux copies avaient déjà divergé : seule
+// l'une émettait l'événement « sauvegarde faite », l'autre seule effaçait le report du
+// rappel. Le genre de doublon qui a déjà coûté des semaines d'écran noir.
+// Renvoie le nombre d'observations exportées.
+async function exporterCollection() {
+  const toutes = await dbToutes();
+  // Les photos sont converties une par une et la chaîne JSON est assemblée par
+  // morceaux : on évite de garder toute la collection en base64 dans un seul tableau.
+  const morceaux = [];
+  for (const o of toutes) {
+    let photo64 = null;
+    if (o.photo) {
+      photo64 = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(o.photo);
+      });
+    }
+    morceaux.push(JSON.stringify({ ...o, photo: photo64 }));
+  }
+  const entete = JSON.stringify({ app: "biodex", version: VERSION, exporteLe: new Date().toISOString() }).slice(0, -1);
+  const blob = new Blob([entete, ',"observations":[', morceaux.join(","), "]}"], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "biodex-sauvegarde-" + new Date().toISOString().slice(0, 10) + ".json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  try {
+    localStorage.setItem("biodex_derniere_sauvegarde", new Date().toISOString());
+    localStorage.setItem("biodex_sauvegarde_count", String(toutes.length));
+    localStorage.removeItem("biodex_rappel_reporte");
+    window.dispatchEvent(new Event("biodex-sauvegarde-faite"));
+  } catch {}
+  return toutes.length;
+}
+
 function etatSauvegarde() {
   try {
     const iso = localStorage.getItem("biodex_derniere_sauvegarde");
@@ -9041,37 +9298,8 @@ function Aide({ onFermer, onImportTermine }) {
   async function exporter() {
     setExportEtat("Préparation de la sauvegarde…");
     try {
-      const toutes = await dbToutes();
-      const obsExport = [];
-      for (const o of toutes) {
-        let photo64 = null;
-        if (o.photo) {
-          photo64 = await new Promise((res, rej) => {
-            const r = new FileReader();
-            r.onload = () => res(r.result);
-            r.onerror = rej;
-            r.readAsDataURL(o.photo);
-          });
-        }
-        obsExport.push({ ...o, photo: photo64 });
-      }
-      const json = JSON.stringify({ app: "biodex", version: VERSION, exporteLe: new Date().toISOString(), observations: obsExport });
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "biodex-sauvegarde-" + new Date().toISOString().slice(0, 10) + ".json";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-      setExportEtat("✓ " + toutes.length + " observation(s) exportée(s)");
-      // Mémorise la sauvegarde pour le rappel
-      try {
-        localStorage.setItem("biodex_derniere_sauvegarde", new Date().toISOString());
-        localStorage.setItem("biodex_sauvegarde_count", String(toutes.length));
-        window.dispatchEvent(new Event("biodex-sauvegarde-faite"));
-      } catch {}
+      const n = await exporterCollection();
+      setExportEtat("✓ " + n + " observation(s) exportée(s)");
     } catch {
       setExportEtat("Échec de l'export — réessaie.");
     }
@@ -9206,7 +9434,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🏆 La Ligue</div>
         <p style={p}>
-          Depuis le menu ☰, la Ligue te permet de défier les cartes de la bande. Engage jusqu'à 3 de tes cartes forgées (elles restent dans ta collection), et défie celles des autres : quand tu défies une carte, son propriétaire n'a pas besoin d'être connecté, l'appli la joue pour lui. Chaque défi met à jour le classement des joueurs (victoires/défaites) et les stats de chaque carte. L'onglet « 📜 Journal » garde la trace de tous tes combats (défis lancés et subis) avec ton bilan victoires/défaites. Quand une de tes cartes est défiée pendant ton absence, tu es prévenu dans ta cloche 🔔 : qui t'a défié, quelle carte, et si elle a tenu bon. Tu peux jouer le combat en manuel, en auto, ou juste voir le résultat. Pour que le jeu reste fair-play, chaque carte forgée est vérifiée : si la photo ne ressemble pas à une vraie photo d'insecte prise sur le terrain (capture d'écran, image trouvée sur internet, dessin), la carte est marquée « non vérifiée » et porte un badge visible dans la ligue. La carte reste jouable, mais tout le monde voit qu'elle est douteuse.
+          Depuis le menu ☰, la Ligue te permet de défier les cartes de la bande. Engage jusqu'à 3 de tes cartes forgées (elles restent dans ta collection), et défie celles des autres : quand tu défies une carte, son propriétaire n'a pas besoin d'être connecté, l'appli la joue pour lui. Chaque défi met à jour le classement des joueurs (victoires/défaites) et les stats de chaque carte. L'onglet « 📜 Défis » garde la trace de tous tes défis de ligue (lancés et subis) avec ton bilan victoires/défaites — les combats d'arène, eux, ne comptent que pour ton record. Le classement de la ligue est établi au taux de réussite, et il faut avoir joué au moins 3 défis pour y figurer. Quand une de tes cartes est défiée pendant ton absence, tu es prévenu dans ta cloche 🔔 : qui t'a défié, quelle carte, et si elle a tenu bon. Tu peux jouer le combat en manuel, en auto, ou juste voir le résultat. Pour que le jeu reste fair-play, chaque carte forgée est vérifiée : si la photo ne ressemble pas à une vraie photo d'insecte prise sur le terrain (capture d'écran, image trouvée sur internet, dessin), la carte est marquée « non vérifiée » et porte un badge visible dans la ligue. La carte reste jouable, mais tout le monde voit qu'elle est douteuse.
         </p>
         <div style={t}>💡 Boîte à idées</div>
         <p style={p}>
@@ -9214,10 +9442,10 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
       </SectionPliable>
 
-      <SectionPliable titre="🎴 Jeu & cartes">
-        <div style={t}>🎴 Cartes de collection</div>
+      <SectionPliable titre="🃏 Jeu & cartes">
+        <div style={t}>🃏 Cartes de collection</div>
         <p style={p}>
-          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. La rareté de la carte (qui déclenche les cartes holographiques et légendaires scintillantes) s'appuie désormais sur les vraies données d'observation d'iNaturalist : plus une espèce est rare dans le monde, plus sa carte brille. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Dans ta galerie de cartes, tu peux filtrer par ordre d'insecte et trier tes cartes par récentes, par rareté ou par type de combat. Tout le jeu est regroupé dans l'onglet 🎮 Jeu en bas : « 🎴 Cartes » (ta galerie), « ⚔️ Combat » et « 🧠 Quiz ». Le quiz propose 5 questions par jour, dont la moitié tirées de ta propre collection (nom scientifique, biotope, groupe d'une espèce que tu as observée) : il se renouvelle donc au fil de tes trouvailles. Une fois le quiz du jour fait, le mode « 🔄 Entraînement » te permet de rejouer des séries à volonté, sans points. Ton total de points apparaît dans le classement quiz de la bande. Une pastille 🧠 sur l'onglet Jeu indique que le quiz du jour t'attend. L'écran Combat réunit deux façons de se battre : « 🏆 Défier la bande » (tu choisis la carte d'un pote et le résultat compte au classement) et « 🏟️ Arène » (tu enchaînes seul des adversaires de plus en plus forts, ton insecte étant soigné entre les manches ; ta meilleure série est enregistrée comme record). En combat, chaque insecte a un type parmi 8 (🦋 Volant, 🪲 Cuirassé, 🐛 Rampant, 🦗 Bondissant, 🕷️ Venimeux, 💧 Aquatique, 🐜 Social, 🌙 Nocturne) avec des forces et faiblesses, des points de vie, de l'énergie qui se recharge, une attaque de base et une capacité spéciale qui coûte de l'énergie. Le bouton « 🔰 Forces & faiblesses des types » affiche le schéma complet de qui bat qui — un coup avec l'avantage de type fait ×1,3 de dégâts. Choisis ton insecte selon le type de l'adversaire ! Tes cartes progressent : chaque défi de ligue rapporte de l'XP (même en perdant !), et tous les 30 points ta carte gagne un niveau, jusqu'à 5 étoiles ⭐. Chaque niveau donne +3 % de stats (+15 % au niveau 5). Le plafond est volontairement bas pour que ceux qui jouent moins souvent restent dans la course. L'arène ne rapporte pas d'XP, seuls les défis comptent. Chaque capacité appartient à une famille qui change sa façon de frapper : ⚔️ Frappe (gros dégâts), 💚 Régénération (dégâts + tu récupères des PV), 💫 Coup sonnant (dégâts + la prochaine attaque adverse est réduite de moitié) et 🩸 Drain (dégâts + tu voles de l'énergie). La famille est déduite de la biologie de l'espèce — un insecte qui mue se régénère, un prédateur qui aspire draine, etc. L'emoji sur le bouton de capacité te dit laquelle tu as. En plus d'attaquer, tu peux te mettre en 🛡️ Parade (le prochain coup encaissé est réduit de moitié et tu regagnes de l'énergie) — utile pour charger ta capacité. Et les insectes de type Venimeux empoisonnent leur cible avec leur capacité : le poison inflige des dégâts au tour suivant (badge ☠️), sans se cumuler. Chaque forge coûte un appel (~0,8 centime).
+          Depuis la fiche d'un spécimen identifié, « Forger une carte » crée une carte de jeu : ses stats (attaque, défense, vitesse) et sa capacité spéciale sont générées par l'IA d'après la vraie biologie de l'insecte. La rareté de la carte (qui déclenche les cartes holographiques et légendaires scintillantes) s'appuie désormais sur les vraies données d'observation d'iNaturalist : plus une espèce est rare dans le monde, plus sa carte brille. Avec « 🖼️ Cadrer l'insecte », dessine un cadre sur la photo pour que la carte soit centrée pile sur la bête (sans le décor autour). Dans ta galerie de cartes, tu peux filtrer par ordre d'insecte et trier tes cartes par récentes, par rareté ou par type de combat. Tout le jeu est regroupé dans l'onglet 🎮 Jeu en bas : « 🎴 Cartes » (ta galerie), « ⚔️ Combat » et « 🧠 Quiz ». Le quiz propose 5 questions par jour, dont la moitié tirées de ta propre collection (nom scientifique, biotope, groupe d'une espèce que tu as observée) : il se renouvelle donc au fil de tes trouvailles. Une fois le quiz du jour fait, le mode « 🔄 Entraînement » te permet de rejouer des séries à volonté, sans points. Ton total de points apparaît dans le classement quiz de la bande. Une pastille 🧠 sur l'onglet Jeu indique que le quiz du jour t'attend. L'écran Combat réunit deux façons de se battre : « 🏆 Défier la bande » (tu choisis la carte d'un pote et le résultat compte au classement) et « 🏟️ Arène » (tu enchaînes seul des adversaires tirés d'un bestiaire de dix-sept espèces européennes, de plus en plus coriaces au fil des manches, ton insecte étant soigné entre les manches ; ta meilleure série est ton record, visible par la bande dans le classement de la ligue). En combat, chaque insecte a un type parmi 8 (🦋 Volant, 🪲 Cuirassé, 🐛 Rampant, 🦗 Bondissant, 🕷️ Venimeux, 💧 Aquatique, 🐜 Social, 🌙 Nocturne) avec des forces et faiblesses, des points de vie, de l'énergie qui se recharge, une attaque de base et une capacité spéciale qui coûte de l'énergie. Le bouton « 🔰 Forces & faiblesses des types » affiche le schéma complet de qui bat qui — un coup avec l'avantage de type fait ×1,3 de dégâts. Choisis ton insecte selon le type de l'adversaire ! Tes cartes progressent : chaque défi de ligue rapporte de l'XP (même en perdant !), que tu attaques ou que tu défendes, et tous les 30 points ta carte gagne un niveau, jusqu'à 5 étoiles ⭐. Chaque niveau donne +3 % de stats (+15 % au niveau 5). Le plafond est volontairement bas pour que ceux qui jouent moins souvent restent dans la course. L'arène ne rapporte pas d'XP, seuls les défis comptent. Chaque capacité appartient à une famille qui change sa façon de frapper : ⚔️ Frappe (gros dégâts), 💚 Régénération (dégâts + tu récupères des PV), 💫 Coup sonnant (dégâts + la prochaine attaque adverse est réduite de moitié) et 🩸 Drain (dégâts + tu voles de l'énergie). La famille est déduite de la biologie de l'espèce — un insecte qui mue se régénère, un prédateur qui aspire draine, etc. L'emoji sur le bouton de capacité te dit laquelle tu as. En plus d'attaquer, tu peux te mettre en 🛡️ Parade (le prochain coup encaissé est réduit de moitié et tu regagnes de l'énergie) — utile pour charger ta capacité. Et les insectes de type Venimeux empoisonnent leur cible avec leur capacité : le poison inflige des dégâts au tour suivant (badge ☠️), sans se cumuler. Chaque forge coûte un appel (~0,8 centime).
         </p>
         <div style={t}>🔬 Science participative (iNaturalist)</div>
         <p style={p}>
@@ -9375,7 +9603,7 @@ function Connexion({ onFermer, utilisateur, onDeconnexion }) {
 }
 
 // ---------- Boîte à idées (vue) ----------
-function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
+function BoiteIdees({ prenom, onDefinirPrenom, onFermer, estAdmin }) {
   const [idees, setIdees] = useState([]);
   const [reactions, setReactions] = useState({}); // toutes les réactions (reactions_detail groupées)
   const [besoinPrenom, setBesoinPrenom] = useState(false);
@@ -9452,7 +9680,7 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
 
   async function supprimer(id) {
     try { await supprimerIdee(id); setIdees((prev) => prev.filter((x) => x.id !== id)); }
-    catch { rafraichir(); }
+    catch { setErreur("Suppression refusée par le serveur : seul l'auteur ou l'admin peut retirer une idée."); rafraichir(); }
     setConfirmSuppr(null);
   }
 
@@ -9493,37 +9721,7 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
         Une envie, une amélioration, un bug à signaler ? Partage-la avec la bande — les meilleures idées finiront peut-être dans l'appli !
       </div>
 
-      {/* Enquête de satisfaction */}
-      <div style={{ padding: "13px 14px", background: "linear-gradient(#1E2617, #181E12)", border: `1px solid ${note ? "#A8863A" : C.bordure}`, borderRadius: 10, marginBottom: 18 }}>
-        {avisEtat === "envoye" ? (
-          <div style={{ textAlign: "center", padding: "6px 0" }}>
-            <div style={{ fontSize: 30, marginBottom: 6 }}>🙏</div>
-            <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier, marginBottom: 4 }}>Merci pour ton retour !</div>
-            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 10 }}>Ton avis aide à faire grandir BioDex.</div>
-            <button onClick={() => setAvisEtat("")} style={{ background: "none", border: `1px solid ${C.bordure}`, color: C.papierSombre, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 14, cursor: "pointer" }}>Donner un autre avis</button>
-          </div>
-        ) : (
-          <div>
-            <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, marginBottom: 2 }}>😊 Ton avis sur BioDex</div>
-            <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 10, lineHeight: 1.5 }}>Comment tu trouves l'appli dans l'ensemble ?</div>
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
-              <Etoiles note={note} onNote={setNote} taille={30} />
-            </div>
-            <textarea value={avisTexte} onChange={(e) => setAvisTexte(e.target.value)} placeholder="Un commentaire (optionnel) : ce qui te plaît, ce qui manque…" maxLength={500} rows={2}
-              style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "9px 11px", fontFamily: sans, fontSize: 13.5, outline: "none", resize: "vertical", marginBottom: 9 }} />
-            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 10, fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>
-              <input type="checkbox" checked={avisAnonyme} onChange={(e) => setAvisAnonyme(e.target.checked)} style={{ width: 16, height: 16, accentColor: C.ambre, cursor: "pointer" }} />
-              Publier mon avis anonymement
-            </label>
-            <Bouton variante="primaire" onClick={envoyerMonAvis} disabled={avisEtat === "envoi"} style={{ width: "100%" }}>
-              {avisEtat === "envoi" ? "Envoi…" : "Envoyer mon avis"}
-            </Bouton>
-            {avisErreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 8 }}>{avisErreur}</div>}
-          </div>
-        )}
-      </div>
-
-      <div style={{ fontFamily: sans, fontSize: 13, fontWeight: 700, color: C.lichen, marginBottom: 10, letterSpacing: 0.3 }}>💡 OU PROPOSE UNE IDÉE</div>
+      <div style={{ fontFamily: sans, fontSize: 13, fontWeight: 700, color: C.lichen, marginBottom: 10, letterSpacing: 0.3 }}>💡 PROPOSE UNE IDÉE</div>
 
       {/* Formulaire */}
       <div style={{ padding: "12px 14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10, marginBottom: 18 }}>
@@ -9588,14 +9786,46 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer }) {
                   <button onClick={() => setConfirmSuppr(null)} style={{ fontFamily: sans, fontSize: 11, padding: "6px 8px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>Non</button>
                   <button onClick={() => supprimer(it.id)} style={{ fontFamily: sans, fontSize: 11, padding: "6px 8px", borderRadius: 6, border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, cursor: "pointer" }}>Supprimer</button>
                 </span>
-              ) : (
+              ) : (estAdmin || ((it.auteur || "").trim().toLowerCase() === (prenom || "").trim().toLowerCase())) ? (
+                /* v1.76 — La corbeille n'est proposée qu'à l'auteur ou à l'admin : le serveur
+                   refusait de toute façon les autres, mais en silence. */
                 <button onClick={() => setConfirmSuppr(it.id)} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 14, cursor: "pointer", padding: "0 4px" }} title="Supprimer">🗑️</button>
-              )}
+              ) : null}
             </span>
           </div>
         </div>
         );
       })}
+      {/* Enquête de satisfaction — v1.76 : déplacée EN BAS. Sur une page qui s'appelle « Boîte à idées », la première chose visible était un formulaire de notation. */}
+      <div style={{ padding: "13px 14px", background: "linear-gradient(#1E2617, #181E12)", border: `1px solid ${note ? "#A8863A" : C.bordure}`, borderRadius: 10, marginBottom: 18 }}>
+        {avisEtat === "envoye" ? (
+          <div style={{ textAlign: "center", padding: "6px 0" }}>
+            <div style={{ fontSize: 30, marginBottom: 6 }}>🙏</div>
+            <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier, marginBottom: 4 }}>Merci pour ton retour !</div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 10 }}>Ton avis aide à faire grandir BioDex.</div>
+            <button onClick={() => setAvisEtat("")} style={{ background: "none", border: `1px solid ${C.bordure}`, color: C.papierSombre, fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 14, cursor: "pointer" }}>Donner un autre avis</button>
+          </div>
+        ) : (
+          <div>
+            <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, marginBottom: 2 }}>😊 Ton avis sur BioDex</div>
+            <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 10, lineHeight: 1.5 }}>Comment tu trouves l'appli dans l'ensemble ?</div>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+              <Etoiles note={note} onNote={setNote} taille={30} />
+            </div>
+            <textarea value={avisTexte} onChange={(e) => setAvisTexte(e.target.value)} placeholder="Un commentaire (optionnel) : ce qui te plaît, ce qui manque…" maxLength={500} rows={2}
+              style={{ width: "100%", boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "9px 11px", fontFamily: sans, fontSize: 13.5, outline: "none", resize: "vertical", marginBottom: 9 }} />
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 10, fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>
+              <input type="checkbox" checked={avisAnonyme} onChange={(e) => setAvisAnonyme(e.target.checked)} style={{ width: 16, height: 16, accentColor: C.ambre, cursor: "pointer" }} />
+              Publier mon avis anonymement
+            </label>
+            <Bouton variante="primaire" onClick={envoyerMonAvis} disabled={avisEtat === "envoi"} style={{ width: "100%" }}>
+              {avisEtat === "envoi" ? "Envoi…" : "Envoyer mon avis"}
+            </Bouton>
+            {avisErreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 8 }}>{avisErreur}</div>}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
@@ -9934,13 +10164,9 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
 
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-      {/* Prénom de l'auteur */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: besoinPrenom ? 6 : 14, padding: "10px 12px", background: C.panneau, border: `1px solid ${besoinPrenom ? C.ambre : C.bordure}`, borderRadius: 10 }}>
-        <span style={{ fontFamily: sans, fontSize: 13, color: C.lichen, fontWeight: 600, whiteSpace: "nowrap" }}>Je poste en tant que</span>
-        <input value={saisiePrenom} onChange={(e) => { setSaisiePrenom(e.target.value); if (e.target.value.trim()) setBesoinPrenom(false); }} onBlur={() => onDefinirPrenom(saisiePrenom.trim())}
-          placeholder="ton prénom" maxLength={40}
-          style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
-      </div>
+      {/* Prénom de l'auteur — compact quand il est connu (v1.76) */}
+      <LignePrenom etiquette="Tu postes en tant que" prenom={besoinPrenom ? "" : prenom} saisie={saisiePrenom} alerte={besoinPrenom}
+        onSaisie={(v) => { setSaisiePrenom(v); if (v.trim()) setBesoinPrenom(false); }} onValider={(v) => onDefinirPrenom(v)} />
       {besoinPrenom && (
         <div style={{ fontFamily: sans, fontSize: 12.5, color: C.ambreClair, marginBottom: 14, paddingLeft: 4 }}>
           👆 Indique ton prénom pour pouvoir réagir (les autres verront qui a réagi).
@@ -10218,7 +10444,7 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
 }
 
 // ---------- Mode jeu : cartes + combat solo ----------
-function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, onDefier, sousVueInitiale }) {
+function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, onDefier, sousVueInitiale, onSyncXp, onRecordArene }) {
   const [sousVue, setSousVue] = useState(sousVueInitiale || "galerie"); // galerie | combat | quiz
   const [fOrdreC, setFOrdreC] = useState("");
   const [triCartes, setTriCartes] = useState("recentes"); // recentes | rarete | type
@@ -10238,7 +10464,7 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
     else liste.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)); // récentes
     return liste;
   })();
-  const sousOnglets = [["galerie", "🎴 Cartes"], ["combat", "⚔️ Combat"], ["quiz", "🧠 Quiz"]];
+  const sousOnglets = [["galerie", "🃏 Cartes"], ["combat", "⚔️ Combat"], ["quiz", "🧠 Quiz"]];
   // « ligue » reste accepté (retour après un défi) et bascule sur le hub Combat.
   const vueCombat = sousVue === "combat" || sousVue === "ligue";
   return (
@@ -10305,7 +10531,7 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
       {sousVue === "galerie" && (
         cartes.length === 0 ? (
           <div style={{ textAlign: "center", padding: "56px 24px", border: `1px solid ${C.bordure}`, borderRadius: 14, background: "linear-gradient(#191F15, #14180F)" }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🎴</div>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🃏</div>
             <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier, marginBottom: 6 }}>Aucune carte forgée</div>
             <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.5 }}>Ouvre une observation identifiée et forge sa carte depuis sa fiche.</div>
           </div>
@@ -10332,9 +10558,9 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
           </div>
 
           {modeCombat === "defi" && MUR_ACTIF && (
-            <Ligue embarque observations={observations} prenom={prenom} onDefinirPrenom={onDefinirPrenom} onDefier={onDefier} />
+            <Ligue embarque observations={observations} prenom={prenom} onDefinirPrenom={onDefinirPrenom} onDefier={onDefier} onSyncXp={onSyncXp} />
           )}
-          {modeCombat === "arene" && <Combat cartes={cartes} modeInitial="arene" />}
+          {modeCombat === "arene" && <Combat cartes={cartes} modeInitial="arene" onRecordArene={onRecordArene} />}
           {modeCombat === "libre" && <Combat cartes={cartes} modeInitial="libre" />}
         </div>
       )}
@@ -10476,6 +10702,50 @@ function prepCombattantLigue(carteLigue) {
     xp: xpL, niveau: niveauDeXp(xpL),
     rarete: carteLigue.rarete || 30,
     ligue: carteLigue, // référence pour enregistrer le résultat
+  };
+}
+
+// v1.76 — Bestiaire de l'arène. Avant, l'adversaire était tiré dans TA PROPRE
+// collection : avec cinq cartes on se battait contre soi-même (même photo, même nom,
+// mêmes stats). Voici dix-sept espèces européennes réelles, typées et équilibrées comme
+// les cartes forgées (somme attaque+défense+vitesse ≈ 150). Pas de photo : le
+// portrait est l'emoji de l'espèce.
+const BESTIAIRE_ARENE = [
+  { nom: "Grillon champêtre",     sci: "Gryllus campestris",     type: "bondissant", emoji: "🦗", attaque: 42, defense: 48, vitesse: 55, capacite: { nom: "Stridulation", effet: "Étourdit l'adversaire", famille: "sonne" }, palier: 1 },
+  { nom: "Paon-du-jour",          sci: "Aglais io",              type: "volant",     emoji: "🦋", attaque: 40, defense: 38, vitesse: 70, capacite: { nom: "Ocelles", effet: "Désoriente d'un battement d'ailes", famille: "sonne" }, palier: 1 },
+  { nom: "Abeille domestique",    sci: "Apis mellifera",         type: "social",     emoji: "🐝", attaque: 45, defense: 40, vitesse: 60, capacite: { nom: "Essaim", effet: "Aspire l'énergie de la cible", famille: "drain" }, palier: 1 },
+  { nom: "Patineur d'eau",        sci: "Gerris lacustris",       type: "aquatique",  emoji: "💧", attaque: 40, defense: 40, vitesse: 72, capacite: { nom: "Glissade", effet: "Frappe et esquive", famille: "sonne" }, palier: 1 },
+  { nom: "Fourmi rousse",         sci: "Formica rufa",           type: "social",     emoji: "🐜", attaque: 48, defense: 45, vitesse: 60, capacite: { nom: "Colonie", effet: "Les ouvrières la soignent", famille: "regen" }, palier: 1 },
+  { nom: "Cétoine dorée",         sci: "Cetonia aurata",         type: "cuirasse",   emoji: "🪲", attaque: 45, defense: 65, vitesse: 42, capacite: { nom: "Carapace", effet: "Encaisse et récupère", famille: "regen" }, palier: 2 },
+  { nom: "Grande sauterelle verte", sci: "Tettigonia viridissima", type: "bondissant", emoji: "🦗", attaque: 50, defense: 40, vitesse: 65, capacite: { nom: "Bond", effet: "Coup puissant en retombant", famille: "frappe" }, palier: 2 },
+  { nom: "Épeire diadème",        sci: "Araneus diadematus",     type: "venimeux",   emoji: "🕷️", attaque: 55, defense: 45, vitesse: 45, capacite: { nom: "Toile", effet: "Immobilise la proie", famille: "sonne" }, palier: 2 },
+  { nom: "Bousier",               sci: "Geotrupes stercorarius", type: "cuirasse",   emoji: "🪲", attaque: 45, defense: 75, vitesse: 30, capacite: { nom: "Cuirasse", effet: "Charge tête baissée", famille: "frappe" }, palier: 2 },
+  { nom: "Dytique bordé",         sci: "Dytiscus marginalis",    type: "aquatique",  emoji: "🪲", attaque: 60, defense: 55, vitesse: 38, capacite: { nom: "Plongée", effet: "Se soigne sous l'eau", famille: "regen" }, palier: 3 },
+  { nom: "Sphinx tête-de-mort",   sci: "Acherontia atropos",     type: "nocturne",   emoji: "🦋", attaque: 52, defense: 42, vitesse: 58, capacite: { nom: "Cri strident", effet: "Paralyse de peur", famille: "sonne" }, palier: 3 },
+  { nom: "Libellule empereur",    sci: "Anax imperator",         type: "volant",     emoji: "🪰", attaque: 58, defense: 32, vitesse: 62, capacite: { nom: "Piqué", effet: "Attaque en piqué foudroyante", famille: "frappe" }, palier: 3 },
+  { nom: "Scolopendre",           sci: "Scolopendra cingulata",  type: "rampant",    emoji: "🐛", attaque: 68, defense: 36, vitesse: 50, capacite: { nom: "Crochets à venin", effet: "Vole l'énergie en mordant", famille: "drain" }, palier: 4 },
+  { nom: "Grand iule",            sci: "Tachypodoiulus niger",   type: "rampant",    emoji: "🐛", attaque: 38, defense: 70, vitesse: 40, capacite: { nom: "Enroulement", effet: "Se met en boule et récupère", famille: "regen" }, palier: 2 },
+  { nom: "Mante religieuse",      sci: "Mantis religiosa",       type: "bondissant", emoji: "🦗", attaque: 72, defense: 38, vitesse: 42, capacite: { nom: "Embuscade", effet: "Saisit et étourdit", famille: "sonne" }, palier: 4 },
+  { nom: "Frelon européen",       sci: "Vespa crabro",           type: "venimeux",   emoji: "🐝", attaque: 70, defense: 40, vitesse: 45, capacite: { nom: "Dard", effet: "Piqûre qui draine", famille: "drain" }, palier: 4 },
+  { nom: "Lucane cerf-volant",    sci: "Lucanus cervus",         type: "cuirasse",   emoji: "🪲", attaque: 80, defense: 55, vitesse: 25, capacite: { nom: "Mandibules", effet: "Broie l'adversaire", famille: "frappe" }, palier: 5 },
+];
+// Adversaire de la manche m : tiré parmi les espèces d'un palier ≤ à la manche
+// (manche 1 = les faciles, manche 5+ = tout le bestiaire), sans reprendre le précédent.
+function tirerAdversaireArene(m, precedentNom) {
+  const palierMax = Math.max(1, Math.min(5, Math.ceil(m / 2)));
+  let pool = BESTIAIRE_ARENE.filter((b) => b.palier <= palierMax && b.nom !== precedentNom);
+  if (!pool.length) pool = BESTIAIRE_ARENE;
+  const b = pool[Math.floor(Math.random() * pool.length)];
+  const pvMax = Math.round(150 + b.defense * 1.0);
+  return {
+    id: "arene-" + b.sci.replace(/\W+/g, "-").toLowerCase() + "-" + m,
+    nom: b.nom, nomSci: b.sci, obs: null, photoUrlDistante: "", emoji: b.emoji,
+    type: b.type, attaque: b.attaque, defense: b.defense, vitesse: b.vitesse,
+    pvMax, pv: pvMax, energie: 3, energieMax: 6,
+    capacite: { nom: b.capacite.nom, effet: b.capacite.effet },
+    famille: b.capacite.famille,
+    sonne: null, xp: 0, niveau: 0, rarete: 30 + b.palier * 12,
+    arene: true,
   };
 }
 
@@ -10653,7 +10923,7 @@ function PortraitCombat({ combattant, cote, anim, ko }) {
     <div className={(cote === "g" ? "bd-entree-g" : "bd-entree-d")} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", maxWidth: 150 }}>
       <div className={classeAnim} style={{ position: "relative", width: 96, height: 96, borderRadius: "50%", overflow: "hidden", border: `3px solid ${t.couleur || C.ambre}`, boxShadow: `0 0 16px ${t.couleur || C.ambre}55`, background: C.panneau }}>
         {photoUrl ? <img src={photoUrl} alt={combattant.nom} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> :
-          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>{t.emoji}</div>}
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 44, background: `radial-gradient(circle at 40% 35%, ${t.couleur || C.ambre}33, ${C.panneau} 70%)` }}>{combattant.emoji || t.emoji}</div>}
       </div>
       <div style={{ marginTop: 6, fontFamily: sans, fontSize: 13, fontWeight: 700, color: C.papier, textAlign: "center", lineHeight: 1.2 }}>{combattant.nom}</div>
       {niv > 0 && (
@@ -10706,7 +10976,7 @@ function jouerSon(nom) {
   else if (nom === "defaite") [392, 330, 262].forEach((f, i) => bip(f, 0.24, "triangle", 0.12, i * 0.15));
 }
 
-function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial }) {
+function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial, onRecordArene }) {
   const jouables = cartes.filter((c) => c.carte);
   const [phase, setPhase] = useState("choix"); // choix | combat | fin
   const [moi, setMoi] = useState(null);
@@ -10761,17 +11031,20 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial
   }
 
   // Adversaire d'arène : stats qui montent à chaque manche.
-  function adversaireArene(m) {
-    const base = jouables[Math.floor(Math.random() * jouables.length)];
-    const c = prepCombattant(base);
-    const fStat = 0.6 + (m - 1) * 0.05; // départ à 60% (échauffement), +5%/manche
+  function adversaireArene(m, precedentNom) {
+    // v1.76 — Adversaire tiré du bestiaire (plus jamais dans ta propre collection).
+    // La montée en difficulté est double : un bestiaire de plus en plus coriace
+    // (paliers), et des stats qui montent avec la manche.
+    const c = tirerAdversaireArene(m, precedentNom);
+    const fStat = 0.7 + (m - 1) * 0.05; // départ à 70 % (échauffement), +5 %/manche
     const fPv = 1 + (m - 1) * 0.05;
     c.attaque = Math.round(c.attaque * fStat);
     c.defense = Math.round(c.defense * fStat);
     c.vitesse = Math.round(c.vitesse * fStat);
     c.pvMax = Math.round(c.pvMax * fPv);
     c.pv = c.pvMax;
-    c.nom = c.nom + " ✦" + m;
+    // Plus de suffixe « ✦m » dans le nom : il ressemblait au marqueur de niveau.
+    // La manche est déjà affichée en tête de l'écran.
     return c;
   }
 
@@ -10780,7 +11053,7 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial
     const prochain = manche + 1;
     const soin = Math.round(moi.pvMax * 0.7);
     const c1 = { ...moi, pv: Math.min(moi.pvMax, moi.pv + soin), energie: 3, garde: false, poison: null, sonne: null };
-    const c2 = adversaireArene(prochain);
+    const c2 = adversaireArene(prochain, adv && adv.nom);
     setMoi(c1); setAdv(c2);
     setManche(prochain);
     const premierMoi = c1.vitesse >= c2.vitesse;
@@ -10803,6 +11076,7 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial
     if (phase === "fin" && mode === "arene" && moi && moi.pv > 0 && manche > recordArene) {
       setRecordArene(manche);
       try { localStorage.setItem("biodex_arene_record", String(manche)); } catch {}
+      if (onRecordArene) onRecordArene(manche); // v1.76 — partagé avec la bande
     }
   }, [phase]);
 
@@ -11049,7 +11323,7 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial
             return (
               <div key={o.id} style={{ position: "relative" }}>
                 <CarteInsecte obs={o} taille="compact" onClick={() => demarrer(o)} />
-                <div style={{ textAlign: "center", marginTop: 5, fontFamily: sans, fontSize: 10.5, fontWeight: 800, color: "#fff", background: t.couleur || C.ambre, borderRadius: 9, padding: "2px 6px", display: "inline-block", width: "100%" }}>{t.emoji} {t.label}</div>
+                <div style={{ textAlign: "center", marginTop: 5, fontFamily: sans, fontSize: 10.5, fontWeight: 800, color: "#fff", background: t.couleur || C.ambre, borderRadius: 9, padding: "2px 6px", display: "block", boxSizing: "border-box", width: "100%" }}>{t.emoji} {t.label}</div>
               </div>
             );
           })}
@@ -11084,7 +11358,7 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial
         {/* Intro de l'adversaire */}
         {intro && adv && (
           <div className="bd-intro" style={{ position: "absolute", inset: 0, zIndex: 8, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "radial-gradient(ellipse at center, rgba(20,26,14,.82), rgba(10,13,7,.94))", pointerEvents: "none", padding: 16, textAlign: "center" }}>
-            <div style={{ fontSize: 56, marginBottom: 6, filter: "drop-shadow(0 3px 8px rgba(0,0,0,.6))" }}>{(elementInfo(adv.type) || {}).emoji || "🐛"}</div>
+            <div style={{ fontSize: 56, marginBottom: 6, filter: "drop-shadow(0 3px 8px rgba(0,0,0,.6))" }}>{(typeInfo(adv.type) || {}).emoji || "🐛"}</div>
             <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.papier, lineHeight: 1.2 }}>
               {estDefi ? `${(adversaireImpose && adversaireImpose.proprietaire) || "Un rival"} t'envoie` : "Un adversaire sauvage surgit"}
             </div>
@@ -11445,38 +11719,7 @@ function BioDex() {
   async function exporterMaintenant() {
     if (exportEnCours) return;
     setExportEnCours(true);
-    try {
-      const toutes = await dbToutes();
-      const obsExport = [];
-      for (const o of toutes) {
-        let photo64 = null;
-        if (o.photo) {
-          photo64 = await new Promise((res, rej) => {
-            const r = new FileReader();
-            r.onload = () => res(r.result);
-            r.onerror = rej;
-            r.readAsDataURL(o.photo);
-          });
-        }
-        obsExport.push({ ...o, photo: photo64 });
-      }
-      const json = JSON.stringify({ app: "biodex", version: VERSION, exporteLe: new Date().toISOString(), observations: obsExport });
-      const blob = new Blob([json], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "biodex-sauvegarde-" + new Date().toISOString().slice(0, 10) + ".json";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-      try {
-        localStorage.setItem("biodex_derniere_sauvegarde", new Date().toISOString());
-        localStorage.setItem("biodex_sauvegarde_count", String(toutes.length));
-        localStorage.removeItem("biodex_rappel_reporte");
-      } catch {}
-      setRappelSauvegarde(false);
-    } catch {}
+    try { await exporterCollection(); setRappelSauvegarde(false); } catch {}
     setExportEnCours(false);
   }
 
@@ -11869,12 +12112,22 @@ function BioDex() {
     const maj = { ...obs, carte: { ...obs.carte, xp: nouvelXp } };
     try { await dbAjouter(maj); } catch {}
     setObservations((prev) => prev.map((o) => (o.id === idCarte ? maj : o)));
+    majXpLigue(prenom, idCarte, nouvelXp); // v1.76 — la copie ligue suit
     const apres = niveauDeXp(nouvelXp);
     if (apres > avant) {
       celebrer({ emoji: "⭐", titre: "Niveau " + apres + " !", texte: (obs.nom || "Ta carte") + " gagne en puissance.", ton: "espece" });
       return true;
     }
     return false;
+  }
+
+  // v1.76 — La ligue connaît une XP plus haute que la copie locale : on s'aligne.
+  async function adopterXpLigue(id, xp) {
+    const obs = observations.find((o) => o.id === id);
+    if (!obs || !obs.carte) return;
+    const maj = { ...obs, carte: { ...obs.carte, xp: Number(xp) || 0 } };
+    try { await dbAjouter(maj); } catch {}
+    setObservations((prev) => prev.map((o) => (o.id === id ? maj : o)));
   }
 
   async function majCarte(id, carte) {
@@ -11924,7 +12177,7 @@ function BioDex() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button className="bd-press" onClick={() => setCentreOuvert(true)}
-            style={{ position: "relative", width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", fontSize: 15 }}
+            style={{ position: "relative", width: 36, height: 36, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", fontSize: 16 }}
             aria-label="Notifications" title="Notifications">
             🔔
             {notifs.total > 0 && (
@@ -11932,7 +12185,7 @@ function BioDex() {
             )}
           </button>
           <button className="bd-press" onClick={() => setMenuOuvert(true)}
-            style={{ position: "relative", width: 32, height: 32, borderRadius: "50%", border: `1px solid ${utilisateur ? "#A8863A" : C.bordure}`, background: utilisateur ? "linear-gradient(#2C3623, #232B1D)" : C.panneau, cursor: "pointer", fontSize: 16, color: C.papier }}
+            style={{ position: "relative", width: 36, height: 36, borderRadius: "50%", border: `1px solid ${utilisateur ? "#A8863A" : C.bordure}`, background: utilisateur ? "linear-gradient(#2C3623, #232B1D)" : C.panneau, cursor: "pointer", fontSize: 17, color: C.papier }}
             aria-label="Menu" title="Menu">
             ☰
             {(notifs.ideesNouvelles || 0) > 0 && (
@@ -11940,7 +12193,7 @@ function BioDex() {
             )}
           </button>
           <button className="bd-press" onClick={() => setVue("aide")}
-            style={{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, color: C.lichen, fontFamily: serif, fontSize: 17, cursor: "pointer" }}
+            style={{ width: 36, height: 36, borderRadius: "50%", border: `1px solid ${C.bordure}`, background: C.panneau, color: C.lichen, fontFamily: serif, fontSize: 18, cursor: "pointer" }}
             aria-label="Aide">
             ?
           </button>
@@ -12080,7 +12333,7 @@ function BioDex() {
       <AlerteLibKo />
 
       {vue === "mur" && <MurCommun prenom={prenom} onDefinirPrenom={definirPrenom} onOuvrirProfil={ouvrirProfil} onMarquerReactionsVues={null} />}
-      {vue === "idees" && <BoiteIdees prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
+      {vue === "idees" && <BoiteIdees prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} estAdmin={estAdmin} />}
       {vue === "missions" && <Missions observations={observations} prenom={prenom} onDefinirPrenom={definirPrenom} onFermer={() => setVue("collection")} />}
       {vue === "ligue" && (
         <Ligue
@@ -12127,13 +12380,24 @@ function BioDex() {
             cartes={observations}
             adversaireImpose={carteDefiee}
             defieur={prenom}
-            onResultatDefi={(jaiGagne, idCarte) => { enregistrerResultatDefi(carteDefiee, prenom, jaiGagne); gagnerXp(idCarte, jaiGagne); }}
+            onResultatDefi={(jaiGagne, idCarte) => { enregistrerResultatDefi(carteDefiee, prenom, jaiGagne, idCarte); gagnerXp(idCarte, jaiGagne); }}
           />
         </div>
       )}
       <Celebrations />
       {montrerPresentation && (
-        <Presentation prenomActuel={prenom} onDefinirPrenom={definirPrenom} onCommencer={() => { try { localStorage.setItem("biodex_presentation_vue", "1"); } catch {} setMontrerPresentation(false); }} />
+        <Presentation prenomActuel={prenom} onDefinirPrenom={definirPrenom} onCommencer={() => {
+          try {
+            localStorage.setItem("biodex_presentation_vue", "1");
+            // v1.75 — Quelqu'un qui vient d'installer n'est pas "en retard" sur le
+            // journal des nouveautés de la version qu'il vient d'obtenir : sans ça,
+            // la cloche affichait déjà 1 au tout premier écran.
+            if (NOUVEAUTES.length && !localStorage.getItem("biodex_nouveautes_vu")) {
+              localStorage.setItem("biodex_nouveautes_vu", NOUVEAUTES[0].v);
+            }
+          } catch {}
+          setMontrerPresentation(false);
+        }} />
       )}
       {centreOuvert && (
         <CentreNotifs
@@ -12159,6 +12423,8 @@ function BioDex() {
         <ModeCartes
           cartes={cartes}
           onOuvrir={(id) => { setSelectionId(id); setVue("detail"); }}
+          onSyncXp={adopterXpLigue}
+          onRecordArene={(r) => enregistrerRecordArene(prenom, r)}
           observations={observations}
           prenom={prenom}
           onDefinirPrenom={definirPrenom}
@@ -12235,21 +12501,22 @@ function BioDex() {
             )}
           </CarrouselBandeaux>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
-            <span style={{ fontFamily: serif, color: C.ambre, fontWeight: 700, fontSize: 26 }}>{triees.length}</span>
-            <span style={{ fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>
+            <span style={{ fontFamily: serif, color: C.ambre, fontWeight: 700, fontSize: 26, flexShrink: 0 }}>{triees.length}</span>
+            <span style={{ flex: 1, fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>
               spécimen{triees.length > 1 ? "s" : ""} épinglé{triees.length > 1 ? "s" : ""}
               {nbBiotopes > 0 && <span> · {nbBiotopes} biotope{nbBiotopes > 1 ? "s" : ""}</span>}
             </span>
+            {/* v1.75 — L'import en masse occupait une rangée entière en permanence, alors
+                qu'il ne sert qu'au retour de balade. Il tient ici, au bout du compteur. */}
+            {aTrier.length === 0 && triees.length > 0 && (
+              <button onClick={() => setVue("atrier")} title="Importer plusieurs photos d'un coup"
+                style={{ flexShrink: 0, alignSelf: "center", padding: "7px 11px", borderRadius: 9, cursor: "pointer",
+                  background: "transparent", border: `1px dashed ${C.bordure}`, color: C.papierSombre, fontFamily: sans, fontSize: 12 }}>
+                📥 Importer
+              </button>
+            )}
           </div>
 
-          {/* L'onglet « Trier » étant masqué quand la file est vide, on garde ici un accès
-              à l'import en masse (retour de balade, plusieurs photos d'un coup). */}
-          {aTrier.length === 0 && triees.length > 0 && (
-            <button onClick={() => setVue("atrier")}
-              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "9px 12px", marginBottom: 12, borderRadius: 10, cursor: "pointer", background: "transparent", border: `1px dashed ${C.bordure}`, color: C.papierSombre, fontFamily: sans, fontSize: 12.5 }}>
-              📥 Importer plusieurs photos d'un coup
-            </button>
-          )}
 
           {/* Rappel : observations en attente d'un nom (aide demandée ou non renseignée) */}
           {(() => {
@@ -12432,8 +12699,26 @@ window.addEventListener("appinstalled", () => {
 // On récupère d'abord la config (Supabase), puis on monte l'appli.
 // Ainsi MUR_ACTIF est correct dès le premier rendu.
 (async function demarrer() {
-  await chargerConfig();
-  ReactDOM.createRoot(document.getElementById("root")).render(<BioDex />);
+  // v1.75 — Tout premier lancement (l'écran de présentation n'a jamais été vu) :
+  // on marque le journal des nouveautés comme lu. Sinon la cloche affichait déjà "1"
+  // avant même que la personne ait touché à quoi que ce soit. Fait ICI, avant le
+  // montage de React, parce que les notifications sont calculées au premier rendu.
+  try {
+    if (!localStorage.getItem("biodex_presentation_vue") && NOUVEAUTES.length
+        && !localStorage.getItem("biodex_nouveautes_vu")) {
+      localStorage.setItem("biodex_nouveautes_vu", NOUVEAUTES[0].v);
+    }
+  } catch {}
+  // Config connue ? On monte l'appli immédiatement et on rafraîchit en arrière-plan.
+  // Première visite (rien en mémoire) : on attend le serveur comme avant, mais avec
+  // un seul essai court — l'appli n'a pas encore de mur à afficher de toute façon.
+  if (appliquerConfigMemorisee()) {
+    ReactDOM.createRoot(document.getElementById("root")).render(<BioDex />);
+    chargerConfig().catch(() => {});
+  } else {
+    await chargerConfig();
+    ReactDOM.createRoot(document.getElementById("root")).render(<BioDex />);
+  }
 })();
 
 // Service worker (mode hors-ligne + installation + détection de mise à jour)
