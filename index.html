@@ -237,7 +237,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.78";
+const VERSION = "v1.79";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1710,6 +1710,11 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.79", date: "2026-09", items: [
+    "✂️ Tu peux enfin cadrer la photo d'une trouvaille pour TA collection : sous la grande photo de sa fiche, « Cadrer la photo » resserre sur la bête, et la vignette de ta boîte suit. Ta photo d'origine n'est jamais touchée — « ↺ Photo entière » revient en arrière quand tu veux.",
+    "🔗 Ce cadrage sert de point de départ partout : quand tu forges une carte ou que tu partages au mur, le cadre est déjà en place. Tu peux toujours en choisir un autre pour la carte ou pour la publication, ils restent indépendants.",
+    "👁️ Avant de publier au mur, un aperçu « Ce qui sera publié » montre exactement la photo qui partira, recadrée ou non. Fini le cadrage raté qu'on découvre une fois la trouvaille en ligne.",
+  ] },
   { v: "1.78", date: "2026-09", items: [
     "📖 Le bandeau d'accueil a maintenant un encart « Le coin des curieux » : chaque jour, un extrait d'article — un mythe, une histoire, une culture, un record — avec le début du texte et « Lire l'article → » qui t'emmène directement dessus. « Une autre » pour feuilleter. Vingt-cinq aperçus tournent pour l'instant, ils s'ajoutent à chaque article nouveau.",
   ] },
@@ -5155,7 +5160,7 @@ function EncartSouvenir({ obs, onOuvrir, onMasquer }) {
     <EncartBase cle="souvenir" emoji="📸" etiquette="Souvenir de chasse" couleurEtiquette="#A8C9C4"
       fond="linear-gradient(135deg, #18262A, #121C20)" bordure="#31504E" onMasquer={onMasquer} onClick={onOuvrir}>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-        {obs.photo && <PhotoBlob blob={obs.photo} alt={obs.nom || "souvenir"} style={{ width: 54, height: 54, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />}
+        {obs.photo && <PhotoBlobRecadree blob={obs.photo} zone={obs.cadrePhoto} alt={obs.nom || "souvenir"} style={{ width: 54, height: 54, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />}
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: C.papier, lineHeight: 1.35, marginBottom: 3, paddingRight: 14 }}>
             {(obs.nom || obs.nomSci || "Une trouvaille").trim()}
@@ -7610,7 +7615,7 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
         </div>
         {/* Illustration (recadrée si un cadre a été défini) */}
         <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "2px solid rgba(42,36,22,.45)", boxShadow: "inset 0 0 12px rgba(0,0,0,.35)" }}>
-          <PhotoBlobRecadree blob={obs.photo} zone={obs.cadreCarte} alt={obs.nom} style={{ width: "100%", aspectRatio: compact ? "1" : "4/3", objectFit: "cover", display: "block" }} />
+          <PhotoBlobRecadree blob={obs.photo} zone={obs.cadreCarte || obs.cadrePhoto} alt={obs.nom} style={{ width: "100%", aspectRatio: compact ? "1" : "4/3", objectFit: "cover", display: "block" }} />
           <div style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at center, transparent 62%, rgba(0,0,0,.28) 100%)" }} />
           <div style={{ position: "absolute", top: 5, right: 5, background: "rgba(42,36,22,.88)", color: pal.couleur, border: `1px solid ${pal.bord}`, fontFamily: sans, fontSize: compact ? 8 : 9.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", padding: "2px 7px", borderRadius: 10 }}>{pal.nom}</div>
           {c.authentique === false && (
@@ -7653,7 +7658,7 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
   );
 }
 
-function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte, onMajCadre, prenom, onDefinirPrenom, utilisateur, onAllerConnexion }) {
+function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte, onMajCadre, onMajCadrePhoto, prenom, onDefinirPrenom, utilisateur, onAllerConnexion }) {
   const [confirme, setConfirme] = useState(false);
   const [ficheEtat, setFicheEtat] = useState(""); // "" | recherche | echec
   const [ficheErreur, setFicheErreur] = useState("");
@@ -7671,8 +7676,15 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
   const [profilErreur, setProfilErreur] = useState("");
   const [cadrage, setCadrage] = useState(false);
   const [cadreZone, setCadreZone] = useState({ x: 0.2, y: 0.2, w: 0.6, h: 0.6 });
+  // v1.79 — Cadrage de la photo de collection : il s'applique aux vignettes et à la
+  // grande photo de la fiche, et sert de cadre par défaut à la carte et au partage.
+  // Non destructif : la photo d'origine n'est jamais retouchée.
+  const [cadragePhoto, setCadragePhoto] = useState(false);
   const [cadrageMur, setCadrageMur] = useState(false); // panneau de recadrage ouvert (partage au mur)
-  const [cadreMur, setCadreMur] = useState(null); // null = photo entière
+  // undefined = aucun choix propre au mur → on suit le cadre de collection (même s'il
+  // est défini APRÈS l'ouverture de la fiche) ; null = photo entière explicitement voulue.
+  const [cadreMur, setCadreMur] = useState(undefined);
+  const cadreMurEffectif = cadreMur === undefined ? (obs.cadrePhoto || null) : cadreMur;
   const photoDetailUrl = useBlobUrl(obs.photo);
   const ligne = { display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 14 };
   const cle = { color: C.lichen, fontWeight: 600 };
@@ -7735,7 +7747,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
     setMurEtat("envoi");
     setMurErreur("");
     try {
-      await publierAuMur(obs, auteur, precisionPos, cadreMur);
+      await publierAuMur(obs, auteur, precisionPos, cadreMurEffectif);
       try { localStorage.setItem("biodex_precision_pos", precisionPos); } catch {}
       setMurEtat("ok");
       setConfirmSansNom(false);
@@ -7769,7 +7781,36 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
       <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Collection</Bouton>
-      <PhotoBlob blob={obs.photo} alt={obs.nom} style={{ width: "100%", borderRadius: 12, display: "block", border: `1px solid ${C.bordure}`, boxShadow: "0 4px 14px rgba(0,0,0,.35)" }} />
+      {cadragePhoto ? (
+        <div style={{ padding: 12, borderRadius: 12, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 8, lineHeight: 1.5 }}>
+            ✂️ Choisis ce qu'on voit de cette photo dans ta collection. La photo d'origine est conservée entière.
+          </div>
+          <SelecteurZone photoUrl={photoDetailUrl} zone={cadreZone} onChange={setCadreZone} />
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <Bouton variante="primaire" onClick={() => { onMajCadrePhoto(obs.id, cadreZone); setCadragePhoto(false); }} style={{ flex: 1 }}>✓ Valider</Bouton>
+            <Bouton onClick={() => setCadragePhoto(false)}>Annuler</Bouton>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <PhotoBlobRecadree blob={obs.photo} zone={obs.cadrePhoto} alt={obs.nom} style={{ width: "100%", borderRadius: 12, display: "block", border: `1px solid ${C.bordure}`, boxShadow: "0 4px 14px rgba(0,0,0,.35)" }} />
+          {obs.photo && (
+            <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "center", flexWrap: "wrap" }}>
+              <button onClick={() => { setCadreZone(obs.cadrePhoto || { x: 0.15, y: 0.15, w: 0.7, h: 0.7 }); setCadragePhoto(true); }}
+                style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
+                ✂️ {obs.cadrePhoto ? "Modifier le cadrage" : "Cadrer la photo"}
+              </button>
+              {obs.cadrePhoto && (
+                <button onClick={() => onMajCadrePhoto(obs.id, null)}
+                  style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: "transparent", color: C.papierSombre, cursor: "pointer" }}>
+                  ↺ Photo entière
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {Array.isArray(obs.photosSupp) && obs.photosSupp.length > 0 && (
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
           {obs.photosSupp.map((b, i) => (
@@ -7957,7 +7998,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
                   <CarteInsecte obs={obs} />
                 </div>
                 <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 12, flexWrap: "wrap" }}>
-                  <button onClick={() => { setCadreZone(obs.cadreCarte || { x: 0.2, y: 0.2, w: 0.6, h: 0.6 }); setCadrage(true); }}
+                  <button onClick={() => { setCadreZone(obs.cadreCarte || obs.cadrePhoto || { x: 0.2, y: 0.2, w: 0.6, h: 0.6 }); setCadrage(true); }}
                     style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>
                     🖼️ Cadrer l'insecte
                   </button>
@@ -8035,10 +8076,10 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
                 <div style={{ marginBottom: 12 }}>
                   {!cadrageMur ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <Bouton onClick={() => { setCadreZone(cadreMur || { x: 0.15, y: 0.15, w: 0.7, h: 0.7 }); setCadrageMur(true); }} style={{ flex: 1 }}>
-                        ✂️ {cadreMur ? "Modifier le cadrage" : "Recadrer la photo"}
+                      <Bouton onClick={() => { setCadreZone(cadreMurEffectif || { x: 0.15, y: 0.15, w: 0.7, h: 0.7 }); setCadrageMur(true); }} style={{ flex: 1 }}>
+                        ✂️ {cadreMurEffectif ? "Modifier le cadrage" : "Recadrer la photo"}
                       </Bouton>
-                      {cadreMur && (
+                      {cadreMurEffectif && (
                         <Bouton onClick={() => setCadreMur(null)}>↺ Photo entière</Bouton>
                       )}
                     </div>
@@ -8054,9 +8095,20 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
                       </div>
                     </div>
                   )}
-                  {cadreMur && !cadrageMur && (
-                    <div style={{ fontFamily: sans, fontSize: 11, color: C.lichen, marginTop: 6, fontStyle: "italic" }}>
-                      ✂️ La photo sera publiée recadrée.
+                  {/* v1.79 — Aperçu : on voit EXACTEMENT ce qui partira sur le mur, avant d'envoyer. */}
+                  {!cadrageMur && (
+                    <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
+                      <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: C.lichen, marginBottom: 7 }}>
+                        👁️ Ce qui sera publié
+                      </div>
+                      {/* objectFit « contain » : l'aperçu montre le cadrage RÉEL, sans recouper à l'affichage. */}
+                      <PhotoBlobRecadree blob={obs.photo} zone={cadreMurEffectif} alt="Aperçu de la publication"
+                        style={{ width: "100%", maxHeight: 240, objectFit: "contain", background: "#0E120B", borderRadius: 8, display: "block", border: `1px solid ${C.bordure}` }} />
+                      <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 6, fontStyle: "italic", lineHeight: 1.4 }}>
+                        {cadreMurEffectif
+                          ? (cadreMur === undefined ? "Cadrage repris de ta collection — l'originale reste entière." : "Photo recadrée — l'originale reste entière dans ta collection.")
+                          : "Photo entière. Utilise ✂️ si tu veux resserrer sur l'insecte."}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -9577,7 +9629,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🌐 Mur commun</div>
         <p style={p}>
-          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Tu peux aussi partager une observation <b>pas encore identifiée</b> : elle apparaît alors avec un badge « ❓ À identifier », une façon de demander un coup de main à la bande (l'entraide fait partie du jeu !). Sous chaque publication, un bouton « 🤔 Je doute de l'ID » permet d'exprimer poliment un doute sur l'identification proposée : le compteur est visible par tous et ouvre la discussion, sans rien supprimer — l'idée est d'affiner ensemble, comme entre naturalistes. Tu peux aussi commenter une publication directement depuis le mur grâce au bouton « 💬 Commenter » (sous chaque trouvaille) : un conseil pour la prochaine photo, une autre hypothèse d'identification… Reste bienveillant : un filtre masque automatiquement les insultes, mais l'esprit du mur, c'est l'entraide. L'auteur reçoit une notification quand on commente sa trouvaille. L'auteur d'une publication peut aussi la modifier (bouton ✏️ Modifier sous sa trouvaille) pour corriger le nom, le nom scientifique, le biotope ou la note — pratique quand la discussion précise l'identification. La photo, elle, ne se change pas : pour ça, mieux vaut republier. Chacun ne peut modifier ou supprimer que ses propres publications. Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection. Indique ton prénom une fois, il est mémorisé. Tu peux aussi personnaliser ton profil (menu ☰ → 🎨 Mon profil) : choisis ton emblème, écris ta devise, indique ton secteur de chasse et ton insecte fétiche, sélectionne une couleur parmi 8 thèmes, et affiche un titre. Les titres et certains emblèmes ne se choisissent pas librement : ils se débloquent en observant (nombre de trouvailles, diversité des milieux, ou spécialisation dans un groupe d'arthropodes — par exemple « Maître des araignées » à partir de 15 espèces d'araignées différentes) — toute la bande le verra sur le mur, dans le classement et sur ton profil. Le mur affiche les dernières trouvailles de tout le monde. Des filtres permettent de n'afficher qu'une période (aujourd'hui, 7 jours, 30 jours, cette année) ou les publications d'une seule personne ; les périodes n'apparaissent que lorsqu'elles contiennent vraiment des trouvailles. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
+          Si le mur est activé, un onglet 🌐 apparaît. Depuis la fiche d'une observation, « Partager au mur » publie ta photo, l'espèce et le biotope pour toute la bande (ta position exacte n'est jamais partagée). Tu peux aussi partager une observation <b>pas encore identifiée</b> : elle apparaît alors avec un badge « ❓ À identifier », une façon de demander un coup de main à la bande (l'entraide fait partie du jeu !). Sous chaque publication, un bouton « 🤔 Je doute de l'ID » permet d'exprimer poliment un doute sur l'identification proposée : le compteur est visible par tous et ouvre la discussion, sans rien supprimer — l'idée est d'affiner ensemble, comme entre naturalistes. Tu peux aussi commenter une publication directement depuis le mur grâce au bouton « 💬 Commenter » (sous chaque trouvaille) : un conseil pour la prochaine photo, une autre hypothèse d'identification… Reste bienveillant : un filtre masque automatiquement les insultes, mais l'esprit du mur, c'est l'entraide. L'auteur reçoit une notification quand on commente sa trouvaille. L'auteur d'une publication peut aussi la modifier (bouton ✏️ Modifier sous sa trouvaille) pour corriger le nom, le nom scientifique, le biotope ou la note — pratique quand la discussion précise l'identification. La photo, elle, ne se change pas : pour ça, mieux vaut republier. Chacun ne peut modifier ou supprimer que ses propres publications. Avant de publier, tu peux recadrer ta photo (bouton ✂️) pour bien mettre l'insecte en valeur — ta photo d'origine reste intacte dans ta collection — et un aperçu « 👁️ Ce qui sera publié » te montre exactement ce qui partira. Si tu as déjà cadré la photo pour ta collection (bouton ✂️ sous la grande photo de la fiche), ce cadre est repris par défaut, à la publication comme à la forge d'une carte ; tu peux en choisir un autre à chaque fois, les trois sont indépendants. Attention : une fois publiée, la photo d'une trouvaille ne se recadre plus — il faut la supprimer et la republier. Indique ton prénom une fois, il est mémorisé. Tu peux aussi personnaliser ton profil (menu ☰ → 🎨 Mon profil) : choisis ton emblème, écris ta devise, indique ton secteur de chasse et ton insecte fétiche, sélectionne une couleur parmi 8 thèmes, et affiche un titre. Les titres et certains emblèmes ne se choisissent pas librement : ils se débloquent en observant (nombre de trouvailles, diversité des milieux, ou spécialisation dans un groupe d'arthropodes — par exemple « Maître des araignées » à partir de 15 espèces d'araignées différentes) — toute la bande le verra sur le mur, dans le classement et sur ton profil. Le mur affiche les dernières trouvailles de tout le monde. Des filtres permettent de n'afficher qu'une période (aujourd'hui, 7 jours, 30 jours, cette année) ou les publications d'une seule personne ; les périodes n'apparaissent que lorsqu'elles contiennent vraiment des trouvailles. Chacun garde par ailleurs sa collection privée sur son téléphone. Une pastille rouge sur l'onglet 🌐 signale du nouveau depuis ta dernière visite.
         </p>
         <div style={t}>📖 Posts détaillés</div>
         <p style={p}>
@@ -12307,6 +12359,15 @@ function BioDex() {
     setObservations((prev) => prev.map((o) => (o.id === id ? maj : o)));
   }
 
+  // v1.79 — Cadrage de la photo de collection (vignettes + fiche). Non destructif.
+  async function majCadrePhoto(id, cadrePhoto) {
+    const obs = observations.find((o) => o.id === id);
+    if (!obs) return;
+    const maj = { ...obs, cadrePhoto };
+    try { await dbAjouter(maj); } catch {}
+    setObservations((prev) => prev.map((o) => (o.id === id ? maj : o)));
+  }
+
   async function majCadre(id, cadreCarte) {
     const obs = observations.find((o) => o.id === id);
     if (!obs) return;
@@ -12633,7 +12694,7 @@ function BioDex() {
           onFermer={() => { setSelectionId(null); setVue("collection"); }}
           onMajFiche={majFiche}
           onMajCarte={majCarte}
-          onMajCadre={majCadre}
+          onMajCadre={majCadre} onMajCadrePhoto={majCadrePhoto}
           prenom={prenom}
           onDefinirPrenom={definirPrenom}
           utilisateur={utilisateur}
@@ -12841,7 +12902,7 @@ function BioDex() {
                   <div style={{ position: "absolute", top: 6, right: 6, zIndex: 2, fontSize: 15, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.6))" }} title={niv.label}>{niv.emoji}</div>
                 ) : null; })()}
                 <div style={{ margin: "0 6px", borderRadius: 7, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,.4)" }}>
-                  <PhotoBlob blob={o.photo} alt={o.nom} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }} />
+                  <PhotoBlobRecadree blob={o.photo} zone={o.cadrePhoto} alt={o.nom} style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }} />
                 </div>
                 <div style={{ margin: "8px 6px 6px", borderRadius: 6, overflow: "hidden" }}>
                   <Etiquette obs={o} />
