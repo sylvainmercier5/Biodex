@@ -51,13 +51,14 @@ const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const BUDGET_ACTIF = Boolean(SB_URL && SB_SERVICE);
 
 async function rpc(nom, corps) {
+  // Deux formats de clé existent chez Supabase : l'ancienne « service_role »
+  // (un jeton JWT, à mettre aussi en Authorization) et la nouvelle « sb_secret_… »
+  // (qui ne va QUE dans l'en-tête apikey : en Authorization, elle est refusée).
+  const enTetesSb = { "Content-Type": "application/json", apikey: SB_SERVICE };
+  if (SB_SERVICE.split(".").length === 3) enTetesSb.Authorization = "Bearer " + SB_SERVICE;
   const r = await fetch(SB_URL.replace(/\/$/, "") + "/rest/v1/rpc/" + nom, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SB_SERVICE,
-      Authorization: "Bearer " + SB_SERVICE,
-    },
+    headers: enTetesSb,
     body: JSON.stringify(corps),
   });
   if (!r.ok) throw new Error("rpc " + nom + " : " + r.status);
@@ -76,6 +77,8 @@ async function reserverBudget(micro) {
     // reste derrière. Couper l'appli parce que le compteur est en panne
     // serait pire que le risque budgétaire.
     console.error("budget: réservation impossible, on laisse passer", String(e));
+    // Sans ça, une clé mal collée passait inaperçue des mois durant.
+    console.error("budget: vérifie SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY dans Netlify");
     return { autorise: true, micro_restant: null };
   }
 }
