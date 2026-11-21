@@ -237,7 +237,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.79";
+const VERSION = "v1.80";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1028,21 +1028,72 @@ async function envoyerLienMagique(email) {
   return true;
 }
 
-// Récupère l'utilisateur connecté (ou null)
+// ---------- Identité invisible (connexion anonyme) ----------
+// Chaque téléphone reçoit automatiquement une identité Supabase anonyme : aucun
+// e-mail, rien à saisir. Elle sert à une seule chose : savoir à qui appartient
+// chaque publication, idée, carte… pour que seul son auteur (ou l'admin) puisse
+// la modifier ou la supprimer. Le prénom reste ce qui s'affiche.
+let _monId = null;          // identifiant de cette identité (uuid) une fois connue
+let _identiteEnCours = null; // promesse partagée : une seule connexion à la fois
+
+function majMonId(user) { _monId = user ? user.id : null; }
+function monId() { return _monId; }
+// Cette ligne (post, idée, carte…) m'appartient-elle ? Les lignes anciennes,
+// créées avant la v1.80, n'ont pas de propriétaire : elles ne sont à personne.
+function estAMoi(ligne) { return !!(ligne && _monId && ligne.owner_id && ligne.owner_id === _monId); }
+function estAnonyme(user) { return !!(user && (user.is_anonymous || !user.email)); }
+
+// Garantit qu'une identité existe avant d'écrire. Sans échec bloquant : si la
+// connexion anonyme est indisponible (réseau, option désactivée côté Supabase),
+// l'écriture est tentée quand même et le serveur dira non proprement.
+async function identitePrete() {
+  const sb = clientSupabase();
+  if (!sb || !sb.auth) return null;
+  if (_monId) return _monId;
+  if (!_identiteEnCours) {
+    _identiteEnCours = (async () => {
+      try {
+        const { data } = await sb.auth.getSession();
+        let user = data && data.session ? data.session.user : null;
+        if (!user && sb.auth.signInAnonymously) {
+          const r = await avecDelai(sb.auth.signInAnonymously(), 15000, "identiteAnonyme");
+          if (r && r.error) noterErreur("identiteAnonyme", r.error);
+          user = r && r.data ? r.data.user : null;
+        }
+        majMonId(user);
+        return _monId;
+      } catch (e) {
+        noterErreur("identiteAnonyme", e);
+        return null;
+      } finally {
+        _identiteEnCours = null;
+      }
+    })();
+  }
+  return _identiteEnCours;
+}
+
+// Récupère l'utilisateur connecté PAR E-MAIL (ou null). L'identité anonyme
+// ne compte pas comme « connecté » : elle est invisible pour la personne.
 async function utilisateurActuel() {
   const sb = clientSupabase();
   if (!sb) return null;
   try {
     const { data } = await sb.auth.getUser();
-    return data ? data.user : null;
+    const user = data ? data.user : null;
+    if (user) majMonId(user);
+    return user && !estAnonyme(user) ? user : null;
   } catch { return null; }
 }
 
-// Déconnexion
+// Déconnexion : on quitte le compte e-mail, puis on reprend une identité
+// anonyme neuve (les publications faites sous le compte e-mail lui restent).
 async function seDeconnecter() {
   const sb = clientSupabase();
   if (!sb) return;
   try { await sb.auth.signOut(); } catch {}
+  majMonId(null);
+  identitePrete();
 }
 
 // ---------- Profil public / collections partagées ----------
@@ -1052,7 +1103,7 @@ async function ajouterAuProfil(obs, auteur) {
   if (!sb) throw new Error("Service non configuré");
   const { data: uData } = await sb.auth.getUser();
   const user = uData ? uData.user : null;
-  if (!user) throw new Error("Connexion requise");
+  if (!user || estAnonyme(user)) throw new Error("Connexion requise");
   const entree = {
     user_id: user.id,
     auteur: (auteur || "").slice(0, 40),
@@ -1088,6 +1139,7 @@ async function estAdminServeur() {
 async function adminSupprimerPost(id) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const { error } = await sb.from("posts").delete().eq("id", id);
   if (error) throw erreurSupabase("adminSupprimerPost", error, error.message || "Suppression refusée par le serveur");
   return true;
@@ -1095,6 +1147,7 @@ async function adminSupprimerPost(id) {
 async function adminSupprimerIdee(id) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const { error } = await sb.from("idees").delete().eq("id", id);
   if (error) throw erreurSupabase("adminSupprimerIdee", error, error.message || "Suppression refusée par le serveur");
   return true;
@@ -1170,6 +1223,7 @@ function positionSelonPrecision(gps, precision) {
 async function publierAuMur(obs, auteur, precision, cadreMur) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Mur non configuré");
+  await identitePrete();
   // 1) upload de la photo compressée (recadrée si un cadre est fourni)
   let photoUrl = "";
   if (obs.photo) {
@@ -1326,6 +1380,7 @@ function titreDe(prenom, profils) {
 async function enregistrerProfil(prenom, champs) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const p = (prenom || "").trim();
   if (!p) throw new Error("Prénom requis");
   const ligne = {
@@ -1347,7 +1402,7 @@ async function enregistrerProfil(prenom, champs) {
 async function chargerMur(limite = 50) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Mur non configuré");
-  const { data, error } = await avecDelai(sb.from("posts").select("id, auteur, espece, espece_sci, confiance, lieu, lat, lon, precision, photo_url, note, created_at, date_obs").order("created_at", { ascending: false }).limit(limite), 15000, "chargerMur");
+  const { data, error } = await avecDelai(sb.from("posts").select("id, auteur, espece, espece_sci, confiance, lieu, lat, lon, precision, photo_url, note, created_at, date_obs, owner_id").order("created_at", { ascending: false }).limit(limite), 15000, "chargerMur");
   if (error) throw erreurSupabase("chargerMur", error, "Lecture du mur impossible");
   return data || [];
 }
@@ -1511,6 +1566,7 @@ async function chargerScores() {
 async function engagerCarte(obs, proprietaire) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const c = obs.carte || {};
   const combattant = prepCombattant(obs);
   // Upload de la photo (comme le mur) pour que les autres la voient
@@ -1548,65 +1604,33 @@ async function engagerCarte(obs, proprietaire) {
 async function retirerCarteLigue(proprietaire, carteId) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
-  const { error } = await sb.from("cartes_ligue").delete().eq("proprietaire", proprietaire).eq("carte_id", String(carteId));
+  await identitePrete();
+  const { data, error } = await sb.from("cartes_ligue").delete().eq("proprietaire", proprietaire).eq("carte_id", String(carteId)).select("id");
   if (error) throw erreurSupabase("retirerCarteLigue", error, "Retrait impossible");
+  // v1.80 — Rien de supprimé = carte engagée avant la mise à jour (sans propriétaire) :
+  // seul l'admin peut la retirer. On le dit au lieu d'échouer en silence.
+  if (!data || data.length === 0) throw new Error("Cette carte a été engagée avant la mise à jour de sécurité : demande à l'admin de la retirer.");
   return true;
 }
 
 // Enregistre le résultat d'un défi : met à jour les compteurs de la carte défendue et les scores des deux joueurs.
+// v1.80 — Tout se fait côté serveur, en une fois (fonction enregistrer_defi) :
+// carte défendue (+1 V/D et XP), carte du défieur, scores des deux joueurs et
+// historique. Avant, le navigateur réécrivait lui-même les compteurs des AUTRES
+// joueurs : n'importe qui pouvait donc les effacer.
 async function enregistrerResultatDefi(carteLigue, defieur, defieurGagne, idCarteDefieur) {
   const sb = clientSupabase();
-  if (!sb) return;
+  if (!sb || !carteLigue || !carteLigue.id) return;
   try {
-    // 1) Compteurs de la carte défendue (en défense)
-    const majCarte = defieurGagne
-      ? { defaites: (carteLigue.defaites || 0) + 1 }
-      : { victoires: (carteLigue.victoires || 0) + 1 };
-    await sb.from("cartes_ligue").update(majCarte).eq("id", carteLigue.id);
-
-    // 1 bis) v1.76 — Compteurs de la carte du DÉFIEUR, si elle est engagée dans la
-    // ligue. Avant, seule la défense comptait : vingt défis gagnés laissaient ta
-    // carte à 0V/0D, alors que le libellé laissait croire à son palmarès complet.
-    if (idCarteDefieur && defieur) {
-      try {
-        const { data: mienne } = await sb.from("cartes_ligue").select("id, victoires, defaites")
-          .eq("proprietaire", defieur).eq("carte_id", String(idCarteDefieur)).maybeSingle();
-        if (mienne) {
-          const majMienne = defieurGagne
-            ? { victoires: (mienne.victoires || 0) + 1 }
-            : { defaites: (mienne.defaites || 0) + 1 };
-          await sb.from("cartes_ligue").update(majMienne).eq("id", mienne.id);
-        }
-      } catch { /* bonus : ne bloque pas le défi */ }
-    }
-
-    // 2) Scores des deux joueurs (upsert incrémental)
-    async function majScore(proprietaire, gagne) {
-      const { data } = await sb.from("ligue_scores").select("*").eq("proprietaire", proprietaire).maybeSingle();
-      const v = (data ? data.victoires : 0) + (gagne ? 1 : 0);
-      const d = (data ? data.defaites : 0) + (gagne ? 0 : 1);
-      await sb.from("ligue_scores").upsert({ proprietaire, victoires: v, defaites: d, maj: new Date().toISOString() }, { onConflict: "proprietaire" });
-    }
-    await majScore(defieur, defieurGagne);
-    await majScore(carteLigue.proprietaire, !defieurGagne);
-
-    // XP de la carte défendue (elle progresse même en perdant)
-    try {
-      const xpActuel = Number(carteLigue.xp) || 0;
-      const gain = defieurGagne ? XP_DEFAITE : XP_VICTOIRE;
-      await sb.from("cartes_ligue").update({ xp: xpActuel + gain }).eq("id", carteLigue.id);
-    } catch { /* l'XP est un bonus : ne bloque pas le défi */ }
-
-    // 3) Historique du défi (permet les notifications « X a défié ta carte »)
-    try {
-      await sb.from("defis_historique").insert({
-        defieur: String(defieur || "?").slice(0, 40),
-        defendeur: String(carteLigue.proprietaire || "?").slice(0, 40),
-        carte_nom: String(carteLigue.nom || "ta carte").slice(0, 120),
-        defieur_gagne: !!defieurGagne,
-      });
-    } catch { /* l'historique est un bonus : on n'échoue pas le défi si ça rate */ }
-  } catch {}
+    await identitePrete();
+    const { error } = await sb.rpc("enregistrer_defi", {
+      p_carte_defendue: carteLigue.id,
+      p_defieur: String(defieur || "?").slice(0, 40),
+      p_defieur_gagne: !!defieurGagne,
+      p_carte_defieur: idCarteDefieur ? String(idCarteDefieur) : null,
+    });
+    if (error) noterErreur("enregistrerResultatDefi", error);
+  } catch (e) { noterErreur("enregistrerResultatDefi", e); }
 }
 
 // v1.76 — Pousse l'XP locale d'une carte vers sa copie en ligue (si engagée).
@@ -1616,6 +1640,8 @@ async function majXpLigue(prenom, idCarte, xp) {
   const sb = clientSupabase();
   if (!sb || !prenom || !idCarte) return;
   try {
+    await identitePrete();
+    // Le serveur n'accepte que sur MES cartes (les autres sont ignorées sans erreur).
     await sb.from("cartes_ligue").update({ xp: Number(xp) || 0 })
       .eq("proprietaire", prenom.trim()).eq("carte_id", String(idCarte))
       .lt("xp", Number(xp) || 0); // on ne fait que monter, jamais redescendre
@@ -1643,9 +1669,10 @@ async function enregistrerRecordArene(prenom, record) {
   const p = (prenom || "").trim();
   if (!sb || !p || !record) return;
   try {
-    const { data } = await sb.from("ligue_scores").select("record_arene").eq("proprietaire", p).maybeSingle();
-    if (data && (Number(data.record_arene) || 0) >= record) return;
-    await sb.from("ligue_scores").upsert({ proprietaire: p, record_arene: record, maj: new Date().toISOString() }, { onConflict: "proprietaire" });
+    // v1.80 — Fonction serveur : le record ne peut que monter.
+    await identitePrete();
+    const { error } = await sb.rpc("enregistrer_record_arene", { p_prenom: p, p_record: Math.round(Number(record) || 0) });
+    if (error) noterErreur("enregistrerRecordArene", error);
   } catch {}
 }
 
@@ -1693,6 +1720,7 @@ async function chargerValidations(saisonCle) {
 async function validerMission(saisonCle, missionId, auteur, auto) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const { error } = await sb.from("missions_validees").upsert(
     { saison: saisonCle, mission_id: missionId, auteur: (auteur || "Anonyme").slice(0, 40), auto: !!auto },
     { onConflict: "saison,mission_id,auteur", ignoreDuplicates: true }
@@ -1704,12 +1732,21 @@ async function validerMission(saisonCle, missionId, auteur, auto) {
 async function devaliderMission(saisonCle, missionId, auteur) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
-  const { error } = await sb.from("missions_validees").delete().eq("saison", saisonCle).eq("mission_id", missionId).eq("auteur", auteur);
+  await identitePrete();
+  const { data, error } = await sb.from("missions_validees").delete().eq("saison", saisonCle).eq("mission_id", missionId).eq("auteur", auteur).select("id");
   if (error) throw erreurSupabase("devaliderMission", error, "Retrait impossible");
+  // v1.80 — Validation faite avant la mise à jour de sécurité : elle n'a pas de
+  // propriétaire, le serveur la garde. On le signale plutôt que de mentir à l'écran.
+  if (!data || data.length === 0) throw new Error("Cette validation date d'avant la mise à jour de sécurité : elle ne peut plus être retirée.");
   return true;
 }
 
 const NOUVEAUTES = [
+  { v: "1.80", date: "2026-11", items: [
+    "🔒 Tes trouvailles sont protégées : personne d'autre que toi ne peut modifier ou supprimer ce que tu publies (le mur, tes idées, tes cartes de ligue). Rien à faire de ton côté, l'appli s'en occupe en silence.",
+    "🏆 Les scores de la ligue, de l'arène et du quiz sont maintenant tenus par le serveur : plus personne ne peut les effacer.",
+    "ℹ️ Ce que tu avais publié avant cette version reste en ligne, mais seul l'admin peut désormais le retirer.",
+  ] },
   { v: "1.79", date: "2026-09", items: [
     "✂️ Tu peux enfin cadrer la photo d'une trouvaille pour TA collection : sous la grande photo de sa fiche, « Cadrer la photo » resserre sur la bête, et la vignette de ta boîte suit. Ta photo d'origine n'est jamais touchée — « ↺ Photo entière » revient en arrière quand tu veux.",
     "🔗 Ce cadrage sert de point de départ partout : quand tu forges une carte ou que tu partages au mur, le cadre est déjà en place. Tu peux toujours en choisir un autre pour la carte ou pour la publication, ils restent indépendants.",
@@ -1983,6 +2020,7 @@ async function chargerReactions() {
 async function reagir(postId, type, auteur, dejaReagi) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const nom = (auteur || "Anonyme").slice(0, 40);
   if (dejaReagi) {
     const { error } = await sb.from("reactions_detail").delete().match({ post_id: postId, type, auteur: nom });
@@ -2050,6 +2088,7 @@ async function chargerCommentaires(postId) {
 async function ajouterCommentaire(postId, auteur, texte) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const propre = masquerInsultes((texte || "").trim()).slice(0, 400);
   if (!propre) throw new Error("Commentaire vide");
   const { data, error } = await avecDelai(sb.from("commentaires").insert({ post_id: postId, auteur: (auteur || "Anonyme").slice(0, 40), texte: propre }).select(), 15000, "ajouterCommentaire");
@@ -2060,6 +2099,7 @@ async function ajouterCommentaire(postId, auteur, texte) {
 async function supprimerCommentaire(id) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const { error } = await sb.from("commentaires").delete().eq("id", id);
   if (error) throw erreurSupabase("supprimerCommentaire", error, error.message || "Suppression refusée par le serveur");
   return true;
@@ -2217,6 +2257,7 @@ async function chargerIdees() {
 async function proposerIdee(auteur, idee) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const { error } = await sb.from("idees").insert({ auteur: (auteur || "Anonyme").slice(0, 40), idee: idee.slice(0, 500) });
   if (error) throw erreurSupabase("proposerIdee", error, "Envoi impossible");
   return true;
@@ -2225,6 +2266,7 @@ async function proposerIdee(auteur, idee) {
 async function supprimerIdee(id) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const { error } = await sb.from("idees").delete().eq("id", id);
   if (error) throw erreurSupabase("supprimerIdee", error, "Suppression impossible");
   return true;
@@ -2234,6 +2276,7 @@ async function supprimerIdee(id) {
 async function marquerIdeeRealisee(id, realisee) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const { error } = await sb.from("idees").update({ realisee: !!realisee }).eq("id", id);
   if (error) throw erreurSupabase("marquerIdeeRealisee", error, "Mise à jour impossible");
   return true;
@@ -2251,6 +2294,7 @@ async function chargerAvis() {
 async function envoyerAvis(auteur, note, commentaire, anonyme) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const n = Math.max(1, Math.min(5, parseInt(note, 10) || 0));
   const nom = anonyme ? "Anonyme" : (auteur || "Anonyme").slice(0, 40);
   const { error } = await sb.from("satisfaction").insert({ auteur: nom, note: n, commentaire: (commentaire || "").slice(0, 500) });
@@ -2261,6 +2305,7 @@ async function envoyerAvis(auteur, note, commentaire, anonyme) {
 async function adminSupprimerAvis(id) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Service non configuré");
+  await identitePrete();
   const { error } = await sb.from("satisfaction").delete().eq("id", id);
   if (error) throw erreurSupabase("adminSupprimerAvis", error, error.message || "Suppression refusée par le serveur");
   return true;
@@ -2270,6 +2315,7 @@ async function adminSupprimerAvis(id) {
 async function supprimerPost(post) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Mur non configuré");
+  await identitePrete();
   // 1) supprimer la photo du bucket si présente
   if (post.photo_url) {
     try {
@@ -2292,6 +2338,7 @@ async function supprimerPost(post) {
 async function modifierPost(id, champs) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Mur non configuré");
+  await identitePrete();
   const maj = {
     espece: (champs.espece || "").slice(0, 120),
     espece_sci: (champs.espece_sci || "").slice(0, 120),
@@ -5793,10 +5840,12 @@ async function envoyerScoreQuiz(prenom, total) {
   const sb = clientSupabase();
   if (!sb || !prenom) return false;
   try {
-    const { error } = await sb.from("quiz_scores").upsert(
-      { joueur: prenom.trim().slice(0, 40), total: Math.max(0, Math.round(total)), maj: new Date().toISOString() },
-      { onConflict: "joueur" }
-    );
+    // v1.80 — Fonction serveur : le total ne peut que monter.
+    await identitePrete();
+    const { error } = await sb.rpc("enregistrer_score_quiz", {
+      p_joueur: prenom.trim().slice(0, 40),
+      p_total: Math.max(0, Math.round(total)),
+    });
     if (error) { noterErreur("envoyerScoreQuiz", error); return false; }
     return true;
   } catch (e) { noterErreur("envoyerScoreQuiz", e); return false; }
@@ -8573,7 +8622,7 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
   async function retirer(carte) {
     setEnCours("retirer-" + carte.id);
     try { await retirerCarteLigue(carte.proprietaire, carte.carte_id); await rafraichir(); }
-    catch {}
+    catch (e) { alert((e && e.message) || "Retrait impossible"); }
     setEnCours(null);
   }
 
@@ -9021,7 +9070,7 @@ function Missions({ observations, prenom, onDefinirPrenom, onFermer }) {
         await validerMission(saison.cle, m.id, moi, false);
         setValidations((prev) => [...prev, { mission_id: m.id, auteur: moi, auto: false }]);
       }
-    } catch {}
+    } catch (e) { if (e && e.message) alert(e.message); }
     setEnCours(null);
   }
 
@@ -9997,15 +10046,20 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer, estAdmin }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, fontFamily: sans, fontSize: 12, color: C.papierSombre }}>
             <span>💡 {it.auteur || "Anonyme"} · {it.created_at ? new Date(it.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}</span>
             <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              {/* v1.80 — Réservé à l'admin : le serveur refusait déjà tout le monde, le bouton échouait en silence. */}
+              {estAdmin ? (
               <button onClick={() => basculerRealisee(it)} style={{ background: "none", border: `1px solid ${it.realisee ? "#5C8A3C" : C.bordure}`, color: it.realisee ? "#8AAE6B" : C.papierSombre, fontFamily: sans, fontSize: 11, fontWeight: 700, padding: "6px 9px", borderRadius: 14, cursor: "pointer" }}>
                 {it.realisee ? "↩︎ À refaire" : "✅ Réalisée"}
               </button>
+              ) : it.realisee ? (
+                <span style={{ color: "#8AAE6B", fontFamily: sans, fontSize: 11, fontWeight: 700 }}>✅ Réalisée</span>
+              ) : null}
               {confirmSuppr === it.id ? (
                 <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   <button onClick={() => setConfirmSuppr(null)} style={{ fontFamily: sans, fontSize: 11, padding: "6px 8px", borderRadius: 6, border: `1px solid ${C.bordure}`, background: C.panneauClair, color: C.papierSombre, cursor: "pointer" }}>Non</button>
                   <button onClick={() => supprimer(it.id)} style={{ fontFamily: sans, fontSize: 11, padding: "6px 8px", borderRadius: 6, border: `1px solid ${C.rouge}`, background: "transparent", color: C.rouge, cursor: "pointer" }}>Supprimer</button>
                 </span>
-              ) : (estAdmin || ((it.auteur || "").trim().toLowerCase() === (prenom || "").trim().toLowerCase())) ? (
+              ) : (estAdmin || estAMoi(it)) ? (
                 /* v1.76 — La corbeille n'est proposée qu'à l'auteur ou à l'admin : le serveur
                    refusait de toute façon les autres, mais en silence. */
                 <button onClick={() => setConfirmSuppr(it.id)} style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 14, cursor: "pointer", padding: "0 4px" }} title="Supprimer">🗑️</button>
@@ -10299,9 +10353,12 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
     setConfirmSuppr(null);
   }
 
-  // Ma publication ? Basé sur le prénom (garde-fou d'interface : pas d'auth réelle derrière).
+  // Ma publication ? v1.80 — basé sur l'identité réelle (owner_id), plus sur le
+  // prénom : le serveur refuse de toute façon de modifier ce qui n'est pas à moi.
+  // Les publications d'avant la v1.80 n'ont pas de propriétaire : seul l'admin
+  // peut les retoucher.
   function estMaPubli(p) {
-    return prenom && (p.auteur || "").trim().toLowerCase() === prenom.trim().toLowerCase();
+    return estAMoi(p);
   }
 
   function ouvrirEdition(p) {
@@ -11982,13 +12039,18 @@ function BioDex() {
 
   useEffect(() => {
     if (!MUR_ACTIF) return;
-    // Récupère la session au démarrage
-    utilisateurActuel().then((u) => setUtilisateur(u)).catch(() => {});
+    // Récupère la session au démarrage, puis garantit une identité (anonyme si
+    // personne n'est connecté par e-mail) pour que les écritures aient un propriétaire.
+    utilisateurActuel().then((u) => { setUtilisateur(u); identitePrete(); }).catch(() => { identitePrete(); });
     // Écoute les changements de connexion (retour du lien magique, déconnexion)
     const sb = clientSupabase();
     if (sb && sb.auth && sb.auth.onAuthStateChange) {
       const { data } = sb.auth.onAuthStateChange((_evt, session) => {
-        setUtilisateur(session ? session.user : null);
+        const user = session ? session.user : null;
+        majMonId(user);
+        // L'identité anonyme est invisible : pour l'interface, on n'est « connecté »
+        // qu'avec un compte e-mail.
+        setUtilisateur(user && !estAnonyme(user) ? user : null);
       });
       return () => { try { data.subscription.unsubscribe(); } catch {} };
     }
