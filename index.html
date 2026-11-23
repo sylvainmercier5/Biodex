@@ -1745,7 +1745,7 @@ const NOUVEAUTES = [
   { v: "1.80", date: "2026-11", items: [
     "🔒 Tes trouvailles sont protégées : personne d'autre que toi ne peut modifier ou supprimer ce que tu publies (le mur, tes idées, tes cartes de ligue). Rien à faire de ton côté, l'appli s'en occupe en silence.",
     "🏆 Les scores de la ligue, de l'arène et du quiz sont maintenant tenus par le serveur : plus personne ne peut les effacer.",
-    "ℹ️ Ce que tu avais publié avant cette version reste en ligne, mais seul l'admin peut désormais le retirer.",
+    "ℹ️ Ce que tu avais publié avant cette version reste en ligne. Si tu étais connecté·e avec ton e-mail, tes anciennes trouvailles te sont rendues ; sinon, seul l'admin peut désormais les retirer.",
   ] },
   { v: "1.79", date: "2026-09", items: [
     "✂️ Tu peux enfin cadrer la photo d'une trouvaille pour TA collection : sous la grande photo de sa fiche, « Cadrer la photo » resserre sur la bête, et la vignette de ta boîte suit. Ta photo d'origine n'est jamais touchée — « ↺ Photo entière » revient en arrière quand tu veux.",
@@ -4295,7 +4295,9 @@ function Administration({ onFermer }) {
     if (!window.confirm(`Supprimer définitivement la trouvaille « ${p.espece || "?"} » de ${p.auteur || "?"} ?\n\nCette action est irréversible.`)) return;
     setOccupe(p.id);
     try {
-      await adminSupprimerPost(p.id);
+      // v1.80 — supprimerPost efface aussi la photo du stockage (avant, la
+      // modération laissait des photos orphelines : 443 fichiers pour 390 posts).
+      await supprimerPost(p);
       setPosts((l) => l.filter((x) => x.id !== p.id));
       setMessage("✓ Trouvaille supprimée.");
     } catch (e) { setMessage("❌ " + (e.message || "Échec")); }
