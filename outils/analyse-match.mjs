@@ -50,9 +50,29 @@ console.log(`\nDuo « BioCLIP si p ≥ 0,8, sinon Claude corrigé » : ${Math.ro
 const unDesDeux = lignes.filter((l) => l.bioL && (l.bioL.ok || l.corrige.espece_ok)).length;
 console.log(`Au moins l'un des deux juste (plafond d'un duo parfait) : ${Math.round(100 * unDesDeux / n)} %`);
 
+// Duo mesuré (Claude reçoit les candidats BioCLIP)
+const avecDuo = lignes.filter((l) => res[`duo|${l.f}`] && !res[`duo|${l.f}`].erreur);
+if (avecDuo.length) {
+  const d = (l) => res[`duo|${l.f}`];
+  console.log(`\n=== Duo mesuré (${avecDuo.length} photos) ===`);
+  console.log(`Duo (Claude arbitre avec candidats) : espèce ${pc(avecDuo, (l) => d(l).espece_ok)}, genre ${pc(avecDuo, (l) => d(l).genre_ok)}, terrain ${pc(avecDuo.filter((l) => l.type === "terrain"), (l) => d(l).espece_ok)}`);
+  const surs = avecDuo.filter((l) => (d(l).res || {}).confiance >= 80);
+  console.log(`Duo se dit sûr sur ${surs.length}/${avecDuo.length}, juste ${pc(surs, (l) => d(l).espece_ok)} du temps`);
+  for (const seuil of [0.8, 0.9, 0.95]) {
+    const econome = avecDuo.map((l) => (l.bioL.p >= seuil ? l.bioL.ok : d(l).espece_ok));
+    const evites = avecDuo.filter((l) => l.bioL.p >= seuil).length;
+    console.log(`Économe (BioCLIP seul si p ≥ ${seuil}, sinon duo) : espèce ${Math.round(100 * econome.filter(Boolean).length / econome.length)} %, Claude évité sur ${Math.round(100 * evites / avecDuo.length)} % des photos`);
+  }
+  console.log("\nCorrections et régressions du duo par rapport à BioCLIP Limousin :");
+  for (const l of avecDuo.filter((l) => d(l).espece_ok !== l.bioL.ok)) {
+    console.log(`  ${d(l).espece_ok ? "+ corrige" : "- casse  "} ${l.vrai.padEnd(26)} BioCLIP ${l.bioL.sci} (${Math.round(l.bioL.p * 100)} %) → duo ${d(l).nomSci}`);
+  }
+}
+
 // Coût et vitesse
-for (const v of ["actuel", "corrige"]) {
-  const ok = lignes.map((l) => l[v]).filter((x) => x.cout !== undefined);
+for (const v of ["actuel", "corrige", "duo"]) {
+  const ok = lignes.map((l) => res[`${v}|${l.f}`] || {}).filter((x) => x.cout !== undefined);
+  if (!ok.length) continue;
   const cout = ok.reduce((a, x) => a + x.cout, 0);
   console.log(`\n${v} : ${(cout / ok.length * 100).toFixed(2)} centimes/photo, ${Math.round(ok.reduce((a, x) => a + x.ms, 0) / ok.length / 100) / 10} s/photo, ${Math.round(ok.reduce((a, x) => a + (x.sortie || 0), 0) / ok.length)} jetons de sortie`);
 }

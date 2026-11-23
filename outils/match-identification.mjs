@@ -57,19 +57,36 @@ const VARIANTES = {
   actuel: { model: "claude-opus-4-8", max_tokens: 780, extra: {}, tarif: { e: 5, s: 25 } },
   // Version corrigée : modèle récent, réflexion adaptative (toujours active), effort moyen
   corrige: { model: "claude-opus-5-5", max_tokens: 16000, extra: { output_config: { effort: "medium" } }, tarif: { e: 4, s: 20 } },
+  // Duo : même chose que « corrige », mais Claude reçoit les 5 candidats de BioCLIP (liste Limousin)
+  duo: { model: "claude-opus-5-5", max_tokens: 16000, extra: { output_config: { effort: "medium" } }, tarif: { e: 4, s: 20 }, candidats: true },
 };
+
+// Candidats BioCLIP (liste Limousin, recadrage « oc ») pour chaque photo
+const BIO = JSON.parse(fs.readFileSync(`${ESSAI}/resultats_bruts.json`, "utf8")).photos
+  .filter((x) => x.liste === "limousin" && x.prep === "oc");
+function blocCandidats(fichier) {
+  const b = BIO.find((x) => x.fichier === fichier);
+  if (!b) return "";
+  const lignes = b.espece.top.slice(0, 5).map((s, i) => `${i + 1}. ${s} (probabilité ${Math.round(b.espece.p[i] * 100)} %)`);
+  return "\n\nAvis d'un modèle de reconnaissance spécialisé (BioCLIP), qui choisit uniquement parmi les espèces connues dans la région :\n" +
+    lignes.join("\n") +
+    "\nC'est un indice fort, souvent juste quand sa probabilité dépasse 80 %. Mais vérifie-le sur l'image : il confond parfois des espèces sœurs du même genre, " +
+    "il se laisse moins piéger que toi par les mimétismes, et il ignore toute espèce absente de sa liste. " +
+    "Si l'image contredit clairement ses propositions, fie-toi à l'image et dis-le dans la note.";
+}
 
 let depense = 0;
 
-async function appeler(v, image) {
+async function appeler(v, image, fichier) {
   const conf = VARIANTES[v];
+  const indice = conf.candidats ? blocCandidats(fichier) : "";
   const corps = {
     model: conf.model,
     max_tokens: conf.max_tokens,
     system: SYSTEME,
     messages: [{ role: "user", content: [
       { type: "image", source: { type: "base64", media_type: "image/jpeg", data: image } },
-      { type: "text", text: "Identifie cet arthropode." + CONTEXTE },
+      { type: "text", text: "Identifie cet arthropode." + CONTEXTE + indice },
     ] }],
     ...conf.extra,
   };
@@ -102,6 +119,7 @@ fs.mkdirSync(SORTIE, { recursive: true });
 const fichier = path.join(SORTIE, "match.json");
 const resultats = fs.existsSync(fichier) ? JSON.parse(fs.readFileSync(fichier, "utf8")) : {};
 const aFaire = variante === "les-deux" ? ["actuel", "corrige"] : [variante];
+if (!aFaire.every((v) => VARIANTES[v])) throw new Error("Variante inconnue : " + variante);
 
 for (const m of meta) {
   const image = fs.readFileSync(`${ESSAI}/photos/${m.fichier}`).toString("base64");
@@ -110,7 +128,7 @@ for (const m of meta) {
     if (resultats[cle] && !resultats[cle].erreur) continue; // reprise possible
     if (depense > PLAFOND_DOLLARS) { console.log(`Plafond de ${PLAFOND_DOLLARS} $ atteint, arrêt.`); break; }
     try {
-      const r = await appeler(v, image);
+      const r = await appeler(v, image, m.fichier);
       const sci = r.res && r.res.nomSci;
       resultats[cle] = { ...r, vrai: m.espece, nomSci: sci, espece_ok: binome(sci) === binome(m.espece), genre_ok: genre(sci) === genre(m.espece) };
     } catch (e) {
