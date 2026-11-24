@@ -238,7 +238,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.84";
+const VERSION = "v1.85";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1743,6 +1743,12 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.85", date: "2026-11", items: [
+    "📖 Le BESTIAIRE remplace la galerie de cartes : chaque nouvelle espèce identifiée débloque sa carte toute seule, plus besoin de la forger.",
+    "📈 Une carte par espèce : revoir une espèce déjà trouvée fait progresser sa carte (+10 XP), jusqu'au niveau 5.",
+    "❓ Par groupe (papillons, coléoptères, libellules…), un compteur te montre combien d'espèces tu as trouvées sur celles connues dans le Limousin, avec les plus communes encore à découvrir en silhouettes.",
+    "🕰️ Tes anciennes observations identifiées sont rattrapées petit à petit : leurs cartes se débloquent au fil des ouvertures de l'appli.",
+  ] },
   { v: "1.84", date: "2026-11", items: [
     "💡 La boîte à idées ne te redemande plus ton prénom à chaque visite : comme sur le mur, la ligue et les missions, un simple rappel avec « modifier ».",
   ] },
@@ -2646,6 +2652,10 @@ const ORDRES = [
     mots: ["mille-patte", "mille patte", "millepatte", "iule", "scolopendre", "geophile", "lithobie", "glomeris", "scutigere", "pauropode", "symphyle"],
     genres: ["lithobius", "scolopendra", "julus", "glomeris", "scutigera"] },
 ];
+
+// v1.85 — Bestiaire : espèces d'insectes connues dans le Limousin, par groupe, et les plus
+// communes (silhouettes à découvrir). Fabriqué par outils/fabriquer-bestiaire.mjs.
+const BESTIAIRE_LIMOUSIN = {"source":"iNaturalist (Limousin) + BioCLIP 2","date":"2026-11-24","groupes":{"autres":{"total":62,"communes":[{"s":"Mantis religiosa","f":"Mante religieuse"},{"s":"Planuncus tingitanus","f":"Blatte des jardins"},{"s":"Libelloides coccajus","f":"Ascalaphe soufré"},{"s":"Empusa pennata","f":"Empuse commune"},{"s":"Euroleon nostras","f":"Fourmilion parisien"},{"s":"Mantispa styriaca","f":"Mantispe de Styrie"},{"s":"Clonopsis gallica","f":"Phasme gaulois"},{"s":"Panorpa germanica","f":"Panorpe Germanique"}]},"coleopteres":{"total":447,"communes":[{"s":"Lucanus cervus","f":"Lucane cerf-volant"},{"s":"Anoplotrupes stercorosus","f":"Géotrupe des bois"},{"s":"Morimus asper","f":"Morime rugueux"},{"s":"Harmonia axyridis","f":"Coccinelle asiatique"},{"s":"Dorcus parallelipipedus","f":"Petite biche"},{"s":"Coccinella septempunctata","f":"Coccinelle à sept points"},{"s":"Rhagonycha fulva","f":"Téléphore fauve"},{"s":"Cetonia aurata","f":"Cétoine dorée"}]},"dipteres":{"total":185,"communes":[{"s":"Mikiola fagi","f":"Cécidomyie du hêtre"},{"s":"Episyrphus balteatus","f":"Syrphe ceinturé"},{"s":"Volucella zonaria","f":"Volucelle zonée"},{"s":"Eristalis tenax","f":"Éristale gluant"},{"s":"Sphaerophoria scripta","f":"Sphaerophore notée"},{"s":"Milesia crabroniformis","f":"Milésie faux-frelon"},{"s":"Eristalis pertinax","f":"Éristale opiniâtre"},{"s":"Scathophaga stercoraria","f":"Scatophage du fumier"}]},"hemipteres":{"total":252,"communes":[{"s":"Graphosoma italicum","f":"Graphosome d'Italie"},{"s":"Coreus marginatus","f":"Corée marginé"},{"s":"Carpocoris purpureipennis","f":"Carpocore pourpré"},{"s":"Leptoglossus occidentalis","f":"Punaise américaine"},{"s":"Palomena prasina","f":"Punaise verte"},{"s":"Cercopis vulnerata","f":"Cercope sanguin"},{"s":"Pyrrhocoris apterus","f":"Gendarme"},{"s":"Dolycoris baccarum","f":"Punaise des baies"}]},"hymenopteres":{"total":207,"communes":[{"s":"Apis mellifera","f":"Abeille domestique"},{"s":"Vespa crabro","f":"Frelon européen"},{"s":"Vespa velutina","f":"Frelon asiatique"},{"s":"Bombus pascuorum","f":"Bourdon des champs"},{"s":"Diplolepis rosae","f":"Cynips du Rosier"},{"s":"Xylocopa violacea","f":"Xylocope violet"},{"s":"Scolia hirta","f":"Scolie hirsute"},{"s":"Macrophya montana","f":"Macrophie rustique"}]},"lepidopteres":{"total":707,"communes":[{"s":"Argynnis paphia","f":"Tabac d'Espagne"},{"s":"Maniola jurtina","f":"Myrtil"},{"s":"Polyommatus icarus","f":"Azuré commun"},{"s":"Gonepteryx rhamni","f":"Citron"},{"s":"Pyronia tithonus","f":"Amaryllis"},{"s":"Lycaena phlaeas","f":"Cuivré commun"},{"s":"Euplagia quadripunctaria","f":"Écaille chinée"},{"s":"Melitaea cinxia","f":"Mélitée du plantain"}]},"odonates":{"total":52,"communes":[{"s":"Calopteryx virgo","f":"Caloptéryx vierge"},{"s":"Platycnemis pennipes","f":"Pennipatte bleuâtre"},{"s":"Libellula depressa","f":"Libellule déprimée"},{"s":"Sympetrum sanguineum","f":"Sympétrum sanguin"},{"s":"Sympetrum striolatum","f":"Sympétrum strié"},{"s":"Ischnura elegans","f":"Ischnure élégante"},{"s":"Orthetrum cancellatum","f":"Orthétrum réticulé"},{"s":"Orthetrum coerulescens","f":"Orthétrum bleuissant"}]},"orthopteres":{"total":77,"communes":[{"s":"Tettigonia viridissima","f":"Grande sauterelle verte"},{"s":"Pseudochorthippus parallelus","f":"Criquet des pâtures"},{"s":"Gryllus campestris","f":"Grillon champêtre"},{"s":"Stethophyma grossum","f":"Criquet ensanglanté"},{"s":"Oedipoda caerulescens","f":"Œdipode turquoise"},{"s":"Omocestus rufipes","f":"Criquet noir ébène"},{"s":"Leptophyes punctatissima","f":"Leptophye ponctuée"},{"s":"Ruspolia nitidula","f":"Ruspolie à tête de cône"}]}}};
 
 function ordreInfo(id) {
   return ORDRES.find((o) => o.id === id) || { id: "autres", label: "Autres", court: "Autres", emoji: "🔎" };
@@ -8093,10 +8103,18 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
               </div>
             )}
           </div>
+        ) : identifie && (observations || []).some((o) => o.id !== obs.id && o.carte && cleEspeceMur(o) === cleEspeceMur(obs)) ? (
+          // v1.85 — Bestiaire : une carte par espèce. Celle-ci existe déjà ailleurs.
+          <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, lineHeight: 1.5 }}>
+            📖 Cette espèce est déjà dans ton bestiaire (onglet Jeu). Cette observation fait progresser sa carte de +{XP_REVOIR} XP.
+          </div>
         ) : identifie ? (
           <div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 8, lineHeight: 1.5 }}>
+              📖 Nouvelle espèce : sa carte se débloque toute seule dans ton bestiaire dès que tu es en ligne. Tu peux aussi la forger tout de suite.
+            </div>
             <Bouton variante="primaire" onClick={lancerCarte} disabled={carteEtat === "recherche"} style={{ width: "100%" }}>
-              {carteEtat === "recherche" ? "🃏 Forge de la carte…" : "🃏 Forger une carte de collection"}
+              {carteEtat === "recherche" ? "🃏 Forge de la carte…" : "🃏 Forger la carte maintenant"}
             </Bouton>
             {carteErreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginTop: 8 }}>{carteErreur}</div>}
             {avertAuth && (
@@ -10750,6 +10768,100 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
 }
 
 // ---------- Mode jeu : cartes + combat solo ----------
+// ── v1.85 — Bestiaire : les cartes par groupe, avec ce qui reste à découvrir ──
+// Pour chaque groupe : les espèces trouvées (une carte par espèce), un compteur
+// « trouvées / connues dans le Limousin », et les espèces les plus communes encore
+// à trouver, en silhouettes. Les espèces de BESTIAIRE_LIMOUSIN viennent d'iNaturalist.
+const SILHOUETTES_PAR_GROUPE = 4;
+
+function SilhouetteCarte({ espece }) {
+  return (
+    <div style={{ borderRadius: 12, border: `1.5px dashed ${C.bordure}`, background: "linear-gradient(#161B12, #11150D)", minHeight: 96,
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "10px 8px", textAlign: "center", boxSizing: "border-box" }}>
+      <div style={{ fontSize: 22, color: C.bordure, fontFamily: serif, fontWeight: 700, lineHeight: 1 }}>?</div>
+      <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.papierSombre, marginTop: 6, lineHeight: 1.3 }}>{espece.f}</div>
+      <div style={{ fontFamily: serif, fontSize: 11, fontStyle: "italic", color: C.papierSombre, opacity: 0.75, marginTop: 2 }}>{espece.s}</div>
+    </div>
+  );
+}
+
+function Bestiaire({ cartesAffichees, nbEspeces, vuesParEspece, filtreGroupe, onOuvrir }) {
+  const trouvees = new Set(cartesAffichees.map((c) => binomeMin(c.nomSci)).filter(Boolean));
+  const groupes = [...ORDRES.map((o) => o.id), "autres"]
+    .filter((id) => !filtreGroupe || id === filtreGroupe)
+    .map((id) => {
+      const info = ordreInfo(id);
+      const cartesG = cartesAffichees.filter((c) => deduireOrdre(c) === id);
+      const donnees = BESTIAIRE_LIMOUSIN.groupes[id];
+      const aTrouver = donnees ? donnees.communes.filter((e) => !trouvees.has(binomeMin(e.s))) : [];
+      return { id, info, cartesG, total: donnees ? donnees.total : null, aTrouver };
+    })
+    // Groupe affiché s'il a des cartes, ou des espèces à découvrir (les arachnides et
+    // mille-pattes, absents de la liste d'insectes, n'apparaissent qu'une fois trouvés).
+    .filter((g) => g.cartesG.length > 0 || g.aTrouver.length > 0)
+    // Les groupes où l'on a déjà des cartes d'abord (les plus fournis en tête).
+    .sort((a, b) => (b.cartesG.length > 0) - (a.cartesG.length > 0) || b.cartesG.length - a.cartesG.length);
+
+  return (
+    <div>
+      <div style={{ padding: "12px 14px", marginBottom: 16, borderRadius: 12, border: `1px solid ${C.bordure}`, background: "linear-gradient(#1C2318, #161B12)" }}>
+        <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 700, color: C.papier }}>
+          📖 {nbEspeces} espèce{nbEspeces > 1 ? "s" : ""} découverte{nbEspeces > 1 ? "s" : ""}
+        </div>
+        <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginTop: 4, lineHeight: 1.5 }}>
+          Chaque nouvelle espèce identifiée débloque sa carte toute seule. La revoir fait progresser sa carte.
+        </div>
+      </div>
+
+      {groupes.map((g) => (
+        <div key={g.id} style={{ marginBottom: 22 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+            <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 700, color: C.papier }}>{g.info.emoji} {g.info.court || g.info.label}</div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair, whiteSpace: "nowrap" }}>
+              {g.cartesG.length}{g.total ? " / " + g.total : ""}
+            </div>
+          </div>
+          {g.total ? (
+            <div style={{ height: 5, borderRadius: 3, background: C.panneauClair, overflow: "hidden", marginBottom: 6 }}>
+              <div style={{ width: Math.max(g.cartesG.length ? 2 : 0, Math.round(100 * g.cartesG.length / g.total)) + "%", height: "100%", background: C.ambre }} />
+            </div>
+          ) : null}
+          {g.total ? (
+            <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginBottom: 10 }}>
+              {g.total} espèces connues dans le Limousin
+            </div>
+          ) : <div style={{ marginBottom: 10 }} />}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: 14 }}>
+            {g.cartesG.map((o) => (
+              <div key={o.id}>
+                <CarteInsecte obs={o} onClick={() => onOuvrir(o.id)} />
+                {(vuesParEspece[cleEspeceMur(o)] || 0) > 1 && (
+                  <div style={{ textAlign: "center", marginTop: 5, fontFamily: sans, fontSize: 11.5, fontWeight: 700, color: C.ambreClair }}>
+                    👁 vue {vuesParEspece[cleEspeceMur(o)]} fois
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          {g.aTrouver.length > 0 && (
+            <div style={{ marginTop: g.cartesG.length ? 12 : 0 }}>
+              <div style={{ fontFamily: sans, fontSize: 11.5, fontWeight: 700, color: C.lichen, marginBottom: 7, letterSpacing: 0.3 }}>❓ À DÉCOUVRIR (LES PLUS COMMUNES)</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+                {g.aTrouver.slice(0, SILHOUETTES_PAR_GROUPE).map((e) => <SilhouetteCarte key={e.s} espece={e} />)}
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// « Lucanus cervus (mâle) » -> « lucanus cervus » : pour comparer les espèces entre elles.
+function binomeMin(s) {
+  return String(s || "").trim().toLowerCase().split(/\s+/).slice(0, 2).join(" ");
+}
+
 function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, onDefier, sousVueInitiale, onSyncXp, onRecordArene }) {
   // v1.83 — Un seul niveau d'onglets : Cartes · Ligue · Arène · Quiz (avant : Jeu > Combat >
   // Défier la bande / Arène > Défier / Mes cartes / …). « combat » et « ligue » (retour après un
@@ -10761,9 +10873,19 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
   const [fOrdreC, setFOrdreC] = useState("");
   const [triCartes, setTriCartes] = useState("recentes"); // recentes | rarete | type
   const [montrerTypes, setMontrerTypes] = useState(false);
-  const ordresCartes = ORDRES.map((o) => ({ ...o, n: cartes.filter((c) => deduireOrdre(c) === o.id).length })).filter((o) => o.n > 0);
-  const nbAutresC = cartes.filter((c) => deduireOrdre(c) === "autres").length;
-  const cartesFiltrees = fOrdreC ? cartes.filter((c) => deduireOrdre(c) === fOrdreC) : cartes;
+  // v1.85 — Bestiaire : une carte par espèce (celle qui a le plus d'XP si plusieurs existent,
+  // héritage d'avant la v1.85), avec le nombre de fois où l'espèce a été vue.
+  const vuesParEspece = {};
+  (observations || []).forEach((o) => { const k = cleEspeceMur(o); if (k && o.statut !== "a_trier") vuesParEspece[k] = (vuesParEspece[k] || 0) + 1; });
+  const parEspece = {};
+  cartes.forEach((c) => {
+    const k = cleEspeceMur(c) || c.id;
+    if (!parEspece[k] || (Number(c.carte.xp) || 0) > (Number(parEspece[k].carte.xp) || 0)) parEspece[k] = c;
+  });
+  const especesCartes = Object.values(parEspece);
+  const ordresCartes = ORDRES.map((o) => ({ ...o, n: especesCartes.filter((c) => deduireOrdre(c) === o.id).length })).filter((o) => o.n > 0);
+  const nbAutresC = especesCartes.filter((c) => deduireOrdre(c) === "autres").length;
+  const cartesFiltrees = fOrdreC ? especesCartes.filter((c) => deduireOrdre(c) === fOrdreC) : especesCartes;
   const rar = (c) => Number(c && c.carte && c.carte.rarete) || 0;
   const cartesAffichees = (() => {
     const liste = [...cartesFiltrees];
@@ -10775,7 +10897,7 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
     else liste.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)); // récentes
     return liste;
   })();
-  const sousOnglets = [["galerie", "🃏 Cartes"], MUR_ACTIF ? ["ligue", "🏆 Ligue"] : ["libre", "⚔️ Combat"], ["arene", "🏟️ Arène"], ["quiz", "🧠 Quiz"]];
+  const sousOnglets = [["galerie", "📖 Bestiaire"], MUR_ACTIF ? ["ligue", "🏆 Ligue"] : ["libre", "⚔️ Combat"], ["arene", "🏟️ Arène"], ["quiz", "🧠 Quiz"]];
   const vueCombat = sousVue === "ligue" || sousVue === "libre" || sousVue === "arene";
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
@@ -10812,7 +10934,7 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
       {sousVue === "galerie" && (ordresCartes.length + (nbAutresC > 0 ? 1 : 0)) > 1 && (
         <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 6, marginBottom: 14, WebkitOverflowScrolling: "touch" }}>
           <button onClick={() => setFOrdreC("")} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdreC === "" ? C.ambre : C.bordure}`, background: fOrdreC === "" ? C.ambre : "transparent", color: fOrdreC === "" ? C.encre : C.papier }}>
-            Toutes {cartes.length}
+            Toutes {especesCartes.length}
           </button>
           {ordresCartes.map((o) => (
             <button key={o.id} onClick={() => setFOrdreC(fOrdreC === o.id ? "" : o.id)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdreC === o.id ? C.ambre : C.bordure}`, background: fOrdreC === o.id ? C.ambre : "transparent", color: fOrdreC === o.id ? C.encre : C.papier }}>
@@ -10839,19 +10961,8 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
       )}
 
       {sousVue === "galerie" && (
-        cartes.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "56px 24px", border: `1px solid ${C.bordure}`, borderRadius: 14, background: "linear-gradient(#191F15, #14180F)" }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🃏</div>
-            <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier, marginBottom: 6 }}>Aucune carte forgée</div>
-            <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.5 }}>Ouvre une observation identifiée et forge sa carte depuis sa fiche.</div>
-          </div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: 14 }}>
-            {cartesAffichees.map((o) => (
-              <CarteInsecte key={o.id} obs={o} onClick={() => onOuvrir(o.id)} />
-            ))}
-          </div>
-        )
+        <Bestiaire cartesAffichees={cartesAffichees} nbEspeces={especesCartes.length} vuesParEspece={vuesParEspece}
+          filtreGroupe={fOrdreC} onOuvrir={onOuvrir} />
       )}
 
       {sousVue === "ligue" && MUR_ACTIF && (
@@ -11144,6 +11255,7 @@ function erreurSupabase(ou, error, messageLisible) {
 // écrase les autres (écart 18 pts sans plafond, 5 pts avec).
 // L'XP ne vient QUE des défis de ligue (pas de l'arène) pour éviter le farm solo.
 const XP_VICTOIRE = 10;
+const XP_REVOIR = 10;      // v1.85 — revoir une espèce déjà au bestiaire fait progresser sa carte
 const XP_DEFAITE = 4;      // tout le monde progresse, même en perdant
 const XP_PAR_NIVEAU = 30;
 const NIVEAU_MAX = 5;
@@ -12438,6 +12550,87 @@ function BioDex() {
     try { await dbAjouter(maj); } catch {}
     setObservations((prev) => prev.map((o) => (o.id === id ? maj : o)));
   }
+
+  // ── v1.85 — BESTIAIRE : la carte se débloque toute seule ──────────────────
+  // Une carte par espèce. La première observation identifiée d'une espèce la débloque
+  // (forge automatique, en arrière-plan) ; les observations suivantes de la même espèce
+  // donnent de l'XP à cette carte. Les anciennes observations sont rattrapées petit à
+  // petit (8 forges au plus par ouverture de l'appli, pour ménager le service).
+  const forgeAutoEnCours = useRef(false);
+  const forgesAutoSession = useRef(0);
+  const forgesAutoRatees = useRef(new Set());
+  // Version la plus fraîche des observations : la forge dure quelques secondes, la personne
+  // a pu modifier la fiche entre-temps ; on n'écrase jamais ses changements.
+  const observationsRef = useRef(observations);
+  observationsRef.current = observations;
+  const plusFraiche = (o) => observationsRef.current.find((x) => x.id === o.id) || o;
+  useEffect(() => {
+    if (chargement || forgeAutoEnCours.current) return;
+    const collection = observations.filter((o) => o.statut !== "a_trier");
+    const recent = (o) => { const t = Number(String(o.id).split("-")[0]); return t && Date.now() - t < 6 * 3600 * 1000; };
+    // Carte de référence de chaque espèce : celle qui a le plus d'XP.
+    const carteDe = {};
+    collection.forEach((o) => {
+      const k = cleEspeceMur(o);
+      if (k && o.carte && (!carteDe[k] || (Number(o.carte.xp) || 0) > (Number(carteDe[k].carte.xp) || 0))) carteDe[k] = o;
+    });
+
+    // 1) Espèce déjà dans le bestiaire : l'observation en plus fait progresser sa carte.
+    const doublon = collection.find((o) => { const k = cleEspeceMur(o); return k && !o.carte && carteDe[k] && !o.bestiaireCompte; });
+    if (doublon) {
+      forgeAutoEnCours.current = true;
+      (async () => {
+        const ref = plusFraiche(carteDe[cleEspeceMur(doublon)]);
+        const avant = niveauDeXp(ref.carte.xp);
+        const nouvelXp = (Number(ref.carte.xp) || 0) + XP_REVOIR;
+        const majRef = { ...ref, carte: { ...ref.carte, xp: nouvelXp } };
+        const majDoublon = { ...plusFraiche(doublon), bestiaireCompte: true };
+        try { await dbAjouter(majRef); await dbAjouter(majDoublon); } catch {}
+        setObservations((prev) => prev.map((o) => (o.id === majRef.id ? majRef : o.id === majDoublon.id ? majDoublon : o)));
+        majXpLigue(prenom, majRef.id, nouvelXp);
+        if (recent(doublon)) {
+          const apres = niveauDeXp(nouvelXp);
+          celebrer(apres > avant
+            ? { emoji: "⭐", titre: "Niveau " + apres + " !", texte: (ref.nom || "Ta carte") + " gagne en puissance (+" + XP_REVOIR + " XP).", ton: "espece" }
+            : { emoji: "📈", titre: "+" + XP_REVOIR + " XP", texte: (ref.nom || "Ta carte") + " déjà dans ton bestiaire : sa carte progresse.", ton: "espece" });
+        }
+        forgeAutoEnCours.current = false;
+      })();
+      return;
+    }
+
+    // 2) Nouvelle espèce : on forge sa carte.
+    if (forgesAutoSession.current >= 8) return;
+    try { if (navigator.onLine === false) return; } catch {}
+    const aForger = collection.find((o) => { const k = cleEspeceMur(o); return k && !o.carte && !carteDe[k] && !forgesAutoRatees.current.has(o.id); });
+    if (!aForger) return;
+    forgeAutoEnCours.current = true;
+    forgesAutoSession.current += 1;
+    (async () => {
+      try {
+        const c = await genererCarte(aForger.nom, aForger.nomSci, aForger.photo);
+        try {
+          const count = await chargerRareteInat(aForger.nomSci || aForger.nom);
+          const rData = rareteDepuisCount(count);
+          if (rData != null && c) c.rarete = rData;
+        } catch {}
+        if (!c) throw new Error("vide");
+        const actuelle = plusFraiche(aForger);
+        if (!observationsRef.current.some((x) => x.id === aForger.id) || actuelle.carte) throw new Error("déjà traitée");
+        const maj = { ...actuelle, carte: c, bestiaireCompte: true };
+        try { await dbAjouter(maj); } catch {}
+        setObservations((prev) => prev.map((o) => (o.id === maj.id ? { ...o, carte: c, bestiaireCompte: true } : o)));
+        if (recent(aForger)) {
+          celebrer({ emoji: "🃏", titre: "Nouvelle carte débloquée !", texte: (aForger.nom || "Ce spécimen") + " rejoint ton bestiaire.", ton: "legendaire" });
+        }
+      } catch {
+        forgesAutoRatees.current.add(aForger.id); // réseau ou service : on réessaiera à la prochaine ouverture
+      }
+      forgeAutoEnCours.current = false;
+      // Relance l'examen pour la suivante (l'effet ne se redéclenche que si l'état change).
+      setObservations((prev) => [...prev]);
+    })();
+  }, [observations, chargement]);
 
   // v1.79 — Cadrage de la photo de collection (vignettes + fiche). Non destructif.
   async function majCadrePhoto(id, cadrePhoto) {
