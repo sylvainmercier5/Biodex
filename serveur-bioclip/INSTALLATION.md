@@ -75,8 +75,8 @@ Puis redéployer. Sans ces deux variables, BioDex marche comme avant (Claude seu
 crontab -l | grep -v biodex-bioclip/lancer.sh | crontab -
 pkill -f biodex-bioclip/tunnel.yml
 pkill -f biodex-bioclip.py
-cloudflared tunnel route dns -h   # (supprimer le CNAME bioclip dans le tableau de bord Cloudflare)
 cloudflared tunnel delete biodex-bioclip
+# puis supprimer l'enregistrement DNS « bioclip » dans le tableau de bord Cloudflare
 rm -rf ~/biodex-bioclip
 ```
 Et supprimer `BIOCLIP_URL` et `BIOCLIP_CLE` dans Netlify.
