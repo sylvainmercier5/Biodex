@@ -237,7 +237,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.80";
+const VERSION = "v1.81";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1742,6 +1742,10 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.81", date: "2026-11", items: [
+    "🔬 Identification bien plus précise : un modèle spécialisé dans le vivant (BioCLIP) reconnaît d'abord l'espèce parmi celles de ta région, et Claude prend le relais quand il hésite. Sur 123 photos de test, la bonne espèce passe de 78 % à 91 %.",
+    "⚡ Quand le spécialiste est sûr de lui, la réponse arrive en deux secondes environ.",
+  ] },
   { v: "1.80", date: "2026-11", items: [
     "🔒 Tes trouvailles sont protégées : personne d'autre que toi ne peut modifier ou supprimer ce que tu publies (le mur, tes idées, tes cartes de ligue). Rien à faire de ton côté, l'appli s'en occupe en silence.",
     "🏆 Les scores de la ligue, de l'arène et du quiz sont maintenant tenus par le serveur : plus personne ne peut les effacer.",
@@ -3185,6 +3189,17 @@ function Stats({ observations, raretes, onFermer }) {
 
 // Déduit une indication biogéographique mondiale approximative depuis le GPS
 // (sans révéler la position exacte, sans API). Aide l'IA à privilégier la faune locale.
+// v1.81 — Liste d'espèces que le serveur donne à BioCLIP : « limousin » (la plus précise),
+// « france », ou « hors-france » (BioCLIP ne connaît que des listes françaises : Claude seul).
+// Sans position, on suppose la France.
+function zoneEspeces(gps) {
+  if (!gps || typeof gps.lat !== "number" || typeof gps.lon !== "number") return "france";
+  const { lat, lon } = gps;
+  if (lat >= 44.9 && lat <= 46.45 && lon >= 0.6 && lon <= 2.65) return "limousin";
+  if (lat >= 41 && lat <= 51.5 && lon >= -5.5 && lon <= 10) return "france";
+  return "hors-france";
+}
+
 function regionApprox(gps) {
   if (!gps || typeof gps.lat !== "number" || typeof gps.lon !== "number") return "";
   const { lat, lon } = gps;
@@ -6808,6 +6823,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
       biotope: biotope ? biotopeOf(biotope).label : "",
       mois: new Date().toLocaleDateString("fr-FR", { month: "long" }),
       region: regionApprox(gps),
+      zone: zoneEspeces(gps),
       indice: nom || "",
       taille: taille ? tailleOf(taille).label : "",
     };

@@ -5,3 +5,23 @@
 
 [functions]
   node_bundler = "esbuild"
+
+# Le site publie tout le dépôt : on cache ce qui n'est pas l'appli
+# (SQL, outils de test, service BioCLIP et son guide d'installation).
+[[redirects]]
+  from = "/supabase/*"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/outils/*"
+  to = "/404"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/serveur-bioclip/*"
+  to = "/404"
+  status = 404
+  force = true

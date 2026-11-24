@@ -1,4 +1,6 @@
-// netlify/functions/identifier.js — v2.01
+// netlify/functions/identifier.js — v2.02
+// Ajout v2.02 : formule « économe » avec BioCLIP (voir BIOCLIP plus bas), Opus 5.5 avec
+// réflexion pour la vision, Haiku 5.5 pour compléter la fiche quand BioCLIP est sûr.
 // Ajout v2.01 : champ « contact » (ça pique ?) dans identification, fiche et affinage.
 // Ajouts v2.00 : budget IA mensuel, CORS restreint, modèles adaptés par tâche,
 // nombre de tours d'affinage plafonné côté serveur.
@@ -9,7 +11,9 @@
 // Le bon modèle au bon endroit : c'est le premier levier sur la facture.
 // VISION  : identification et affinage. Opus reste indispensable ici — c'est
 //           la seule tâche où la précision décide de la valeur de l'appli.
-const MODELE_VISION = process.env.BIODEX_MODELE_VISION || "claude-opus-4-8";
+// v2.02 : Opus 5.5 avec réflexion. Mesuré le 24/11/2026 sur 123 photos : 80 % de bonnes
+// espèces contre 78 % pour Opus 4.8, 91 % quand il reçoit les candidats de BioCLIP.
+const MODELE_VISION = process.env.BIODEX_MODELE_VISION || "claude-opus-5-5";
 // FICHE   : la fiche naturaliste AFFIRME des faits (statut de conservation,
 //           répartition, période de vol). On garde Sonnet : c'est le seul
 //           texte où une approximation serait un mensonge.
@@ -20,11 +24,63 @@ const MODELE_CARTE  = process.env.BIODEX_MODELE_CARTE  || "claude-haiku-4-5";
 // Tarifs publics, en dollars par million de tokens. Sert au calcul du budget.
 // À remettre à jour si Anthropic change sa grille.
 const TARIFS = {
+  "claude-opus-5-5":  { entree: 4, sortie: 20 },
   "claude-opus-4-8":  { entree: 5, sortie: 25 },
   "claude-opus-5":    { entree: 5, sortie: 25 },
+  "claude-sonnet-5-5": { entree: 2, sortie: 10 },
   "claude-sonnet-5":  { entree: 2, sortie: 10 },
+  "claude-haiku-5-5": { entree: 0.1, sortie: 0.5 },
   "claude-haiku-4-5": { entree: 1, sortie: 5 },
 };
+
+// ── BIOCLIP (v2.02) : le spécialiste, sur spotyserbe ─────────────────────
+// Formule « économe », mesurée le 24/11/2026 sur 123 photos (92 % de bonnes espèces,
+// contre 78 % pour l'ancienne identification par Claude seul) :
+//   - BioCLIP sûr (p >= 0,8) : son espèce est retenue ; Haiku, en texte seul, complète
+//     la fiche (nom français, rôle, danger au contact…). Claude vision n'est pas appelé.
+//   - BioCLIP pas sûr : Claude vision tranche, avec les 5 candidats de BioCLIP en indice.
+//   - BioCLIP injoignable, hors de France, ou non configuré : Claude vision seul, comme avant.
+const BIOCLIP_URL = (process.env.BIOCLIP_URL || "").replace(/\/$/, "");
+const BIOCLIP_CLE = process.env.BIOCLIP_CLE || "";
+const BIOCLIP_SEUIL = Number(process.env.BIOCLIP_SEUIL || 0.8);
+// Court : si spotyserbe traîne, mieux vaut passer tout de suite à Claude seul.
+const BIOCLIP_DELAI_MS = 6000;
+const MODELE_COMPLEMENT = process.env.BIODEX_MODELE_COMPLEMENT || "claude-haiku-5-5";
+
+async function demanderBioclip(imageB64, zone) {
+  if (!BIOCLIP_URL || !BIOCLIP_CLE || zone === "hors-france") return null;
+  const ctrl = new AbortController();
+  const minuteur = setTimeout(() => ctrl.abort(), BIOCLIP_DELAI_MS);
+  try {
+    const r = await fetch(BIOCLIP_URL + "/identifier", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-BioDex-Cle": BIOCLIP_CLE },
+      body: JSON.stringify({ image: imageB64, liste: zone === "limousin" ? "limousin" : "france" }),
+      signal: ctrl.signal,
+    });
+    if (!r.ok) { console.error("bioclip: réponse", r.status); return null; }
+    const d = await r.json();
+    return d && d.ok && Array.isArray(d.top) && d.top.length ? d : null;
+  } catch (e) {
+    console.error("bioclip: injoignable", String(e).slice(0, 120));
+    return null;
+  } finally {
+    clearTimeout(minuteur);
+  }
+}
+
+function blocCandidatsBioclip(bio) {
+  if (!bio) return "";
+  const lignes = bio.top.slice(0, 5).map((t, i) => `${i + 1}. ${t.nom}${t.nom_fr ? " (" + t.nom_fr + ")" : ""} : probabilité ${Math.round(t.p * 100)} %`);
+  return "\n\nAvis d'un modèle de reconnaissance spécialisé (BioCLIP), qui choisit uniquement parmi les espèces connues dans la région :\n" +
+    lignes.join("\n") +
+    "\nC'est un indice fort, souvent juste quand sa probabilité dépasse 80 %. Mais vérifie-le sur l'image : il confond parfois des espèces sœurs du même genre, " +
+    "il se laisse moins piéger que toi par les mimétismes, et il ignore toute espèce absente de sa liste. " +
+    "Si l'image contredit clairement ses propositions, fie-toi à l'image et dis-le dans la note.";
+}
+
+const ORDRES_BIODEX = { Lepidoptera: "lepidopteres", Coleoptera: "coleopteres", Hymenoptera: "hymenopteres", Diptera: "dipteres",
+  Hemiptera: "hemipteres", Orthoptera: "orthopteres", Odonata: "odonates" };
 // Si un modèle inconnu est configuré, on facture au tarif le plus cher :
 // mieux vaut sur-réserver du budget que de le laisser filer.
 const TARIF_DEFAUT = { entree: 5, sortie: 25 };
@@ -163,6 +219,9 @@ exports.handler = async (event) => {
 
   // ---- Construction du message selon le mode ----
   let messages, maxTokens, systeme;
+  const estIdentification = !["affinage", "carte", "fiche"].includes(mode);
+  let bio = null;            // réponse de BioCLIP (identification seulement)
+  let cheminRapide = false;  // BioCLIP sûr : Haiku complète, Claude vision n'est pas appelé
 
   if (mode === "affinage") {
     // Dialogue de détermination : on renvoie l'image + l'historique des questions/réponses.
@@ -267,6 +326,31 @@ exports.handler = async (event) => {
     if (!photos.length) {
       return { statusCode: 400, headers: enTetes, body: JSON.stringify({ erreur: "Image manquante." }) };
     }
+    // BioCLIP d'abord (gratuit, ~1 à 3 s) sur la photo principale.
+    const zone = corps.contexte && typeof corps.contexte.zone === "string" ? corps.contexte.zone : "france";
+    bio = await demanderBioclip(photos[0].data, zone);
+    if (bio && bio.top[0].p >= BIOCLIP_SEUIL) {
+      // Chemin rapide : BioCLIP est sûr. Haiku, sans photo, complète ce que BioDex affiche.
+      cheminRapide = true;
+      const t = bio.top[0];
+      systeme =
+        "Tu es un entomologiste francophone. Une espèce vient d'être identifiée sur photo par un modèle spécialisé. " +
+        "Complète sa fiche courte, sans remettre l'identification en cause. Si tu ne sais pas, reste prudent plutôt que d'inventer. " +
+        "Réponds UNIQUEMENT par un objet JSON valide, sans texte ni Markdown autour, de la forme exacte : " +
+        '{"nom":"nom vernaculaire français usuel (vide si aucun)",' +
+        '"role":"UNE phrase courte (max ~15 mots) sur son rôle écologique, grand public",' +
+        '"inhabituel":"vide si sa présence est normale pour la zone et la saison indiquées ; SINON une phrase expliquant pourquoi l\'observation est notable",' +
+        '"contact":"UN mot parmi exactement : inoffensif, defensif, douloureux, urticant, inconnu. Dans le doute entre deux niveaux, choisis le plus élevé.",' +
+        '"contact_note":"une phrase courte de conseil de manipulation, vide si inoffensif"}';
+      messages = [{ role: "user", content: [{ type: "text", text:
+        "Espèce : " + t.nom + (t.nom_fr ? " (" + t.nom_fr + ")" : "") + ", famille " + t.famille + ", ordre " + t.ordre + "." + blocCtx }] }];
+      maxTokens = 1500;
+    }
+  }
+  if (estIdentification && !cheminRapide) {
+    const photos = Array.isArray(corps.images) && corps.images.length
+      ? corps.images.filter((p) => p && p.data && p.media_type).slice(0, 3)
+      : [{ data: corps.image, media_type: corps.media_type }];
     systeme =
       "Tu es un entomologiste expert en identification visuelle, compétent sur la faune du monde entier. Analyse la ou les photos avec méthode : " +
       "observe le nombre de pattes, la présence et le type d'ailes, les antennes, les pièces buccales, la forme du corps, " +
@@ -301,16 +385,23 @@ exports.handler = async (event) => {
       type: "text",
       text: (photos.length > 1
         ? "Identifie cet arthropode. Les " + photos.length + " photos montrent le MÊME individu sous des angles différents : croise-les."
-        : "Identifie cet arthropode.") + blocCtx,
+        : "Identifie cet arthropode.") + blocCtx + blocCandidatsBioclip(bio),
     });
     messages = [{ role: "user", content: contenuId }];
-    maxTokens = 780;
+    // La réflexion d'Opus 5.5 compte dans max_tokens (~750 jetons en moyenne mesurés).
+    maxTokens = 4000;
   }
 
   // Choix du modèle, poste par poste (voir l'en-tête pour le raisonnement).
   const modeleUtilise = mode === "fiche" ? MODELE_FICHE
                       : mode === "carte" ? MODELE_CARTE
+                      : cheminRapide ? MODELE_COMPLEMENT
                       : MODELE_VISION;
+  // Les modèles 5.5 réfléchissent toujours avant de répondre : on règle l'effort,
+  // et la réflexion compte dans max_tokens (d'où les marges plus larges ci-dessus).
+  const reflechit = /-5-5$/.test(modeleUtilise);
+  const effort = cheminRapide ? "low" : mode === "affinage" ? "low" : "medium";
+  if (reflechit && mode === "affinage") maxTokens = Math.max(maxTokens, 3000);
 
   // ── Réservation du budget ──────────────────────────────────────────────
   // On estime haut : nombre d'images x pire cas, plus le prompt système, plus
@@ -343,7 +434,8 @@ exports.handler = async (event) => {
       reponse = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": cle, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: modeleUtilise, max_tokens: maxTokens, system: systeme, messages }),
+        body: JSON.stringify({ model: modeleUtilise, max_tokens: maxTokens, system: systeme, messages,
+          ...(reflechit ? { output_config: { effort } } : {}) }),
         signal: ctrl.signal,
       });
     } finally {
@@ -384,11 +476,36 @@ exports.handler = async (event) => {
       resultat = JSON.parse(propre);
     } catch {
       if (mode === "fiche") resultat = { description: texte.slice(0, 500), fiabilite: "faible" };
-      else if (mode === "carte") resultat = { attaque: 50, defense: 50, vitesse: 50, rarete: 30, element: "Rampant", capacite: { nom: "Instinct", effet: "Aucun effet particulier." }, citation: "" };
+      else if (mode === "carte") resultat = { attaque: 50, defense: 50, vitesse: 50, rarete: 30, element: "rampant", capacite: { nom: "Instinct", effet: "Aucun effet particulier." }, citation: "" };
+      else if (cheminRapide) resultat = {};
       else resultat = { nom: "", nomSci: "", confiance: 0, niveau: "", note: texte.slice(0, 300), alternatives: [] };
     }
 
-    return { statusCode: 200, headers: enTetes, body: JSON.stringify({ ok: true, mode, resultat }) };
+    if (cheminRapide) {
+      // Fiche d'identification = l'espèce de BioCLIP + les compléments de Haiku.
+      const t = bio.top[0];
+      const c = resultat || {};
+      resultat = {
+        nom: String(c.nom || t.nom_fr || "").slice(0, 120),
+        nomSci: t.nom,
+        confiance: Math.round(t.p * 100),
+        niveau: "espèce",
+        note: "Reconnu par BioCLIP, un modèle spécialisé dans le vivant (probabilité " + Math.round(t.p * 100) + " %).",
+        role: String(c.role || "").slice(0, 200),
+        ordre: ORDRES_BIODEX[t.ordre] || (t.classe === "Arachnida" ? "arachnides" : "autres"),
+        inhabituel: String(c.inhabituel || "").slice(0, 300),
+        contact: String(c.contact || "inconnu"),
+        contact_note: String(c.contact_note || "").slice(0, 200),
+        alternatives: bio.top.slice(1, 3).filter((a) => a.p >= 0.03).map((a) => ({
+          nom: a.nom_fr || "", nomSci: a.nom, pourquoi: "Seconde piste de BioCLIP (" + Math.round(a.p * 100) + " %).",
+        })),
+      };
+    }
+    // Pour suivre l'économie : quel chemin a servi.
+    const source = estIdentification ? (cheminRapide ? "bioclip" : bio ? "claude+bioclip" : "claude") : undefined;
+    if (source) console.log("identification :", source, bio ? "p=" + bio.top[0].p : "");
+
+    return { statusCode: 200, headers: enTetes, body: JSON.stringify({ ok: true, mode, resultat, source }) };
   } catch (e) {
     // Échec réseau ou délai dépassé : on ne sait pas si Anthropic a facturé.
     // On rend la moitié de la réservation — prudent sans être punitif.
