@@ -330,6 +330,51 @@
   .bd-bande-p img { width: 120px; height: 98px; object-fit: cover; display: block; }
   .bd-bande-p span { display: block; padding: 6px 8px; font: 11.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #A8A48F; }
   .bd-bande-p span b { display: block; font-size: 12px; color: #EDE6D2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* v1.99 — Mur : membres, trouvaille de la semaine, à identifier, double-touche */
+  .bd-membres { display: flex; gap: 10px; overflow-x: auto; margin: 0 -16px 10px; padding: 2px 16px 4px; scrollbar-width: none; }
+  .bd-membres::-webkit-scrollbar { display: none; }
+  .bd-membre { flex-shrink: 0; width: 60px; display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; padding: 0; cursor: pointer; }
+  .bd-membre-rond { width: 56px; height: 56px; border-radius: 50%; padding: 2px; background: #3A4531; display: flex; align-items: center; justify-content: center; }
+  .bd-membre-rond.neuf { background: conic-gradient(#E4C878, #A6CC82, #E4C878); }
+  .bd-membre-rond img, .bd-membre-rond > span { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid #12160F; display: flex; align-items: center; justify-content: center; font-size: 22px; background: #1C2318; }
+  .bd-membre.actif .bd-membre-rond { background: #C9A24B; box-shadow: 0 0 0 2px rgba(201,162,75,.35); }
+  .bd-membre-nom { max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 10.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #A8A48F; }
+  .bd-membre.actif .bd-membre-nom { color: #E4C878; }
+  .bd-semaine { position: relative; display: block; width: 100%; height: 160px; padding: 0; border-radius: 16px; overflow: hidden; cursor: pointer; border: 1px solid rgba(201,162,75,.55); box-shadow: 0 0 18px rgba(201,162,75,.18); }
+  .bd-semaine img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .bd-semaine-bas { position: absolute; left: 0; right: 0; bottom: 0; padding: 28px 12px 10px; text-align: left; background: linear-gradient(transparent, rgba(6,8,5,.92)); }
+  .bd-semaine-bas span { display: block; font: 800 10.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: .6px; text-transform: uppercase; color: #E4C878; }
+  .bd-semaine-bas b { display: block; font: 700 18px 'Fraunces', Georgia, serif; color: #F2ECDA; margin-top: 3px; }
+  .bd-aider { width: 100%; display: flex; gap: 10px; align-items: center; margin-top: 10px; padding: 10px 12px; border-radius: 14px; cursor: pointer;
+    border: 1px dashed rgba(166,204,130,.6); background: rgba(127,163,95,.08); font: 12.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  .bd-aider.actif { border-style: solid; background: rgba(127,163,95,.16); }
+  .bd-aider b { display: block; color: #A6CC82; font-size: 13.5px; }
+  .bd-aider span span, .bd-aider > span > span { display: block; color: #A8A48F; }
+  .bd-aider-vigs { display: flex; flex-shrink: 0; }
+  .bd-aider-vigs img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; border: 2px solid #12160F; margin-left: -8px; }
+  .bd-aider-vigs img:first-child { margin-left: 0; }
+  .bd-eclat-feu { position: absolute; left: 50%; top: 45%; font-size: 84px; transform: translate(-50%, -50%) scale(.3); pointer-events: none;
+    animation: bdEclatFeu .8s cubic-bezier(.2,.9,.3,1.2) forwards; filter: drop-shadow(0 4px 14px rgba(0,0,0,.6)); }
+  @keyframes bdEclatFeu { 30% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; } 100% { transform: translate(-50%, -70%) scale(1); opacity: 0; } }
+  /* v1.99 — Montrer ma collection (plein écran) */
+  .bd-expo { position: fixed; inset: 0; z-index: 1400; background: #070906; display: flex; flex-direction: column; animation: bdFondu .2s ease; }
+  .bd-expo-points { position: absolute; top: calc(12px + env(safe-area-inset-top)); left: 14px; right: 14px; z-index: 2; display: flex; gap: 4px; }
+  .bd-expo-points i { flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,.25); overflow: hidden; position: relative; }
+  .bd-expo-points i.vu { background: #fff; }
+  .bd-expo-points i.en::after { content: ""; position: absolute; inset: 0; background: #fff; transform-origin: left; transform: scaleX(.02); }
+  .bd-expo-points i.en.anim::after { animation: bdBarre 5s linear forwards; }
+  @keyframes bdBarre { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .bd-expo-photo { position: relative; flex: 1 1 auto; min-height: 0; max-height: 64vh; cursor: pointer; }
+  .bd-expo-photo::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 45%; background: linear-gradient(transparent, #070906); pointer-events: none; }
+  .bd-expo-texte { position: relative; margin-top: -88px; padding: 0 20px; z-index: 1; }
+  .bd-expo-rar { display: inline-block; padding: 4px 10px; border-radius: 999px; border: 1px solid; background: rgba(0,0,0,.35);
+    font: 800 10.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: .7px; text-transform: uppercase; }
+  .bd-expo-texte h2 { font: 700 30px 'Fraunces', Georgia, serif; color: #F2ECDA; margin: 10px 0 0; line-height: 1.1; }
+  .bd-expo-texte i { display: block; font: italic 16px Georgia, serif; color: #C9BF9F; margin-top: 3px; }
+  .bd-expo-meta { margin-top: 10px; font: 13px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #A8A48F; }
+  .bd-expo-actions { display: flex; gap: 10px; padding: 16px 20px calc(18px + env(safe-area-inset-bottom)); margin-top: auto; }
+  .bd-expo-msg { position: absolute; left: 0; right: 0; bottom: calc(84px + env(safe-area-inset-bottom)); text-align: center; font: 13px sans-serif; color: #A6CC82; }
+  @media (prefers-reduced-motion: reduce) { .bd-expo-points i.en.anim::after { animation: none; transform: scaleX(1); } }
   /* v1.95 — Réglages des notifications */
   .bd-notif-info { padding: 12px 14px; border-radius: 12px; margin-bottom: 14px; background: linear-gradient(#2A2410, #221C0C); border: 1px solid #B8862E;
     font: 13.5px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #EDE6D2; }
@@ -527,7 +572,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.98";
+const VERSION = "v1.99";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -2032,6 +2077,11 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.99", date: "2026-11", items: [
+    "🌟 Montre ta collection ! Dans Collection → Vitrine, touche « Les montrer » : tes trésors défilent en plein écran, comme des stories. « Partager ma collection » crée une belle image (ton prénom, ton total, tes 9 plus belles espèces) à envoyer à qui tu veux.",
+    "👥 Le Mur s'anime. Un rond par membre de la bande apparaît en haut : il est cerclé d'or quand la personne vient de publier, et le toucher montre ses trouvailles. La trouvaille la plus aimée de la semaine (ou du mois) est mise en avant, et un raccourci rassemble les trouvailles qui attendent un nom.",
+    "🔥 Touche deux fois une photo du mur pour réagir.",
+  ] },
   { v: "1.98", date: "2026-11", items: [
     "🏠 BioDex a enfin un vrai Accueil. Tu y trouves un grand bouton pour photographier une bestiole, ce qui t'attend (idée du relecteur, cartes à révéler, quiz du jour…), ta saison et les dernières trouvailles de la bande.",
     "🗃️ Ta Collection devient une vitrine. Ton nombre d'espèces s'affiche en grand, tes trésors (les espèces les plus rares) sont en grandes cartes lumineuses, et ton album rassemble une carte par espèce, rangée par groupe. L'ancien Bestiaire du Jeu fait maintenant partie de ta Collection.",
@@ -11360,6 +11410,22 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
   const [comptesCom, setComptesCom] = useState({}); // { post_id: nb commentaires }
   const [periode, setPeriode] = useState("tout"); // tout | jour | semaine | mois | annee
   const [auteurFiltre, setAuteurFiltre] = useState(""); // "" = toute la bande
+  // v1.99 — « À identifier » (aider la bande) et double-touche sur la photo pour réagir 🔥.
+  const [aIdentifier, setAIdentifier] = useState(false);
+  const [eclat, setEclat] = useState(null);
+  const clicPhoto = useRef({ id: null, t: null });
+  function toucherPhoto(e, p) {
+    e.stopPropagation();
+    const c = clicPhoto.current;
+    if (c.id === p.id && c.t) {
+      clearTimeout(c.t); clicPhoto.current = { id: null, t: null };
+      const deja = prenom && ((reactions[p.id] && reactions[p.id].feu) || []).map((x) => x.toLowerCase()).includes(prenom.trim().toLowerCase());
+      if (!deja) surReaction(p.id, "feu");
+      setEclat(p.id); setTimeout(() => setEclat(null), 800);
+      return;
+    }
+    clicPhoto.current = { id: p.id, t: setTimeout(() => { clicPhoto.current = { id: null, t: null }; setPostDetail(p); }, 280) };
+  }
 
   // Retour système : le détail post s'inscrit dans le registre central de fermeture
   // (voir bdRetour plus bas). Priorité haute : il se ferme avant la sous-vue "mur".
@@ -11529,17 +11595,56 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
             {dispo.length > 1 && (
               <Segments petit options={dispo} valeur={periode} onChange={setPeriode} style={{ marginBottom: auteurs.length > 1 ? 8 : 0 }} />
             )}
-            {auteurs.length > 1 && (
-              <div className="bd-puces">
-                <button className={"bd-puce vert" + (!auteurFiltre ? " actif" : "")} onClick={() => setAuteurFiltre("")}>
-                  Toute la bande
-                </button>
-                {auteurs.map((a) => (
-                  <button key={a} className={"bd-puce vert" + (auteurFiltre === a ? " actif" : "")} onClick={() => setAuteurFiltre(auteurFiltre === a ? "" : a)}>
-                    {a}
+          </div>
+        );
+      })()}
+
+      {/* v1.99 — La bande en un coup d'œil : un rond par membre (cerclé d'or s'il a publié
+          ces 2 derniers jours), touché = ses trouvailles. Puis la trouvaille de la semaine
+          et les trouvailles qui attendent un nom. */}
+      {etat === "ok" && posts.length > 0 && (() => {
+        const parAuteur = {};
+        posts.forEach((p) => { const a = (p.auteur || "").trim(); if (a && !parAuteur[a]) parAuteur[a] = p; });
+        const membres = Object.entries(parAuteur);
+        const recent = (p) => { const d = new Date(p.created_at); return Date.now() - d.getTime() < 2 * 864e5; };
+        const nbReac = (id) => Object.values(reactions[id] || {}).reduce((s, l) => s + (l ? l.length : 0), 0);
+        // La plus aimée des 7 derniers jours ; s'il n'y en a pas, celle du mois.
+        const meilleure = (jours) => posts.filter((p) => p.photo_url && Date.now() - new Date(p.created_at).getTime() < jours * 864e5)
+          .map((p) => ({ p, n: nbReac(p.id) })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n)[0];
+        const semaine = meilleure(7) ? { ...meilleure(7), periode: "de la semaine" } : (meilleure(30) ? { ...meilleure(30), periode: "du mois" } : null);
+        const aider = posts.filter((p) => !(p.espece || "").trim() && !(p.espece_sci || "").trim());
+        return (
+          <div style={{ marginBottom: 12 }}>
+            {membres.length > 1 && (
+              <div className="bd-membres">
+                {membres.map(([a, p]) => (
+                  <button key={a} className={"bd-membre" + (auteurFiltre === a ? " actif" : "")} onClick={() => { setAIdentifier(false); setAuteurFiltre(auteurFiltre === a ? "" : a); }}>
+                    <span className={"bd-membre-rond" + (recent(p) ? " neuf" : "")}>
+                      {p.photo_url ? <img src={p.photo_url} alt="" loading="lazy" /> : <span>{emblemeDe(a, profils)}</span>}
+                    </span>
+                    <span className="bd-membre-nom">{a}</span>
                   </button>
                 ))}
               </div>
+            )}
+            {semaine && !auteurFiltre && !aIdentifier && (
+              <button className="bd-semaine" onClick={() => setPostDetail(semaine.p)}>
+                <img src={semaine.p.photo_url} alt={semaine.p.espece || ""} loading="lazy" />
+                <span className="bd-semaine-bas">
+                  <span>🏆 Trouvaille {semaine.periode} · {semaine.n} réaction{semaine.n > 1 ? "s" : ""}</span>
+                  <b>{semaine.p.espece || "À identifier"} · par {semaine.p.auteur || "?"}</b>
+                </span>
+              </button>
+            )}
+            {aider.length > 0 && (
+              <button className={"bd-aider" + (aIdentifier ? " actif" : "")} onClick={() => { setAuteurFiltre(""); setAIdentifier((v) => !v); }}>
+                <span className="bd-aider-vigs">{aider.slice(0, 3).map((p) => p.photo_url ? <img key={p.id} src={p.photo_url} alt="" loading="lazy" /> : null)}</span>
+                <span style={{ flex: 1, textAlign: "left" }}>
+                  <b>{aider.length} trouvaille{aider.length > 1 ? "s" : ""} attend{aider.length > 1 ? "ent" : ""} un nom</b>
+                  <span>{aIdentifier ? "Touche pour revenir à tout le mur" : "Aide la bande à les identifier"}</span>
+                </span>
+                <span style={{ color: "#A6CC82", fontWeight: 700 }}>{aIdentifier ? "✕" : "›"}</span>
+              </button>
             )}
           </div>
         );
@@ -11557,6 +11662,7 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
         const now = Date.now();
         const bornes = { jour: 864e5, semaine: 7 * 864e5, mois: 30 * 864e5, annee: 365 * 864e5 };
         const visibles = posts.filter((p) => {
+          if (aIdentifier && ((p.espece || "").trim() || (p.espece_sci || "").trim())) return false;
           if (auteurFiltre && (p.auteur || "").trim() !== auteurFiltre) return false;
           if (periode === "tout") return true;
           const d = dateAffichagePost(p);
@@ -11601,8 +11707,9 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
 
             {/* Photo avec le nom d'espèce en surimpression sur un dégradé */}
             {p.photo_url && (
-              <div className="bd-post-photo" style={{ position: "relative", overflow: "hidden" }}>
+              <div className="bd-post-photo" style={{ position: "relative", overflow: "hidden" }} onClick={(e) => toucherPhoto(e, p)}>
                 <img src={p.photo_url} alt={p.espece} loading="lazy" style={{ width: "100%", maxHeight: 360, objectFit: "cover", display: "block" }} />
+                {eclat === p.id && <span className="bd-eclat-feu" aria-hidden="true">🔥</span>}
                 <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "26px 14px 10px", background: "linear-gradient(transparent, rgba(10,13,8,.88))" }}>
                   <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }}>
                     <span style={{ flex: 1, minWidth: 0 }}>
@@ -12246,6 +12353,137 @@ function Vitrine({ cartes, observations, onOuvrir, onRevelee, onMontrer }) {
         const o = especes.find((x) => x.id === zoom);
         return o && o.carte ? <CarteZoom key={o.id} obs={o} vues={vues(o)} onFermer={() => setZoom(null)} onVoirObs={(id) => { setZoom(null); onOuvrir(id); }} /> : null;
       })()}
+    </div>
+  );
+}
+
+// ═══ v1.99 — « MONTRER MA COLLECTION » ═══
+// Fabrique une image à partager (1080 × 1350, format portrait des réseaux) : le
+// prénom, le total d'espèces, et une mosaïque de 9 trésors avec leur rareté.
+async function imageCollection(especes, prenom, total) {
+  const L = 1080, H = 1350;
+  const cv = document.createElement("canvas");
+  cv.width = L; cv.height = H;
+  const g = cv.getContext("2d");
+  try { await document.fonts.ready; } catch {}
+  const fond = g.createLinearGradient(0, 0, 0, H);
+  fond.addColorStop(0, "#232C1C"); fond.addColorStop(1, "#0E120B");
+  g.fillStyle = fond; g.fillRect(0, 0, L, H);
+  const lueur = g.createRadialGradient(0, 0, 0, 0, 0, 900);
+  lueur.addColorStop(0, "rgba(201,162,75,.28)"); lueur.addColorStop(1, "rgba(201,162,75,0)");
+  g.fillStyle = lueur; g.fillRect(0, 0, L, H);
+  const serifF = "'Fraunces', Georgia, serif", sansF = "-apple-system, 'Segoe UI', Roboto, sans-serif";
+  g.fillStyle = "#A6CC82"; g.font = `800 30px ${sansF}`;
+  g.fillText(("Collection de " + (prenom || "naturaliste")).toUpperCase(), 72, 110);
+  g.fillStyle = "#E4C878"; g.font = `700 200px ${serifF}`;
+  g.fillText(String(total), 64, 300);
+  const largeurNb = g.measureText(String(total)).width;
+  g.fillStyle = "#EDE6D2"; g.font = `600 58px ${serifF}`;
+  g.fillText("espèce" + (total > 1 ? "s" : ""), 64 + largeurNb + 28, 230);
+  g.fillStyle = "#A8A48F"; g.font = `34px ${sansF}`;
+  g.fillText("d'insectes photographiées", 64 + largeurNb + 28, 282);
+  // Mosaïque 3 × 3
+  const cases = especes.slice(0, 9), cote = 284, ecart = 20, x0 = (L - (3 * cote + 2 * ecart)) / 2, y0 = 352;
+  for (let i = 0; i < cases.length; i++) {
+    const o = cases[i], x = x0 + (i % 3) * (cote + ecart), y = y0 + Math.floor(i / 3) * (cote + ecart);
+    const r = Number(o.carte && o.carte.rarete) || 0, pal = palierRarete(r);
+    g.save();
+    g.beginPath(); g.roundRect ? g.roundRect(x, y, cote, cote, 26) : g.rect(x, y, cote, cote); g.clip();
+    try {
+      const im = await createImageBitmap(o.photo);
+      const s = Math.min(im.width, im.height);
+      g.drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, x, y, cote, cote);
+    } catch { g.fillStyle = "#1C2318"; g.fillRect(x, y, cote, cote); }
+    const bas = g.createLinearGradient(0, y + cote * 0.5, 0, y + cote);
+    bas.addColorStop(0, "rgba(6,8,5,0)"); bas.addColorStop(1, "rgba(6,8,5,.92)");
+    g.fillStyle = bas; g.fillRect(x, y, cote, cote);
+    g.fillStyle = pal.couleur; g.font = `800 20px ${sansF}`;
+    g.fillText(pal.nom.toUpperCase(), x + 18, y + cote - 56);
+    g.fillStyle = "#F2ECDA"; g.font = `600 27px ${serifF}`;
+    let nom = o.nom || o.nomSci || "";
+    while (g.measureText(nom).width > cote - 34 && nom.length > 4) nom = nom.slice(0, -2).trimEnd() + "…";
+    g.fillText(nom.replace(/……$/, "…"), x + 18, y + cote - 22);
+    g.restore();
+    if (r >= 65) {
+      g.save(); g.lineWidth = 6; g.strokeStyle = r >= 85 ? "#E4C878" : "#9FB2E0";
+      g.shadowColor = r >= 85 ? "rgba(228,200,120,.8)" : "rgba(159,178,224,.7)"; g.shadowBlur = 24;
+      g.beginPath(); g.roundRect ? g.roundRect(x, y, cote, cote, 26) : g.rect(x, y, cote, cote); g.stroke(); g.restore();
+    }
+  }
+  g.fillStyle = "#C9A24B"; g.font = `700 40px ${serifF}`;
+  g.fillText("BioDex", x0, H - 40);
+  const lb = g.measureText("BioDex").width;
+  g.fillStyle = "#A8A48F"; g.font = `26px ${sansF}`;
+  g.fillText("Ton carnet d'insectes, en vrai · lucanus.netlify.app", x0 + lb + 20, H - 44);
+  return await new Promise((res) => cv.toBlob(res, "image/jpeg", 0.9));
+}
+
+function ExpoCollection({ especes, prenom, total, onFermer }) {
+  const [i, setI] = useState(0);
+  const [pause, setPause] = useState(false);
+  const [partage, setPartage] = useState("");
+  const toucheX = useRef(null);
+  const n = especes.length;
+  const o = especes[Math.min(i, n - 1)];
+  // Défilement automatique, façon « stories » : 5 s par trésor.
+  useEffect(() => {
+    if (pause || n < 2) return;
+    const t = setTimeout(() => setI((v) => (v + 1 < n ? v + 1 : v)), 5000);
+    return () => clearTimeout(t);
+  }, [i, pause, n]);
+  useEffect(() => {
+    const k = (e) => { if (e.key === "Escape") onFermer(); if (e.key === "ArrowRight") setI((v) => Math.min(n - 1, v + 1)); if (e.key === "ArrowLeft") setI((v) => Math.max(0, v - 1)); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [n]);
+  if (!o) return null;
+  const r = Number(o.carte && o.carte.rarete) || 0, pal = palierRarete(r);
+  const c = litCacheRarete(cleEspeceMur(o));
+
+  async function partager() {
+    setPartage("…"); setPause(true);
+    try {
+      const blob = await imageCollection(especes, prenom, total);
+      const fichier = new File([blob], "ma-collection-biodex.jpg", { type: "image/jpeg" });
+      if (navigator.canShare && navigator.canShare({ files: [fichier] })) {
+        await navigator.share({ files: [fichier], title: "Ma collection BioDex", text: `${total} espèces d'insectes dans ma collection BioDex !` });
+        setPartage("");
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = fichier.name; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        setPartage("✓ Image enregistrée");
+      }
+    } catch (e) {
+      setPartage(e && e.name === "AbortError" ? "" : "Partage impossible sur cet appareil.");
+    }
+  }
+
+  return (
+    <div className="bd-expo" role="dialog" aria-label="Ma collection">
+      <div className="bd-expo-points">{especes.map((_, k) => <i key={k} className={k < i ? "vu" : k === i ? (pause ? "en" : "en anim") : ""} />)}</div>
+      <div className="bd-expo-photo"
+        onClick={(e) => { const x = e.clientX / window.innerWidth; setI((v) => x < 0.33 ? Math.max(0, v - 1) : Math.min(n - 1, v + 1)); }}
+        onTouchStart={(e) => { toucheX.current = e.touches[0].clientX; setPause(true); }}
+        onTouchEnd={() => setPause(false)}>
+        <PhotoBlobRecadree key={o.id} blob={o.photo} zone={o.cadreCarte || o.cadrePhoto} alt={o.nom} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+      </div>
+      <div className="bd-expo-texte">
+        <span className="bd-expo-rar" style={{ color: pal.couleur, borderColor: pal.couleur }}>
+          {r >= 85 ? "🌟 " : r >= 65 ? "✨ " : ""}{pal.nom}{c && typeof c.count === "number" && c.count > 0 ? ` · ${c.count.toLocaleString("fr-FR")} obs. en France` : ""}
+        </span>
+        <h2>{o.nom || o.nomSci}</h2>
+        {o.nom && o.nomSci && <i>{o.nomSci}</i>}
+        <div className="bd-expo-meta">
+          Trouvée le {new Date(o.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}{o.biotope ? " · " + biotopeOf(o.biotope).label.toLowerCase() : ""}
+          {o.carte && o.carte.citation && <span style={{ display: "block", marginTop: 6, fontStyle: "italic" }}>« {o.carte.citation} »</span>}
+        </div>
+      </div>
+      <div className="bd-expo-actions">
+        <Bouton onClick={onFermer} style={{ flex: 1 }}>✕ Fermer</Bouton>
+        <Bouton variante="primaire" onClick={partager} disabled={partage === "…"} style={{ flex: 2 }}>{partage === "…" ? "Préparation…" : "📤 Partager ma collection"}</Bouton>
+      </div>
+      {partage && partage !== "…" && <div className="bd-expo-msg">{partage}</div>}
     </div>
   );
 }
@@ -13691,6 +13929,8 @@ function BioDex() {
   const [partageDemande, setPartageDemande] = useState(false);
   // v1.98 — Onglet de la Collection (Vitrine · Carnet · Stats).
   const [ongletCollection, setOngletCollection] = useState("vitrine");
+  // v1.99 — « Montrer ma collection » : liste des trésors affichés en plein écran.
+  const [expo, setExpo] = useState(null);
   // L'ancien onglet Stats de la barre du bas ouvre désormais l'onglet Stats de la Collection.
   useEffect(() => { if (vue === "stats") { setOngletCollection("stats"); setVue("collection"); } }, [vue]);
   useEffect(() => { if (vue !== "detail" && partageDemande) setPartageDemande(false); }, [vue]);
@@ -14560,6 +14800,9 @@ function BioDex() {
       {vue === "carte" && (
         <Carte observations={triees} onOuvrirFiche={(id) => { setSelectionId(id); setVue("detail"); }} />
       )}
+      {expo && expo.length > 0 && (
+        <ExpoCollection especes={expo} prenom={prenom} total={especesDeCartes(cartes).length} onFermer={() => setExpo(null)} />
+      )}
       {partagePropose && vue === "collection" && (
         <div className="bd-sugg-voile" onClick={() => setPartagePropose(null)}>
           <div className="bd-sugg-feuille" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Partager au mur">
@@ -14648,7 +14891,7 @@ function BioDex() {
           {/* v1.98 — La Collection : Vitrine (contempler, montrer) · Carnet (toutes les photos) · Stats. */}
           <Segments options={[["vitrine", "Vitrine"], ["carnet", "Carnet"], ["stats", "Stats"]]} valeur={ongletCollection} onChange={setOngletCollection} style={{ marginBottom: 12 }} />
           {ongletCollection === "vitrine" && (
-            <Vitrine cartes={cartes} observations={observations} onOuvrir={(id) => { setSelectionId(id); setVue("detail"); }} onRevelee={marquerCarteRevelee} onMontrer={null} />
+            <Vitrine cartes={cartes} observations={observations} onOuvrir={(id) => { setSelectionId(id); setVue("detail"); }} onRevelee={marquerCarteRevelee} onMontrer={(t) => setExpo(t)} />
           )}
           {ongletCollection === "stats" && <Stats observations={triees} raretes={raretesGlobal} onFermer={() => setOngletCollection("vitrine")} />}
           {ongletCollection === "carnet" && (<React.Fragment>
