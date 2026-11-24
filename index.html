@@ -238,7 +238,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.82";
+const VERSION = "v1.83";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1743,6 +1743,9 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.83", date: "2026-11", items: [
+    "🎮 Le Jeu est plus simple à parcourir : Cartes, Ligue, Arène et Quiz sont maintenant côte à côte, en haut de l'écran. Fini le Combat caché derrière plusieurs rangées d'onglets.",
+  ] },
   { v: "1.82", date: "2026-11", items: [
     "👓 Plus lisible : les libellés de la barre du bas sont plus clairs et plus grands, et les plus petits textes de l'appli grossissent un peu.",
     "📖 Fiches naturalistes et cartes de combat rédigées par des modèles d'IA plus récents (fiches plus justes sur les statuts de protection).",
@@ -10745,11 +10748,16 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
 
 // ---------- Mode jeu : cartes + combat solo ----------
 function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, onDefier, sousVueInitiale, onSyncXp, onRecordArene }) {
-  const [sousVue, setSousVue] = useState(sousVueInitiale || "galerie"); // galerie | combat | quiz
+  // v1.83 — Un seul niveau d'onglets : Cartes · Ligue · Arène · Quiz (avant : Jeu > Combat >
+  // Défier la bande / Arène > Défier / Mes cartes / …). « combat » et « ligue » (retour après un
+  // défi) ouvrent la Ligue ; sans mur commun, la Ligue devient le combat libre.
+  const ongletCombat = MUR_ACTIF ? "ligue" : "libre";
+  const normaliser = (v) => (v === "combat" || v === "ligue" ? ongletCombat : v);
+  const [sousVue, setSousVueBrute] = useState(normaliser(sousVueInitiale || "galerie")); // galerie | ligue | libre | arene | quiz
+  const setSousVue = (v) => setSousVueBrute(normaliser(v));
   const [fOrdreC, setFOrdreC] = useState("");
   const [triCartes, setTriCartes] = useState("recentes"); // recentes | rarete | type
   const [montrerTypes, setMontrerTypes] = useState(false);
-  const [modeCombat, setModeCombat] = useState(MUR_ACTIF ? "defi" : "libre"); // defi | arene | libre
   const ordresCartes = ORDRES.map((o) => ({ ...o, n: cartes.filter((c) => deduireOrdre(c) === o.id).length })).filter((o) => o.n > 0);
   const nbAutresC = cartes.filter((c) => deduireOrdre(c) === "autres").length;
   const cartesFiltrees = fOrdreC ? cartes.filter((c) => deduireOrdre(c) === fOrdreC) : cartes;
@@ -10764,17 +10772,16 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
     else liste.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)); // récentes
     return liste;
   })();
-  const sousOnglets = [["galerie", "🃏 Cartes"], ["combat", "⚔️ Combat"], ["quiz", "🧠 Quiz"]];
-  // « ligue » reste accepté (retour après un défi) et bascule sur le hub Combat.
-  const vueCombat = sousVue === "combat" || sousVue === "ligue";
+  const sousOnglets = [["galerie", "🃏 Cartes"], MUR_ACTIF ? ["ligue", "🏆 Ligue"] : ["libre", "⚔️ Combat"], ["arene", "🏟️ Arène"], ["quiz", "🧠 Quiz"]];
+  const vueCombat = sousVue === "ligue" || sousVue === "libre" || sousVue === "arene";
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
         {sousOnglets.map(([id, label]) => {
-          const actif = id === "combat" ? vueCombat : sousVue === id;
+          const actif = sousVue === id;
           return (
           <button key={id} className="bd-press" onClick={() => setSousVue(id)}
-            style={{ flex: 1, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "9px 2px", borderRadius: 9, cursor: "pointer",
+            style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "9px 2px", borderRadius: 9, cursor: "pointer",
               border: `1px solid ${actif ? "#A8863A" : C.bordure}`,
               background: actif ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
               color: actif ? C.ambreClair : C.papierSombre }}>
@@ -10844,26 +10851,11 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
         )
       )}
 
-      {vueCombat && (
-        <div>
-          {/* Sélecteur de mode : défier la bande (classé) ou arène (solo) */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            {[...(MUR_ACTIF ? [["defi", "🏆 Défier la bande"]] : [["libre", "⚔️ Combat libre"]]), ["arene", "🏟️ Arène"]].map(([id, label]) => (
-              <button key={id} onClick={() => setModeCombat(id)}
-                style={{ flex: 1, padding: "10px 4px", borderRadius: 9, cursor: "pointer", fontFamily: sans, fontSize: 13, fontWeight: 700,
-                  border: `1px solid ${modeCombat === id ? "#A8863A" : C.bordure}`,
-                  background: modeCombat === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
-                  color: modeCombat === id ? C.ambreClair : C.papierSombre }}>{label}</button>
-            ))}
-          </div>
-
-          {modeCombat === "defi" && MUR_ACTIF && (
-            <Ligue embarque observations={observations} prenom={prenom} onDefinirPrenom={onDefinirPrenom} onDefier={onDefier} onSyncXp={onSyncXp} />
-          )}
-          {modeCombat === "arene" && <Combat cartes={cartes} modeInitial="arene" onRecordArene={onRecordArene} />}
-          {modeCombat === "libre" && <Combat cartes={cartes} modeInitial="libre" />}
-        </div>
+      {sousVue === "ligue" && MUR_ACTIF && (
+        <Ligue embarque observations={observations} prenom={prenom} onDefinirPrenom={onDefinirPrenom} onDefier={onDefier} onSyncXp={onSyncXp} />
       )}
+      {sousVue === "arene" && <Combat cartes={cartes} modeInitial="arene" onRecordArene={onRecordArene} />}
+      {sousVue === "libre" && <Combat cartes={cartes} modeInitial="libre" />}
 
       {sousVue === "quiz" && (
         <div>
