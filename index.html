@@ -99,6 +99,80 @@
   .bd-carte-legendaire { animation: bdLueurLeg 2.8s ease-in-out infinite; }
   @keyframes bdEtoile { 0%, 100% { opacity: 0; transform: scale(.4) rotate(0deg); } 50% { opacity: .95; transform: scale(1) rotate(24deg); } }
   .bd-etoile { position: absolute; pointer-events: none; color: #FFF6D8; text-shadow: 0 0 6px rgba(255,240,190,.9); animation: bdEtoile 2.6s ease-in-out infinite; }
+  /* v1.86 — Cartes de collection : un seul format (5:7), effets croissants avec la rareté.
+     Les tailles internes sont en em : la même carte sert dans la grille et en grand. */
+  .bd-cc { position: relative; aspect-ratio: 5 / 7; width: 100%; border-radius: .95em; padding: .42em; box-sizing: border-box;
+    overflow: hidden; isolation: isolate; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 .35em 1em rgba(0,0,0,.45); transition: transform .15s ease; }
+  .bd-cc:active { transform: scale(.97); }
+  .bd-cc-in { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; border-radius: .6em; overflow: hidden;
+    border: 1px solid rgba(30,26,14,.45); background: linear-gradient(rgba(255,255,255,.14), rgba(255,255,255,.02)); }
+  .bd-cc-titre { display: flex; align-items: flex-start; gap: .35em; padding: .45em .5em .35em; }
+  .bd-cc-nom { flex: 1; min-width: 0; font-weight: 700; font-size: 1.02em; line-height: 1.14; height: 2.28em; color: #241F12;
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-shadow: 0 1px 0 rgba(255,255,255,.3); }
+  .bd-cc-photo { position: relative; flex: 1; min-height: 0; margin: 0 .4em; border-radius: .45em; overflow: hidden;
+    border: 2px solid rgba(30,26,14,.5); box-shadow: inset 0 0 .8em rgba(0,0,0,.4); background: #1A1F15; }
+  .bd-cc-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .bd-cc-pied { display: flex; align-items: center; justify-content: space-between; gap: .3em; padding: .42em .5em .45em; }
+  .bd-cc-pastille { font-weight: 800; font-size: .72em; letter-spacing: .06em; text-transform: uppercase; padding: .22em .6em; border-radius: 1em;
+    background: rgba(30,26,14,.88); white-space: nowrap; }
+  /* Commun : papier mat */
+  .bd-cc-commun { background: linear-gradient(160deg, #D6D1BB 0%, #ABA792 55%, #8F8B77 100%); }
+  /* Peu commun : métal vert gravé */
+  .bd-cc-peucommun { background:
+      repeating-linear-gradient(45deg, rgba(255,255,255,.07) 0 2px, transparent 2px 6px),
+      linear-gradient(150deg, #D3E2B8 0%, #86A26A 38%, #C2D3A6 55%, #5F7B48 100%); }
+  /* Rare : argent bleuté + film holographique arc-en-ciel */
+  .bd-cc-rare { background: linear-gradient(150deg, #E6EEFF 0%, #8FA6D9 35%, #D7E2FA 52%, #6C83B8 100%);
+    box-shadow: 0 0 1.1em rgba(150,180,240,.45), 0 .35em 1em rgba(0,0,0,.45); }
+  .bd-cc-holo { position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit; mix-blend-mode: color-dodge; opacity: .5;
+    background: linear-gradient(115deg, transparent 18%, rgba(255,60,170,.55) 30%, rgba(255,220,60,.55) 40%, rgba(60,255,170,.55) 50%, rgba(60,170,255,.55) 60%, rgba(190,90,255,.5) 70%, transparent 82%);
+    background-size: 300% 300%; background-position: var(--hx, 0%) var(--hy, 0%); animation: bdHolo 7s ease-in-out infinite; }
+  .bd-cc-holo.bd-suit { animation: none; }
+  .bd-cc-eclat { position: absolute; inset: 0; z-index: 3; pointer-events: none; mix-blend-mode: overlay;
+    background: radial-gradient(circle at var(--px, 30%) var(--py, 20%), rgba(255,255,255,.75), transparent 45%); }
+  @keyframes bdHolo { 0%,100% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } }
+  /* Légendaire : bordure d'or qui tourne, reflet animé, paillettes, halo */
+  .bd-cc-leg { background: #3A2C0C; animation: bdLueurLeg 2.8s ease-in-out infinite; }
+  .bd-cc-leg::before { content: ""; position: absolute; inset: -60%; z-index: 0;
+    background: conic-gradient(from 0deg, #8A6A1E, #F7E7A6, #C9A24B, #FFF8DC, #8A6A1E, #E4C878, #FFF2BF, #8A6A1E);
+    animation: bdSpin 5s linear infinite; }
+  .bd-cc-leg::after { content: ""; position: absolute; inset: .28em; z-index: 1; border-radius: .75em;
+    background: linear-gradient(150deg, #F3E2A8 0%, #D9B860 40%, #F7EAC0 55%, #B8913A 100%); }
+  .bd-cc-leg .bd-cc-holo { mix-blend-mode: soft-light; opacity: .8;
+    background: linear-gradient(115deg, transparent 25%, rgba(255,255,255,.8) 45%, rgba(255,230,160,.6) 52%, transparent 70%); background-size: 260% 260%; animation-duration: 3.6s; }
+  /* Silhouette « à découvrir » : même format, en creux */
+  .bd-cc-vide { cursor: default; background: linear-gradient(#161B12, #10140C); border: 1.5px dashed #3A4630; box-shadow: none; }
+  .bd-cc-vide:active { transform: none; }
+  /* Dos de carte (cartes à révéler) */
+  .bd-cc-dos { background: radial-gradient(circle at 50% 42%, #3B4A2C 0%, #1C2515 55%, #10160C 100%); border: 1px solid #C9A24B;
+    box-shadow: 0 0 1.2em rgba(201,162,75,.45), 0 .35em 1em rgba(0,0,0,.45); }
+  .bd-cc-dos::before { content: ""; position: absolute; inset: .42em; border-radius: .6em; border: 1px solid rgba(201,162,75,.55);
+    background: repeating-linear-gradient(45deg, rgba(201,162,75,.08) 0 1px, transparent 1px 9px), repeating-linear-gradient(-45deg, rgba(201,162,75,.08) 0 1px, transparent 1px 9px); }
+  @keyframes bdAppel { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-.25em) rotate(-1.2deg); } }
+  .bd-cc-appel { animation: bdAppel 2.2s ease-in-out infinite; }
+  /* Hors écran : animations en pause (fluidité, batterie) */
+  .bd-cc-pause, .bd-cc-pause::before, .bd-cc-pause * { animation-play-state: paused !important; }
+  /* Zoom : retournement recto/verso */
+  .bd-zoom-fond { position: fixed; inset: 0; z-index: 10040; background: rgba(6,8,5,.86); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; animation: bdFade .25s ease both; }
+  .bd-flip { perspective: 1400px; }
+  .bd-flip-in { position: relative; transform-style: preserve-3d; transition: transform .7s cubic-bezier(.3,1.3,.5,1); }
+  .bd-flip-in.bd-verso { transform: rotateY(180deg); }
+  .bd-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+  .bd-face-arr { position: absolute; inset: 0; transform: rotateY(180deg); }
+  /* Révélation façon booster */
+  @keyframes bdRayons { from { transform: translate(-50%,-50%) rotate(0); } to { transform: translate(-50%,-50%) rotate(360deg); } }
+  .bd-rayons { position: absolute; left: 50%; top: 50%; width: 170vmax; height: 170vmax; pointer-events: none; z-index: 0;
+    animation: bdRayons 14s linear infinite, bdFade .6s ease both; }
+  @keyframes bdEclair { 0% { opacity: 0; } 15% { opacity: .95; } 100% { opacity: 0; } }
+  .bd-eclair { position: fixed; inset: 0; z-index: 10045; pointer-events: none; animation: bdEclair .9s ease-out forwards; }
+  @keyframes bdTrembler { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-2.5deg) scale(1.02); } 75% { transform: rotate(2.5deg) scale(1.02); } }
+  .bd-trembler { animation: bdTrembler .18s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .bd-cc, .bd-cc *, .bd-cc::before, .bd-rayons, .bd-cc-appel, .bd-trembler { animation: none !important; }
+    .bd-flip-in { transition: none; }
+  }
   /* Navigation basse */
   .bd-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 900;
     background: linear-gradient(rgba(18,22,15,.86), rgba(12,14,11,.97));
@@ -238,7 +312,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.85";
+const VERSION = "v1.86";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1743,6 +1817,11 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.86", date: "2026-11", items: [
+    "🃏 Toutes les cartes du bestiaire ont maintenant le même format, comme un vrai album. Touche une carte : elle s'ouvre en grand, et se retourne pour montrer ses stats et sa capacité.",
+    "✨ Plus une carte est rare, plus elle brille : papier mat pour les communes, métal gravé pour les peu communes, film holographique arc-en-ciel pour les rares, bordure d'or animée pour les légendaires. En grand, la carte s'incline sous ton doigt.",
+    "🎁 Une nouvelle carte arrive face cachée : touche-la pour la révéler, avec un effet d'autant plus spectaculaire qu'elle est rare.",
+  ] },
   { v: "1.85", date: "2026-11", items: [
     "📖 Le BESTIAIRE remplace la galerie de cartes : chaque nouvelle espèce identifiée débloque sa carte toute seule, plus besoin de la forger.",
     "📈 Une carte par espèce : revoir une espèce déjà trouvée fait progresser sa carte (+10 XP), jusqu'au niveau 5.",
@@ -10772,35 +10851,260 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
 // Pour chaque groupe : les espèces trouvées (une carte par espèce), un compteur
 // « trouvées / connues dans le Limousin », et les espèces les plus communes encore
 // à trouver, en silhouettes. Les espèces de BESTIAIRE_LIMOUSIN viennent d'iNaturalist.
-const SILHOUETTES_PAR_GROUPE = 4;
+const SILHOUETTES_PAR_GROUPE = 2; // v1.86 : une rangée (les cartes sont plus grandes)
 
-function SilhouetteCarte({ espece }) {
+// ── v1.86 — Cartes de collection ─────────────────────────────────────────────
+// Un seul format (5:7) pour toutes les cartes du bestiaire ; les effets montent avec la
+// rareté : papier mat → métal gravé → film holographique → or animé. Touchée, la carte
+// s'ouvre en grand (CarteZoom) et se retourne pour montrer ses stats.
+function classeRarete(r) {
+  const v = Number(r) || 0;
+  return v >= 85 ? "leg" : v >= 65 ? "rare" : v >= 40 ? "peucommun" : "commun";
+}
+
+// Met en pause les animations d'une carte quand elle sort de l'écran.
+function usePauseHorsEcran(ref) {
+  useEffect(() => {
+    const n = ref.current;
+    if (!n || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(([e]) => n.classList.toggle("bd-cc-pause", !e.isIntersecting));
+    io.observe(n);
+    return () => io.disconnect();
+  }, []);
+}
+
+function CarteCollection({ obs, grand = false, suivreDoigt = false, vues = 0, onClick }) {
+  const c = obs.carte;
+  const ref = useRef(null);
+  usePauseHorsEcran(ref);
+  if (!c) return null;
+  const pal = palierRarete(c.rarete);
+  const el = elementInfo(c.element);
+  const r = classeRarete(c.rarete);
+  const niv = niveauDeXp(c.xp);
+  // En grand : la carte s'incline sous le doigt et le reflet le suit.
+  const bouger = (e) => {
+    const n = ref.current;
+    if (!n) return;
+    const b = n.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (e.clientX - b.left) / b.width));
+    const y = Math.min(1, Math.max(0, (e.clientY - b.top) / b.height));
+    n.style.setProperty("--px", x * 100 + "%");
+    n.style.setProperty("--py", y * 100 + "%");
+    n.style.setProperty("--hx", x * 100 + "%");
+    n.style.setProperty("--hy", y * 100 + "%");
+    n.style.transform = `rotateY(${(x - 0.5) * 18}deg) rotateX(${(0.5 - y) * 18}deg)`;
+    n.querySelectorAll(".bd-cc-holo").forEach((h) => h.classList.add("bd-suit"));
+  };
+  const lacher = () => {
+    const n = ref.current;
+    if (!n) return;
+    n.style.transform = "";
+    n.querySelectorAll(".bd-cc-holo").forEach((h) => h.classList.remove("bd-suit"));
+  };
   return (
-    <div style={{ borderRadius: 12, border: `1.5px dashed ${C.bordure}`, background: "linear-gradient(#161B12, #11150D)", minHeight: 96,
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "10px 8px", textAlign: "center", boxSizing: "border-box" }}>
-      <div style={{ fontSize: 22, color: C.bordure, fontFamily: serif, fontWeight: 700, lineHeight: 1 }}>?</div>
-      <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.papierSombre, marginTop: 6, lineHeight: 1.3 }}>{espece.f}</div>
-      <div style={{ fontFamily: serif, fontSize: 11, fontStyle: "italic", color: C.papierSombre, opacity: 0.75, marginTop: 2 }}>{espece.s}</div>
+    <div ref={ref} className={`bd-cc bd-cc-${r}`} onClick={onClick}
+      onPointerMove={suivreDoigt ? bouger : undefined} onPointerLeave={suivreDoigt ? lacher : undefined} onPointerUp={suivreDoigt ? lacher : undefined}
+      style={{ fontSize: grand ? 19 : 12, fontFamily: sans, touchAction: suivreDoigt ? "none" : undefined, transition: suivreDoigt ? "transform .12s ease-out" : undefined }}>
+      <div className="bd-cc-in">
+        <div className="bd-cc-titre">
+          <span className="bd-cc-nom" style={{ fontFamily: serif }} title={obs.nom || "Spécimen"}>{obs.nom || "Spécimen"}</span>
+          <span title={c.element} style={{ flexShrink: 0, background: "rgba(30,26,14,.85)", border: `1px solid ${el.c}`, color: el.c, fontSize: ".85em", fontWeight: 800, padding: ".1em .35em", borderRadius: "1em", lineHeight: 1.3 }}>{el.emoji}</span>
+        </div>
+        <div className="bd-cc-photo">
+          <PhotoBlobRecadree blob={obs.photo} zone={obs.cadreCarte || obs.cadrePhoto} alt={obs.nom} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          {vues > 1 && (
+            <span style={{ position: "absolute", left: ".35em", bottom: ".35em", background: "rgba(20,18,10,.82)", color: "#F2E6C4", fontWeight: 800, fontSize: ".78em", padding: ".12em .45em", borderRadius: "1em" }}>👁 {vues}</span>
+          )}
+          {c.authentique === false && (
+            <span title={c.authenticite_raison || "Authenticité douteuse"} style={{ position: "absolute", top: ".35em", left: ".35em", background: "rgba(140,40,30,.92)", color: "#FFDDD4", border: "1px solid #E5603E", fontWeight: 800, fontSize: ".68em", padding: ".1em .45em", borderRadius: "1em" }}>⚠ NON VÉRIFIÉE</span>
+          )}
+        </div>
+        <div className="bd-cc-pied">
+          <span className="bd-cc-pastille" style={{ color: pal.couleur }}>{pal.nom}</span>
+          <span style={{ fontSize: ".85em", letterSpacing: "-.05em", whiteSpace: "nowrap", color: "#241F12" }}>
+            {"★".repeat(niv)}<span style={{ opacity: 0.35 }}>{"★".repeat(NIVEAU_MAX - niv)}</span>
+          </span>
+        </div>
+      </div>
+      {(r === "rare" || r === "leg") && <div className="bd-cc-holo" />}
+      {suivreDoigt && (r === "rare" || r === "leg") && <div className="bd-cc-eclat" />}
+      {r === "leg" && (
+        <React.Fragment>
+          <span className="bd-etoile" style={{ zIndex: 4, top: "9%", left: "12%", fontSize: "1em" }}>✦</span>
+          <span className="bd-etoile" style={{ zIndex: 4, top: "44%", right: "9%", fontSize: "1em", animationDelay: ".9s" }}>✦</span>
+          <span className="bd-etoile" style={{ zIndex: 4, bottom: "17%", left: "24%", fontSize: "1em", animationDelay: "1.7s" }}>✦</span>
+        </React.Fragment>
+      )}
     </div>
   );
 }
 
-function Bestiaire({ cartesAffichees, nbEspeces, vuesParEspece, filtreGroupe, onOuvrir }) {
-  const trouvees = new Set(cartesAffichees.map((c) => binomeMin(c.nomSci)).filter(Boolean));
+// Dos de carte : les cartes pas encore révélées.
+function DosCarte({ grand = false, appel = false, onClick }) {
+  return (
+    <div className={"bd-cc bd-cc-dos" + (appel ? " bd-cc-appel" : "")} onClick={onClick} style={{ fontSize: grand ? 19 : 12 }}>
+      <div style={{ position: "absolute", inset: 0, zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: ".5em" }}>
+        <img src="emblem.png" alt="" style={{ width: "48%", filter: "drop-shadow(0 0 .7em rgba(201,162,75,.55))" }} />
+        <div style={{ fontFamily: serif, fontWeight: 700, color: "#E4C878", fontSize: "1.05em", letterSpacing: ".18em" }}>BIODEX</div>
+      </div>
+    </div>
+  );
+}
+
+// Verso de la carte en grand : tout ce qui ne tient pas sur le recto.
+function VersoCarte({ obs, vues }) {
+  const c = obs.carte;
+  const r = classeRarete(c.rarete);
+  const pal = palierRarete(c.rarete);
+  const el = elementInfo(c.element);
+  const niv = niveauDeXp(c.xp);
+  const stat = (label, val, emoji, couleur) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 0" }}>
+      <span style={{ fontSize: 12.5, fontWeight: 700, width: 78, flexShrink: 0 }}>{emoji} {label}</span>
+      <div style={{ flex: 1, height: 8, background: "rgba(30,26,14,.2)", borderRadius: 4, overflow: "hidden" }}>
+        <div style={{ width: `${Math.min(100, Math.max(3, Number(val) || 0))}%`, height: "100%", background: couleur, borderRadius: 4 }} />
+      </div>
+      <span style={{ fontSize: 13.5, fontWeight: 800, width: 26, textAlign: "right" }}>{val}</span>
+    </div>
+  );
+  return (
+    <div className={`bd-cc bd-cc-${r}`} style={{ fontSize: 15, fontFamily: sans, cursor: "pointer" }}>
+      <div className="bd-cc-in" style={{ padding: "10px 12px", color: "#241F12", overflowY: "auto", gap: 6 }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 700, lineHeight: 1.2 }}>{obs.nom || "Spécimen"}</div>
+          <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 13 }}>{obs.nomSci || "—"}</div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
+          <span className="bd-cc-pastille" style={{ color: pal.couleur, fontSize: 11 }}>{pal.nom}</span>
+          <span className="bd-cc-pastille" style={{ color: el.c, fontSize: 11 }}>{el.emoji} {c.element || "—"}</span>
+        </div>
+        <div style={{ textAlign: "center", fontSize: 13, fontWeight: 700 }}>
+          Niveau {niv} / {NIVEAU_MAX} · {Number(c.xp) || 0} XP{vues > 1 ? ` · vue ${vues} fois` : ""}
+        </div>
+        <div style={{ borderTop: "1px solid rgba(30,26,14,.2)", paddingTop: 4 }}>
+          {stat("Attaque", c.attaque, "⚔️", "#B0563C")}
+          {stat("Défense", c.defense, "🛡️", "#5A7A4A")}
+          {stat("Vitesse", c.vitesse, "💨", "#5A7AA8")}
+        </div>
+        {c.capacite && (
+          <div style={{ padding: "7px 10px", background: "rgba(30,26,14,.13)", border: "1px solid rgba(30,26,14,.2)", borderRadius: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 800 }}>✦ {c.capacite.nom}</div>
+            <div style={{ fontSize: 12.5, lineHeight: 1.4 }}>{c.capacite.effet}</div>
+          </div>
+        )}
+        {c.citation && <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 13, textAlign: "center", lineHeight: 1.4 }}>« {c.citation} »</div>}
+      </div>
+    </div>
+  );
+}
+
+// Effets de la révélation, selon la rareté.
+const REVELATION = {
+  commun:    { eclair: "radial-gradient(circle, rgba(255,250,230,.55), transparent 70%)", rayons: null, son: "espece" },
+  peucommun: { eclair: "radial-gradient(circle, rgba(190,230,150,.7), transparent 70%)", rayons: "repeating-conic-gradient(rgba(170,210,130,.16) 0 6deg, transparent 6deg 18deg)", son: "espece" },
+  rare:      { eclair: "conic-gradient(from 0deg, rgba(255,80,180,.6), rgba(255,220,80,.6), rgba(80,255,170,.6), rgba(80,170,255,.6), rgba(200,100,255,.6), rgba(255,80,180,.6))", rayons: "repeating-conic-gradient(rgba(160,190,255,.22) 0 5deg, transparent 5deg 15deg)", son: "mission" },
+  leg:       { eclair: "radial-gradient(circle, rgba(255,240,180,.95), rgba(228,200,120,.5) 40%, transparent 75%)", rayons: "repeating-conic-gradient(rgba(240,210,120,.3) 0 5deg, transparent 5deg 12deg)", son: "legendaire" },
+};
+
+// Carte en grand. Révélation : dos → (toucher) tremblement → retournement + éclair.
+// Ensuite : toucher la carte la retourne (recto ↔ verso).
+function CarteZoom({ obs, vues, revelation = false, onFermer, onVoirObs, onRevelee }) {
+  const [etape, setEtape] = useState(revelation ? "dos" : "revelee"); // dos | ouverture | eclair | revelee
+  const [verso, setVerso] = useState(false);
+  const r = classeRarete(obs.carte && obs.carte.rarete);
+  const fx = REVELATION[r];
+  const minuteurs = useRef([]);
+  useEffect(() => () => minuteurs.current.forEach(clearTimeout), []);
+  const ouvrir = () => {
+    if (etape !== "dos") return;
+    setEtape("ouverture");
+    try { navigator.vibrate && navigator.vibrate(r === "leg" ? [30, 40, 30, 40, 120] : r === "rare" ? [30, 40, 80] : 40); } catch {}
+    minuteurs.current.push(setTimeout(() => {
+      setEtape("eclair");
+      sonCelebration(fx.son);
+      if (r === "leg") celebrer({ emoji: "🌟", titre: "Carte légendaire !", texte: (obs.nom || "Ce spécimen") + " rejoint ton bestiaire.", ton: "legendaire" });
+      onRevelee && onRevelee(obs.id);
+    }, r === "leg" ? 1100 : r === "rare" ? 800 : 450));
+  };
+  const enRevelation = etape === "dos" || etape === "ouverture" || etape === "eclair";
+  const largeur = "min(78vw, 330px, 58vh)";
+  return (
+    <div className="bd-zoom-fond" onClick={(e) => { if (e.target === e.currentTarget && etape !== "ouverture") onFermer(); }}>
+      {etape === "eclair" && fx.rayons && <div className="bd-rayons" style={{ background: fx.rayons, borderRadius: "50%" }} />}
+      {etape === "eclair" && <div className="bd-eclair" style={{ background: fx.eclair }} />}
+      <div className="bd-flip" style={{ width: largeur, position: "relative", zIndex: 1 }}>
+        {enRevelation ? (
+          <div key="rev" className={"bd-flip-in" + (etape === "eclair" ? " bd-verso" : "")}>
+            <div className={"bd-face" + (etape === "ouverture" ? " bd-trembler" : "")}><DosCarte grand appel={etape === "dos"} onClick={ouvrir} /></div>
+            <div className="bd-face bd-face-arr" style={{ perspective: 900 }}>
+              <CarteCollection obs={obs} grand vues={vues} onClick={() => setEtape("revelee")} />
+            </div>
+          </div>
+        ) : (
+          <div key="std" className={"bd-flip-in" + (verso ? " bd-verso" : "")}>
+            <div className="bd-face" style={{ perspective: 900 }}>
+              <CarteCollection obs={obs} grand suivreDoigt vues={vues} onClick={() => setVerso(true)} />
+            </div>
+            <div className="bd-face bd-face-arr" onClick={() => setVerso(false)}>
+              <VersoCarte obs={obs} vues={vues} />
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{ position: "relative", zIndex: 1, marginTop: 18, textAlign: "center", fontFamily: sans, color: C.papierSombre, fontSize: 13 }}>
+        {etape === "dos" ? "Touche la carte pour la révéler"
+          : etape === "ouverture" ? "…"
+          : etape === "eclair" ? <span style={{ fontFamily: serif, fontSize: 20, fontWeight: 700, color: palierRarete(obs.carte.rarete).couleur }}>{palierRarete(obs.carte.rarete).nom} !</span>
+          : "Touche la carte pour la retourner"}
+      </div>
+      {(etape === "revelee" || etape === "eclair") && (
+        <div style={{ position: "relative", zIndex: 1, display: "flex", gap: 10, marginTop: 14 }}>
+          <button className="bd-press" onClick={() => onVoirObs(obs.id)} style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, padding: "10px 16px", borderRadius: 10, cursor: "pointer", border: `1px solid ${C.ambre}`, background: "transparent", color: C.ambreClair }}>Voir l'observation</button>
+          <button className="bd-press" onClick={onFermer} style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, padding: "10px 18px", borderRadius: 10, cursor: "pointer", border: "none", background: C.ambre, color: C.encre }}>Fermer</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Silhouette « à découvrir » : même format qu'une carte, l'emoji du groupe en ombre chinoise.
+function SilhouetteCarte({ espece, emoji }) {
+  return (
+    <div className="bd-cc bd-cc-vide" style={{ fontSize: 12 }}>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "10px 8px", textAlign: "center" }}>
+        <div style={{ fontSize: 46, filter: "brightness(0)", opacity: 0.55, lineHeight: 1, textShadow: "0 0 1px #3A4630" }}>{emoji || "🐞"}</div>
+        <div style={{ fontFamily: serif, fontSize: 22, color: "#4A5A3C", fontWeight: 700, marginTop: 6, lineHeight: 1 }}>?</div>
+        <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.papierSombre, marginTop: 8, lineHeight: 1.3 }}>{espece.f}</div>
+        <div style={{ fontFamily: serif, fontSize: 11, fontStyle: "italic", color: C.papierSombre, opacity: 0.7, marginTop: 2 }}>{espece.s}</div>
+      </div>
+    </div>
+  );
+}
+
+function Bestiaire({ cartesAffichees: toutes, nbEspeces, vuesParEspece, filtreGroupe, onOuvrir, onRevelee }) {
+  const [zoom, setZoom] = useState(null); // { id, revelation }
+  // Les cartes pas encore révélées attendent, face cachée, en haut du bestiaire.
+  const aReveler = toutes.filter((c) => c.carteNouvelle);
+  const cartesAffichees = toutes.filter((c) => !c.carteNouvelle);
+  const obsZoom = zoom && toutes.find((c) => c.id === zoom.id);
+  const trouvees = new Set(toutes.map((c) => binomeMin(c.nomSci)).filter(Boolean));
+  const grille = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12 };
   const groupes = [...ORDRES.map((o) => o.id), "autres"]
     .filter((id) => !filtreGroupe || id === filtreGroupe)
     .map((id) => {
       const info = ordreInfo(id);
       const cartesG = cartesAffichees.filter((c) => deduireOrdre(c) === id);
+      const nbG = toutes.filter((c) => deduireOrdre(c) === id).length; // y compris celles à révéler
       const donnees = BESTIAIRE_LIMOUSIN.groupes[id];
       const aTrouver = donnees ? donnees.communes.filter((e) => !trouvees.has(binomeMin(e.s))) : [];
-      return { id, info, cartesG, total: donnees ? donnees.total : null, aTrouver };
+      return { id, info, cartesG, nbG, total: donnees ? donnees.total : null, aTrouver };
     })
     // Groupe affiché s'il a des cartes, ou des espèces à découvrir (les arachnides et
     // mille-pattes, absents de la liste d'insectes, n'apparaissent qu'une fois trouvés).
-    .filter((g) => g.cartesG.length > 0 || g.aTrouver.length > 0)
+    .filter((g) => g.nbG > 0 || g.aTrouver.length > 0)
     // Les groupes où l'on a déjà des cartes d'abord (les plus fournis en tête).
-    .sort((a, b) => (b.cartesG.length > 0) - (a.cartesG.length > 0) || b.cartesG.length - a.cartesG.length);
+    .sort((a, b) => (b.nbG > 0) - (a.nbG > 0) || b.nbG - a.nbG);
 
   return (
     <div>
@@ -10813,17 +11117,29 @@ function Bestiaire({ cartesAffichees, nbEspeces, vuesParEspece, filtreGroupe, on
         </div>
       </div>
 
+      {aReveler.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 700, color: C.ambreClair, marginBottom: 4 }}>
+            🎁 {aReveler.length} nouvelle{aReveler.length > 1 ? "s" : ""} carte{aReveler.length > 1 ? "s" : ""} à révéler
+          </div>
+          <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 10 }}>Touche une carte pour la retourner.</div>
+          <div style={grille}>
+            {aReveler.map((o) => <DosCarte key={o.id} appel onClick={() => setZoom({ id: o.id, revelation: true })} />)}
+          </div>
+        </div>
+      )}
+
       {groupes.map((g) => (
         <div key={g.id} style={{ marginBottom: 22 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
             <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 700, color: C.papier }}>{g.info.emoji} {g.info.court || g.info.label}</div>
             <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair, whiteSpace: "nowrap" }}>
-              {g.cartesG.length}{g.total ? " / " + g.total : ""}
+              {g.nbG}{g.total ? " / " + g.total : ""}
             </div>
           </div>
           {g.total ? (
             <div style={{ height: 5, borderRadius: 3, background: C.panneauClair, overflow: "hidden", marginBottom: 6 }}>
-              <div style={{ width: Math.max(g.cartesG.length ? 2 : 0, Math.round(100 * g.cartesG.length / g.total)) + "%", height: "100%", background: C.ambre }} />
+              <div style={{ width: Math.max(g.nbG ? 2 : 0, Math.round(100 * g.nbG / g.total)) + "%", height: "100%", background: C.ambre }} />
             </div>
           ) : null}
           {g.total ? (
@@ -10831,28 +11147,28 @@ function Bestiaire({ cartesAffichees, nbEspeces, vuesParEspece, filtreGroupe, on
               {g.total} espèces connues dans le Limousin
             </div>
           ) : <div style={{ marginBottom: 10 }} />}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: 14 }}>
-            {g.cartesG.map((o) => (
-              <div key={o.id}>
-                <CarteInsecte obs={o} onClick={() => onOuvrir(o.id)} />
-                {(vuesParEspece[cleEspeceMur(o)] || 0) > 1 && (
-                  <div style={{ textAlign: "center", marginTop: 5, fontFamily: sans, fontSize: 11.5, fontWeight: 700, color: C.ambreClair }}>
-                    👁 vue {vuesParEspece[cleEspeceMur(o)]} fois
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+          {g.cartesG.length > 0 && (
+            <div style={grille}>
+              {g.cartesG.map((o) => (
+                <CarteCollection key={o.id} obs={o} vues={vuesParEspece[cleEspeceMur(o)] || 0} onClick={() => setZoom({ id: o.id, revelation: false })} />
+              ))}
+            </div>
+          )}
           {g.aTrouver.length > 0 && (
-            <div style={{ marginTop: g.cartesG.length ? 12 : 0 }}>
+            <div style={{ marginTop: g.cartesG.length ? 14 : 0 }}>
               <div style={{ fontFamily: sans, fontSize: 11.5, fontWeight: 700, color: C.lichen, marginBottom: 7, letterSpacing: 0.3 }}>❓ À DÉCOUVRIR (LES PLUS COMMUNES)</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
-                {g.aTrouver.slice(0, SILHOUETTES_PAR_GROUPE).map((e) => <SilhouetteCarte key={e.s} espece={e} />)}
+              <div style={grille}>
+                {g.aTrouver.slice(0, SILHOUETTES_PAR_GROUPE).map((e) => <SilhouetteCarte key={e.s} espece={e} emoji={g.info.emoji} />)}
               </div>
             </div>
           )}
         </div>
       ))}
+
+      {obsZoom && obsZoom.carte && (
+        <CarteZoom key={obsZoom.id} obs={obsZoom} vues={vuesParEspece[cleEspeceMur(obsZoom)] || 0} revelation={zoom.revelation}
+          onRevelee={onRevelee} onFermer={() => setZoom(null)} onVoirObs={(id) => { setZoom(null); onOuvrir(id); }} />
+      )}
     </div>
   );
 }
@@ -10862,7 +11178,7 @@ function binomeMin(s) {
   return String(s || "").trim().toLowerCase().split(/\s+/).slice(0, 2).join(" ");
 }
 
-function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, onDefier, sousVueInitiale, onSyncXp, onRecordArene }) {
+function ModeCartes({ cartes, onOuvrir, onRevelee, observations, prenom, onDefinirPrenom, onDefier, sousVueInitiale, onSyncXp, onRecordArene }) {
   // v1.83 — Un seul niveau d'onglets : Cartes · Ligue · Arène · Quiz (avant : Jeu > Combat >
   // Défier la bande / Arène > Défier / Mes cartes / …). « combat » et « ligue » (retour après un
   // défi) ouvrent la Ligue ; sans mur commun, la Ligue devient le combat libre.
@@ -10962,7 +11278,7 @@ function ModeCartes({ cartes, onOuvrir, observations, prenom, onDefinirPrenom, o
 
       {sousVue === "galerie" && (
         <Bestiaire cartesAffichees={cartesAffichees} nbEspeces={especesCartes.length} vuesParEspece={vuesParEspece}
-          filtreGroupe={fOrdreC} onOuvrir={onOuvrir} />
+          filtreGroupe={fOrdreC} onOuvrir={onOuvrir} onRevelee={onRevelee} />
       )}
 
       {sousVue === "ligue" && MUR_ACTIF && (
@@ -12551,6 +12867,16 @@ function BioDex() {
     setObservations((prev) => prev.map((o) => (o.id === id ? maj : o)));
   }
 
+  // v1.86 — Une carte forgée automatiquement attend face cachée (carteNouvelle) jusqu'à
+  // ce qu'on la révèle dans le bestiaire.
+  async function marquerCarteRevelee(id) {
+    const obs = observationsRef.current.find((o) => o.id === id);
+    if (!obs || !obs.carteNouvelle) return;
+    const maj = { ...obs, carteNouvelle: false };
+    try { await dbAjouter(maj); } catch {}
+    setObservations((prev) => prev.map((o) => (o.id === id ? { ...o, carteNouvelle: false } : o)));
+  }
+
   // ── v1.85 — BESTIAIRE : la carte se débloque toute seule ──────────────────
   // Une carte par espèce. La première observation identifiée d'une espèce la débloque
   // (forge automatique, en arrière-plan) ; les observations suivantes de la même espèce
@@ -12617,11 +12943,11 @@ function BioDex() {
         if (!c) throw new Error("vide");
         const actuelle = plusFraiche(aForger);
         if (!observationsRef.current.some((x) => x.id === aForger.id) || actuelle.carte) throw new Error("déjà traitée");
-        const maj = { ...actuelle, carte: c, bestiaireCompte: true };
+        const maj = { ...actuelle, carte: c, bestiaireCompte: true, carteNouvelle: true };
         try { await dbAjouter(maj); } catch {}
-        setObservations((prev) => prev.map((o) => (o.id === maj.id ? { ...o, carte: c, bestiaireCompte: true } : o)));
+        setObservations((prev) => prev.map((o) => (o.id === maj.id ? { ...o, carte: c, bestiaireCompte: true, carteNouvelle: true } : o)));
         if (recent(aForger)) {
-          celebrer({ emoji: "🃏", titre: "Nouvelle carte débloquée !", texte: (aForger.nom || "Ce spécimen") + " rejoint ton bestiaire.", ton: "legendaire" });
+          celebrer({ emoji: "🎁", titre: "Nouvelle carte débloquée !", texte: "Va la révéler dans ton bestiaire (onglet Jeu).", ton: "legendaire" });
         }
       } catch {
         forgesAutoRatees.current.add(aForger.id); // réseau ou service : on réessaiera à la prochaine ouverture
@@ -12926,6 +13252,7 @@ function BioDex() {
         <ModeCartes
           cartes={cartes}
           onOuvrir={(id) => { setSelectionId(id); setVue("detail"); }}
+          onRevelee={marquerCarteRevelee}
           onSyncXp={adopterXpLigue}
           onRecordArene={(r) => enregistrerRecordArene(prenom, r)}
           observations={observations}
