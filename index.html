@@ -489,7 +489,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.95";
+const VERSION = "v1.96";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1994,6 +1994,9 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.96", date: "2026-11", items: [
+    "🎨 Fin de l'harmonisation : le Quiz (du jour / entraînement), le Classement (semaine / mois) et le Combat (libre / arène) utilisent les mêmes onglets que le reste de l'appli.",
+  ] },
   { v: "1.95", date: "2026-11", items: [
     "🔔 Les vraies notifications arrivent ! Ton téléphone sonne même quand BioDex est fermé : idée du relecteur, commentaire, réaction ou défi sur une de tes cartes. Tu peux aussi être prévenu de chaque nouvelle trouvaille de la bande. Active-les dans Menu → Mon compte → Notifications du téléphone, et choisis ce qui te fait sonner.",
     "📱 Sur iPhone, il faut d'abord installer BioDex sur l'écran d'accueil (Safari → Partager → « Sur l'écran d'accueil »).",
@@ -5420,17 +5423,7 @@ function Classement({ onFermer, onOuvrirProfil }) {
         Qui déniche le plus (et le plus rare) ? Les points viennent des trouvailles partagées sur le mur.
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        {[["semaine", "📅 Semaine"], ["mois", "🗓️ Mois"]].map(([id, label]) => (
-          <button key={id} onClick={() => setPeriode(id)}
-            style={{ flex: 1, fontFamily: sans, fontSize: 14, fontWeight: 700, padding: "9px 0", borderRadius: 9, cursor: "pointer",
-              border: `1px solid ${periode === id ? "#A8863A" : C.bordure}`,
-              background: periode === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
-              color: periode === id ? C.ambreClair : C.papierSombre }}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <Segments petit options={[["semaine", "Semaine"], ["mois", "Mois"]]} valeur={periode} onChange={setPeriode} style={{ marginBottom: 14 }} />
       <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginBottom: 12, textAlign: "center" }}>
         {periode === "semaine" ? "7 derniers jours" : "30 derniers jours"}
       </div>
@@ -6484,18 +6477,10 @@ function Quiz({ observations, prenom }) {
   const basculer = (m) => { setMode(m); setEtape(0); setChoix(null); setBonnes(0); setResultatLibre(null); if (m === "entrainement") setSerie((v) => v + 1); };
 
   // Bandeau de mode, présent sur tous les écrans du quiz
+  // v1.96 — Même composant d'onglets que le reste du Jeu.
   const barreMode = (
-    <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-      {[["jour", "📅 Quiz du jour"], ["entrainement", "🔄 Entraînement"]].map(([id, lab]) => (
-        <button key={id} onClick={() => basculer(id)}
-          style={{ flex: 1, padding: "9px 4px", borderRadius: 9, cursor: "pointer", fontFamily: sans, fontSize: 13, fontWeight: 700,
-            border: `1px solid ${mode === id ? "#A8863A" : C.bordure}`,
-            background: mode === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
-            color: mode === id ? C.ambreClair : C.papierSombre }}>
-          {lab}{id === "jour" && !fait ? " •" : ""}
-        </button>
-      ))}
-    </div>
+    <Segments petit valeur={mode} onChange={(m) => m !== mode && basculer(m)} style={{ marginBottom: 14 }}
+      options={[["jour", "Quiz du jour" + (!fait ? " •" : "")], ["entrainement", "Entraînement"]]} />
   );
 
   // Résultat d'une partie d'entraînement : relançable à volonté, sans points.
@@ -12965,11 +12950,7 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial
       <div>
         <div style={{ fontFamily: serif, fontSize: 20, fontWeight: 600, color: C.papier, textAlign: "center", marginBottom: 4 }}>⚔️ Choisis ton champion</div>
         {!estDefi && !modeInitial && (
-          <div style={{ display: "flex", gap: 8, margin: "10px 0" }}>
-            {[["libre", "⚔️ Combat libre"], ["arene", "🏟️ Arène"]].map(([id, label]) => (
-              <button key={id} onClick={() => setMode(id)} style={{ flex: 1, padding: "9px 4px", borderRadius: 9, cursor: "pointer", fontFamily: sans, fontSize: 13, fontWeight: 700, border: `1px solid ${mode === id ? "#A8863A" : C.bordure}`, background: mode === id ? "linear-gradient(#2C3623, #232B1D)" : "transparent", color: mode === id ? C.ambreClair : C.papierSombre }}>{label}</button>
-            ))}
-          </div>
+          <Segments petit options={[["libre", "Combat libre"], ["arene", "Arène"]]} valeur={mode} onChange={setMode} style={{ margin: "10px 0" }} />
         )}
         <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, textAlign: "center", marginBottom: 16, lineHeight: 1.5 }}>
           {estDefi
