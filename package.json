@@ -1,0 +1,11 @@
+{
+  "name": "biodex",
+  "private": true,
+  "description": "BioDex — carnet entomologique. La compilation produit dist/ (appli précompilée, sans Babel dans le navigateur).",
+  "scripts": {
+    "build": "node outils/precompiler.mjs"
+  },
+  "devDependencies": {
+    "@babel/standalone": "7.26.4"
+  }
+}

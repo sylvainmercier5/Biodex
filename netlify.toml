@@ -1,6 +1,8 @@
 # Configuration Netlify pour BioDex
 [build]
-  publish = "."
+  # v1.97 — l'appli est précompilée (outils/precompiler.mjs) dans dist/ : plus de Babel dans le navigateur.
+  command = "npm run build"
+  publish = "dist"
   functions = "netlify/functions"
 
 [functions]
