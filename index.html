@@ -480,7 +480,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.93";
+const VERSION = "v1.94";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1985,6 +1985,12 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.94", date: "2026-11", items: [
+    "📤 Tu viens d'épingler une trouvaille ? BioDex te propose de la partager au mur tout de suite. Tu peux aussi dire « Plus tard », ou « Ne plus me le proposer ».",
+    "📄 La fiche d'une observation est plus claire. « Partager au mur » et « Modifier » sont tout en haut, sous le nom. La fiche naturaliste, la carte de collection, le partage et la science participative sont repliés : tu ouvres ce que tu veux.",
+    "💾 La sauvegarde a sa place dans le menu (Mon compte → Sauvegarde de ma boîte). Avant, elle était cachée au fond de l'Aide.",
+    "🗺️ L'onglet de la carte s'appelle maintenant « Lieux », pour ne plus le confondre avec les cartes à collectionner du Jeu.",
+  ] },
   { v: "1.93", date: "2026-11", items: [
     "📷 La nouvelle observation se fait en 3 étapes : Photo, Espèce, puis Où & quand. Une barre en bas montre toujours le bouton de l'étape en cours, sans faire défiler l'écran.",
     "🔍 Étape 1 : ta photo s'affiche en grand avec le cadre. Cadre l'insecte puis touche « Identifier ». Si tu connais déjà l'espèce, tu peux passer sans l'IA.",
@@ -5779,6 +5785,8 @@ function Celebrations({ sonActif = true }) {
     return () => window.removeEventListener("biodex-celebration", surEvent);
   }, [sonActif]);
 
+  // v1.94 — D'autres fenêtres (proposition de partage) attendent la fin des célébrations.
+  try { window.__bdCelebrations = file.length; } catch {}
   if (!file.length) return null;
 
   // Confettis : petits éléments thématiques qui tombent
@@ -8206,7 +8214,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
       <div style={{ display: "flex", gap: 10 }}>
         <Bouton onClick={onAnnuler} style={{ flex: 1 }}>Annuler</Bouton>
         <Bouton variante="primaire" onClick={sauver} disabled={enregistrement} style={{ flex: 2 }}>
-          {enregistrement ? "Enregistrement…" : (modeEdition ? "Enregistrer les modifications" : (modeTri ? "Classer dans la collection" : "Épingler dans la collection"))}
+          {enregistrement ? "Enregistrement…" : (modeEdition ? "Enregistrer les modifications" : (modeTri ? "Classer dans la collection" : "Épingler dans ma boîte"))}
         </Bouton>
       </div>
       )}
@@ -8342,8 +8350,16 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
   );
 }
 
-function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte, onMajCadre, onMajCadrePhoto, prenom, onDefinirPrenom, utilisateur, onAllerConnexion }) {
+function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFiche, onMajCarte, onMajCadre, onMajCadrePhoto, prenom, onDefinirPrenom, utilisateur, onAllerConnexion, partageDemande }) {
   const [confirme, setConfirme] = useState(false);
+  // v1.94 — « Partager au mur » remonte en haut de la fiche : il déplie la section et y descend.
+  const [ouvrirPartage, setOuvrirPartage] = useState(!!partageDemande);
+  const partageRef = useRef(null);
+  const allerAuPartage = () => {
+    setOuvrirPartage(true);
+    setTimeout(() => { try { partageRef.current && partageRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); } catch {} }, 80);
+  };
+  useEffect(() => { if (partageDemande) allerAuPartage(); }, []);
   const [ficheEtat, setFicheEtat] = useState(""); // "" | recherche | echec
   const [ficheErreur, setFicheErreur] = useState("");
   const [carteEtat, setCarteEtat] = useState(""); // "" | recherche | echec
@@ -8465,7 +8481,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
 
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-      <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Collection</Bouton>
+      <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Ma boîte</Bouton>
       {cadragePhoto ? (
         <div style={{ padding: 12, borderRadius: 12, background: C.panneau, border: `1px solid ${C.bordure}` }}>
           <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 8, lineHeight: 1.5 }}>
@@ -8479,7 +8495,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
         </div>
       ) : (
         <div>
-          <PhotoBlobRecadree blob={obs.photo} zone={obs.cadrePhoto} alt={obs.nom} style={{ width: "100%", borderRadius: 12, display: "block", border: `1px solid ${C.bordure}`, boxShadow: "0 4px 14px rgba(0,0,0,.35)" }} />
+          <PhotoBlobRecadree blob={obs.photo} zone={obs.cadrePhoto} alt={obs.nom} style={{ width: "100%", maxHeight: "52vh", objectFit: "contain", background: "#0E120B", borderRadius: 12, display: "block", border: `1px solid ${C.bordure}`, boxShadow: "0 4px 14px rgba(0,0,0,.35)" }} />
           {obs.photo && (
             <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "center", flexWrap: "wrap" }}>
               <button onClick={() => { setCadreZone(obs.cadrePhoto || { x: 0.15, y: 0.15, w: 0.7, h: 0.7 }); setCadragePhoto(true); }}
@@ -8535,6 +8551,14 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
           </div>
         </div>
       )}
+
+      {/* v1.94 — Les deux actions courantes en haut (avant : tout en bas d'une longue page). */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {MUR_ACTIF && (murEtat === "ok"
+          ? <div style={{ flex: 2, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 44, borderRadius: 10, border: "1px solid #6F9450", background: "rgba(127,163,95,.12)", color: "#BFDDA0", fontFamily: sans, fontSize: 14, fontWeight: 700 }}>✓ Partagé au mur</div>
+          : <Bouton variante="primaire" onClick={allerAuPartage} style={{ flex: 2 }}>📤 Partager au mur</Bouton>)}
+        <Bouton variante="secondaire" onClick={() => onModifier && onModifier(obs.id)} style={{ flex: 1 }}>✏️ Modifier</Bouton>
+      </div>
 
       <div style={ligne}><span style={cle}>Date</span><span style={val}>{formatDate(obs.date)}</span></div>
       <div style={ligne}><span style={cle}>Biotope</span><span style={val}>{biotopeOf(obs.biotope).emoji} {biotopeOf(obs.biotope).label}</span></div>
@@ -8594,17 +8618,12 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
         <BadgeContact nom={obs.nom} nomSci={obs.nomSci} contact={obs.contact || (obs.fiche && obs.fiche.contact)} contactNote={obs.contactNote || (obs.fiche && obs.fiche.contact_note)} confiance={obs.confiance} style={{ marginTop: 8 }} />
       )}
 
-      {/* Passerelle science participative (OPIE + iNaturalist), repliable */}
-      {identifie && (
-        <div style={{ marginTop: 16 }}>
-          <SectionPliable titre="🔬 Contribuer à la science" ouvertParDefaut={!!enqueteOpiePour(obs)}>
-            <PasserelleInat obs={obs} />
-          </SectionPliable>
-        </div>
-      )}
+      {/* v1.94 — Tout ce qui suit est replié : la fiche tient en un écran, on déplie ce qu'on veut. */}
+      <div style={{ marginTop: 18 }} />
 
       {/* Fiche naturaliste */}
-      <div style={{ marginTop: 18 }}>
+      <SectionPliable titre="📖 En savoir plus sur l'espèce" resume={fiche ? "Fiche naturaliste prête" : (identifie ? "Description, habitat, période, un geste pour l'aider" : "Identifie d'abord ce spécimen")}>
+      <div>
         {!fiche && identifie && (
           <div style={{ padding: "14px 16px", background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid ${C.bordure}`, borderRadius: 12 }}>
             <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.ambreClair, marginBottom: 4 }}>📖 En savoir plus sur cette espèce</div>
@@ -8671,12 +8690,14 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
           </div>
         )}
       </div>
+      </SectionPliable>
 
       {/* Carte de collection */}
-      <div style={{ marginTop: 18 }}>
+      <SectionPliable titre="🃏 Carte de collection" ouvertParDefaut={cadrage}
+        resume={obs.carte ? `${palierRarete(obs.carte.rarete).nom} · touche pour la voir` : (identifie ? "Dans ton bestiaire (onglet Jeu)" : "Identifie d'abord ce spécimen")}>
+      <div>
         {obs.carte ? (
           <div>
-            <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 10 }}>🃏 Carte de collection</div>
             {cadrage ? (
               <div>
                 <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, marginBottom: 8, lineHeight: 1.45 }}>
@@ -8745,17 +8766,13 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
           </div>
         )}
       </div>
+      </SectionPliable>
 
       {/* Partage au mur commun */}
-      {MUR_ACTIF && (
-        <div style={{ marginTop: 18 }}>
-          {murEtat === "ok" ? (
-            <div style={{ padding: "12px 14px", background: "linear-gradient(#2C3623, #232B1D)", border: `1px solid #A8863A`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: C.papier, textAlign: "center" }}>
-              ✅ Partagé sur le mur de la bande !
-            </div>
-          ) : (
-            <div style={{ padding: "12px 14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
-              <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 8 }}>🌐 Mur commun</div>
+      {MUR_ACTIF && murEtat !== "ok" && (
+        <div ref={partageRef} style={{ scrollMarginTop: 70 }}>
+          <SectionPliable titre="📤 Partager au mur" ouvertParDefaut={ouvrirPartage} resume="Choisis la position et le cadrage, puis publie">
+            <div>
               {/* v1.77 — même ligne compacte que sur le mur, la ligue et les missions */}
               <LignePrenom etiquette="Tu publies en tant que" prenom={prenom} saisie={prenomSaisi} onSaisie={setPrenomSaisi} onValider={(v) => { setPrenomSaisi(v); if (v && onDefinirPrenom) onDefinirPrenom(v); }} style={{ marginBottom: 10 }} />
 
@@ -8845,20 +8862,26 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
                 Ta photo, l'espèce et le biotope seront visibles par toute la bande.{!obs.gps && " Cette observation n'a pas de position enregistrée."}
               </div>
             </div>
-          )}
+          </SectionPliable>
         </div>
+      )}
+
+      {/* Passerelle science participative (OPIE + iNaturalist), repliable */}
+      {identifie && (
+        <SectionPliable titre="🔬 Contribuer à la science" ouvertParDefaut={!!enqueteOpiePour(obs)} resume="iNaturalist, enquêtes de l'OPIE">
+          <PasserelleInat obs={obs} />
+        </SectionPliable>
       )}
 
       {/* Ajouter à mon profil public (collection partagée) */}
       {MUR_ACTIF && identifie && (
-        <div style={{ marginTop: 18 }}>
+        <SectionPliable titre="🏆 Mon profil de collectionneur" resume={profilEtat === "ok" ? "Espèce ajoutée à ton profil" : "Montrer cette espèce sur ton profil"}>
           {profilEtat === "ok" ? (
             <div style={{ padding: "12px 14px", background: "linear-gradient(#2C3623, #232B1D)", border: `1px solid #A8863A`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: C.papier, textAlign: "center" }}>
               ✅ Ajouté à ton profil de collectionneur !
             </div>
           ) : (
-            <div style={{ padding: "12px 14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10 }}>
-              <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 8 }}>🏆 Mon profil de collectionneur</div>
+            <div>
               {utilisateur ? (
                 <div>
                   <Bouton variante="primaire" onClick={ajouterProfil} disabled={profilEtat === "envoi"} style={{ width: "100%" }}>
@@ -8879,13 +8902,10 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
               )}
             </div>
           )}
-        </div>
+        </SectionPliable>
       )}
 
-      <div style={{ marginTop: 20 }}>
-        {!confirme && (
-          <Bouton variante="primaire" onClick={() => onModifier && onModifier(obs.id)} style={{ width: "100%", marginBottom: 10 }}>✏️ Modifier cette observation</Bouton>
-        )}
+      <div style={{ marginTop: 24, display: "flex", justifyContent: "center" }}>
         {confirme ? (
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <span style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, flex: 1 }}>Supprimer définitivement ?</span>
@@ -8893,7 +8913,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
             <Bouton variante="danger" onClick={() => onSupprimer(obs.id)}>Oui, supprimer</Bouton>
           </div>
         ) : (
-          <Bouton variante="danger" onClick={() => setConfirme(true)}>Supprimer cette observation</Bouton>
+          <button onClick={() => setConfirme(true)} className="bd-lien" style={{ color: "#D9907A" }}>🗑️ Supprimer cette observation</button>
         )}
       </div>
     </div>
@@ -9311,12 +9331,13 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
 
         {/* La bande */}
         {MUR_ACTIF && titreSection("La bande")}
-        {MUR_ACTIF && item("🏅", "Meilleurs chasseurs", "Le classement des trouvailles partagées", () => onAller("classement"), 0)}
+        {MUR_ACTIF && item("🏅", "Classement de la bande", "Les meilleurs chasseurs de la semaine et du mois", () => onAller("classement"), 0)}
         {MUR_ACTIF && item("💡", "Boîte à idées", "Proposer et voir les idées", () => onAller("idees"), ideesNouv)}
         {item("🎯", "Missions saisonnières", "Défis d'observation de la bande", () => onAller("missions"), missionsNouv)}
 
-        {/* Compte */}
-        {MUR_ACTIF && titreSection("Mon compte")}
+        {/* Compte — v1.94 : la sauvegarde y a sa place (avant, rangée au fond de l'Aide). */}
+        {titreSection("Mon compte")}
+        {item("💾", "Sauvegarde de ma boîte", "Exporter ou restaurer ta collection", () => onAller("sauvegarde"), 0)}
         {MUR_ACTIF && item("🎨", "Mon profil", "Emblème, titre, couleur, insecte fétiche", () => onAller("monprofil"), 0)}
         {MUR_ACTIF && item(utilisateur ? "🐛" : "👤", utilisateur ? "Ma collection publique" : "Se connecter", utilisateur ? "Tes espèces sur ton profil" : "Connexion facultative par email", () => onAller("connexion"), 0)}
 
@@ -9362,7 +9383,7 @@ function LignePrenom({ etiquette, prenom, saisie, onSaisie, onValider, alerte, s
       <input value={saisie} autoFocus={edition} onChange={(e) => onSaisie(e.target.value)}
         onBlur={() => { const v = (saisie || "").trim(); onValider(v); if (v) setEdition(false); }}
         placeholder="ex : Sylvain" maxLength={40}
-        style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
+        style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
     </div>
   );
 }
@@ -10346,8 +10367,15 @@ function etatSauvegarde() {
   }
 }
 
-function Aide({ onFermer, onImportTermine }) {
+function Aide({ onFermer, onImportTermine, ouvrirSauvegarde }) {
   const p = { fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.6, marginBottom: 12 };
+  // v1.94 — Le menu « Sauvegarde de ma boîte » ouvre directement cette section.
+  const sauvegardeRef = useRef(null);
+  useEffect(() => {
+    if (!ouvrirSauvegarde) return;
+    const t = setTimeout(() => { try { sauvegardeRef.current && sauvegardeRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); } catch {} }, 120);
+    return () => clearTimeout(t);
+  }, []);
   const t = { fontFamily: sans, fontSize: 15, fontWeight: 800, color: C.ambre, margin: "18px 0 6px" };
   const [exportEtat, setExportEtat] = useState("");
   const [importEtat, setImportEtat] = useState("");
@@ -10391,6 +10419,53 @@ function Aide({ onFermer, onImportTermine }) {
     } catch {
       setImportEtat("Fichier invalide — est-ce bien une sauvegarde BioDex ?");
     }
+  }
+  // v1.94 — Le bloc de sauvegarde sert à deux endroits : l'Aide et la page « Sauvegarde de ma boîte » du menu.
+  const blocSauvegarde = (<React.Fragment>
+        <div style={t}>💾 Stockage & sauvegarde</div>
+        <p style={p}>
+          Tes observations sont sauvegardées sur ton téléphone (photos jusqu'à 2560 px). Elles ne sont PAS synchronisées entre appareils, et vider les données du navigateur les efface : sauvegarde régulièrement ! L'appli te le rappelle avec une bannière 💾 quand ça fait un moment ou que tu as ajouté beaucoup d'observations. L'export crée un fichier .json à ranger à l'abri (Drive, PC…). L'import restaure une sauvegarde — les observations déjà présentes sont conservées, les doublons écrasés proprement.
+        </p>
+        {/* État de la dernière sauvegarde */}
+        {(() => {
+          const coul = sauve.niveau === "alerte" ? { bord: "#8A4A2E", fond: "linear-gradient(#2E1F16, #241812)", txt: "#E8A07E", ico: "⚠️" }
+                     : sauve.niveau === "attention" ? { bord: "#8A7A2E", fond: "linear-gradient(#2A2417, #201B12)", txt: "#E4C878", ico: "💾" }
+                     : { bord: "#3E5A2E", fond: "linear-gradient(#1A2216, #161C12)", txt: "#A8C97E", ico: "✅" };
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 10, background: coul.fond, border: `1px solid ${coul.bord}`, marginTop: 12 }}>
+              <span style={{ fontSize: 19 }}>{coul.ico}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: coul.txt }}>
+                  {sauve.jamais ? "Aucune sauvegarde effectuée" : `Dernière sauvegarde : ${sauve.quand}`}
+                </div>
+                <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 2, lineHeight: 1.45 }}>
+                  {sauve.jamais
+                    ? "Ta collection n'existe que sur cet appareil. Exporte-la pour ne rien risquer !"
+                    : `Le ${sauve.dateLisible}${sauve.count ? ` · ${sauve.count} observation${sauve.count > 1 ? "s" : ""} sauvegardée${sauve.count > 1 ? "s" : ""}` : ""}.`}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 8, marginTop: 10 }}>
+          <Bouton variante="primaire" onClick={exporter} style={{ flex: 1 }}>📤 Exporter</Bouton>
+          <div style={{ position: "relative", flex: 1 }}>
+            <Bouton onClick={() => {}} style={{ width: "100%" }}>📥 Importer</Bouton>
+            <input type="file" accept=".json,application/json" onChange={importer}
+              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }} />
+          </div>
+        </div>
+        {exportEtat && <p style={{ ...p, color: C.lichen, marginBottom: 4 }}>{exportEtat}</p>}
+        {importEtat && <p style={{ ...p, color: C.lichen, marginBottom: 4 }}>{importEtat}</p>}
+  </React.Fragment>);
+  if (ouvrirSauvegarde) {
+    return (
+      <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+        <Bouton onClick={onFermer} style={{ marginBottom: 14 }}>← Retour</Bouton>
+        {blocSauvegarde}
+      </div>
+    );
   }
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
@@ -10454,7 +10529,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🗺️ La carte</div>
         <p style={p}>
-          Pour l'espèce, tu dois faire un choix explicite : soit tu l'identifies, soit tu indiques « Je ne sais pas » pour demander de l'aide à la bande (elle apparaîtra alors avec le badge ❓ À identifier). Ne pas savoir est parfaitement normal en entomologie — ce qu'on évite, c'est l'observation oubliée sans nom. Deux autres informations sont obligatoires : la <b>date</b> et le <b>biotope</b>. Ce sont elles qui alimentent tes statistiques (saisonnalité, milieux) et la carte — sans elles, les analyses seraient faussées. Le reste (météo, taille, moment, notes) est facultatif. Sur le mur, c'est la date d'observation qui s'affiche, pas celle du partage : tu peux donc publier sans souci une trouvaille faite il y a plusieurs semaines, un petit ↩ signalera simplement le partage différé. Quand tu prends une photo ou que tu en choisis une dans ta galerie, BioDex lit la date de prise de vue et le lieu directement dans le fichier, et t'affiche sous la photo ce qui a été récupéré (encart vert). Si la photo ne contient pas ces informations (encart orange), la section « 📅 Quand & où » s'ouvre toute seule pour que tu les saisisses. Si ces informations manquent (fréquent pour une photo reçue par messagerie ou une capture d'écran), un avertissement s'affiche au moment de compléter l'observation : tu peux alors corriger la date à la main et placer le lieu sur la carte. L'onglet Carte affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche (la zone sensible est plus large que le point, pour viser sans effort). Quand plusieurs trouvailles sont proches, elles se regroupent en une bulle avec un compteur — touche-la ou zoome pour les séparer. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, chaque personne choisit au moment de partager le niveau de précision de sa position : exacte (point ambré), approximative (~1 km, zone verte visible en zoomant) ou masquée (pas de point). Chacun est ainsi libre de montrer ou non l'endroit exact de sa trouvaille. La carte nécessite du réseau.
+          Pour l'espèce, tu dois faire un choix explicite : soit tu l'identifies, soit tu indiques « Je ne sais pas » pour demander de l'aide à la bande (elle apparaîtra alors avec le badge ❓ À identifier). Ne pas savoir est parfaitement normal en entomologie — ce qu'on évite, c'est l'observation oubliée sans nom. Deux autres informations sont obligatoires : la <b>date</b> et le <b>biotope</b>. Ce sont elles qui alimentent tes statistiques (saisonnalité, milieux) et la carte — sans elles, les analyses seraient faussées. Le reste (météo, taille, moment, notes) est facultatif. Sur le mur, c'est la date d'observation qui s'affiche, pas celle du partage : tu peux donc publier sans souci une trouvaille faite il y a plusieurs semaines, un petit ↩ signalera simplement le partage différé. Quand tu prends une photo ou que tu en choisis une dans ta galerie, BioDex lit la date de prise de vue et le lieu directement dans le fichier, et t'affiche sous la photo ce qui a été récupéré (encart vert). Si la photo ne contient pas ces informations (encart orange), la section « 📅 Quand & où » s'ouvre toute seule pour que tu les saisisses. Si ces informations manquent (fréquent pour une photo reçue par messagerie ou une capture d'écran), un avertissement s'affiche au moment de compléter l'observation : tu peux alors corriger la date à la main et placer le lieu sur la carte. L'onglet Lieux affiche tes observations positionnées sur une carte OpenStreetMap. Touche un point ambré pour voir la miniature du spécimen et ouvrir sa fiche (la zone sensible est plus large que le point, pour viser sans effort). Quand plusieurs trouvailles sont proches, elles se regroupent en une bulle avec un compteur — touche-la ou zoome pour les séparer. En haut, bascule entre « 🗃️ Ma carte » (tes observations, position précise) et « 🌐 La bande » (les trouvailles partagées au mur par tout le monde). Sur la carte de la bande, chaque personne choisit au moment de partager le niveau de précision de sa position : exacte (point ambré), approximative (~1 km, zone verte visible en zoomant) ou masquée (pas de point). Chacun est ainsi libre de montrer ou non l'endroit exact de sa trouvaille. La carte nécessite du réseau.
         </p>
         <div style={t}>📝 Brouillon automatique</div>
         <p style={p}>
@@ -10520,47 +10595,13 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
       </SectionPliable>
 
-      <SectionPliable titre="⚙️ Réglages & appli">
+      <div ref={sauvegardeRef} style={{ scrollMarginTop: 70 }} />
+      <SectionPliable titre="⚙️ Réglages & sauvegarde" ouvertParDefaut={!!ouvrirSauvegarde}>
         <div style={t}>📲 Installer l'appli</div>
         <p style={p}>
           Quand une bannière « Installe BioDex » apparaît en haut, touche « Installer » : c'est le plus simple. Sinon, dans le menu de ton navigateur, choisis « Ajouter à l'écran d'accueil » (ou « Installer l'application »). BioDex se lance alors comme une vraie appli, et fonctionne même hors connexion — pratique en pleine nature. Seule la météo auto nécessite du réseau. Quand une nouvelle version est déployée, une bannière « Nouvelle version disponible » apparaît en haut à l'ouverture : touche « Mettre à jour » et l'appli se recharge à jour, sans manipulation de cache.
         </p>
-        <div style={t}>💾 Stockage & sauvegarde</div>
-        <p style={p}>
-          Tes observations sont sauvegardées sur ton téléphone (photos jusqu'à 2560 px). Elles ne sont PAS synchronisées entre appareils, et vider les données du navigateur les efface : sauvegarde régulièrement ! L'appli te le rappelle avec une bannière 💾 quand ça fait un moment ou que tu as ajouté beaucoup d'observations. L'export crée un fichier .json à ranger à l'abri (Drive, PC…). L'import restaure une sauvegarde — les observations déjà présentes sont conservées, les doublons écrasés proprement.
-        </p>
-        {/* État de la dernière sauvegarde */}
-        {(() => {
-          const coul = sauve.niveau === "alerte" ? { bord: "#8A4A2E", fond: "linear-gradient(#2E1F16, #241812)", txt: "#E8A07E", ico: "⚠️" }
-                     : sauve.niveau === "attention" ? { bord: "#8A7A2E", fond: "linear-gradient(#2A2417, #201B12)", txt: "#E4C878", ico: "💾" }
-                     : { bord: "#3E5A2E", fond: "linear-gradient(#1A2216, #161C12)", txt: "#A8C97E", ico: "✅" };
-          return (
-            <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 10, background: coul.fond, border: `1px solid ${coul.bord}`, marginTop: 12 }}>
-              <span style={{ fontSize: 19 }}>{coul.ico}</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: coul.txt }}>
-                  {sauve.jamais ? "Aucune sauvegarde effectuée" : `Dernière sauvegarde : ${sauve.quand}`}
-                </div>
-                <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 2, lineHeight: 1.45 }}>
-                  {sauve.jamais
-                    ? "Ta collection n'existe que sur cet appareil. Exporte-la pour ne rien risquer !"
-                    : `Le ${sauve.dateLisible}${sauve.count ? ` · ${sauve.count} observation${sauve.count > 1 ? "s" : ""} sauvegardée${sauve.count > 1 ? "s" : ""}` : ""}.`}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-
-        <div style={{ display: "flex", gap: 10, marginBottom: 8, marginTop: 10 }}>
-          <Bouton variante="primaire" onClick={exporter} style={{ flex: 1 }}>📤 Exporter</Bouton>
-          <div style={{ position: "relative", flex: 1 }}>
-            <Bouton onClick={() => {}} style={{ width: "100%" }}>📥 Importer</Bouton>
-            <input type="file" accept=".json,application/json" onChange={importer}
-              style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }} />
-          </div>
-        </div>
-        {exportEtat && <p style={{ ...p, color: C.lichen, marginBottom: 4 }}>{exportEtat}</p>}
-        {importEtat && <p style={{ ...p, color: C.lichen, marginBottom: 4 }}>{importEtat}</p>}
+        {blocSauvegarde}
       </SectionPliable>
 
       <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 20, textAlign: "center" }}>BioDex {VERSION} · fait avec 🐛 pour la bande</div>
@@ -13260,6 +13301,10 @@ function BioDex() {
   const [centreOuvert, setCentreOuvert] = useState(false);
   // v1.92 — Suggestion du relecteur ouverte (carte), et bandeaux masqués pour la journée.
   const [suggestionOuverte, setSuggestionOuverte] = useState(null);
+  // v1.94 — Proposition de partage juste après « Épingler », et ouverture de la fiche sur le partage.
+  const [partagePropose, setPartagePropose] = useState(null);
+  const [partageDemande, setPartageDemande] = useState(false);
+  useEffect(() => { if (vue !== "detail" && partageDemande) setPartageDemande(false); }, [vue]);
   const [suggMasquees, setSuggMasquees] = useState(() => {
     try { const v = JSON.parse(localStorage.getItem("biodex_sugg_masquees") || "{}"); return v.jour === new Date().toDateString() ? v.ids || [] : []; } catch { return []; }
   });
@@ -13471,6 +13516,21 @@ function BioDex() {
       setObservations((prev) => [obs, ...prev]);
       setVue("collection");
       verifierStockage();
+      // v1.94 — Le moment où on a envie de partager, c'est maintenant : on le propose
+      // (avant, le bouton était tout en bas de la fiche). « Ne plus proposer » est respecté.
+      let proposer = MUR_ACTIF;
+      try { if (localStorage.getItem("biodex_proposer_partage") === "non") proposer = false; } catch {}
+      // On attend qu'aucune célébration (« Nouvelle espèce ! », « Nouvelle carte débloquée ! »)
+      // ne soit à l'écran, pour ne pas les recouvrir. Au bout de 25 s, on renonce.
+      if (proposer) {
+        let essais = 0;
+        const tenter = () => {
+          essais++;
+          if ((window.__bdCelebrations || 0) > 0 && essais < 60) { setTimeout(tenter, 400); return; }
+          if (essais < 60) setPartagePropose(obs);
+        };
+        setTimeout(tenter, nouvelle ? 1200 : 500);
+      }
       if (nouvelle) {
         const rar = litCacheRarete(cle);
         const niv = rar && typeof rar.count === "number" ? niveauRarete(rar.count) : null;
@@ -13915,7 +13975,7 @@ function BioDex() {
         // « Trier » n'apparaît que s'il y a des photos en attente (ou si on y est déjà) :
         // sinon il pointe vers un écran vide et prend une place précieuse sur la barre.
         const montrerTrier = aTrier.length > 0 || vue === "atrier";
-        const items = [["collection", "boite", "Boîte"], ...(montrerTrier ? [["atrier", "trier", "Trier"]] : []), ["cartes", "jeu", "Jeu"], ...(MUR_ACTIF ? [["mur", "mur", "Mur"]] : []), ["carte", "carte", "Carte"], ["stats", "stats", "Stats"]];
+        const items = [["collection", "boite", "Boîte"], ...(montrerTrier ? [["atrier", "trier", "Trier"]] : []), ["cartes", "jeu", "Jeu"], ...(MUR_ACTIF ? [["mur", "mur", "Mur"]] : []), ["carte", "carte", "Lieux"], ["stats", "stats", "Stats"]];
         return (
           <React.Fragment>
             <nav className="bd-nav" aria-label="Navigation principale">
@@ -14077,6 +14137,7 @@ function BioDex() {
       )}
 
       {vue === "aide" && <Aide onFermer={() => setVue("collection")} onImportTermine={chargerObservations} />}
+      {vue === "sauvegarde" && <Aide ouvrirSauvegarde onFermer={() => setVue("collection")} onImportTermine={chargerObservations} />}
       {vue === "connexion" && <Connexion onFermer={() => setVue("collection")} utilisateur={utilisateur} onDeconnexion={deconnexion} />}
       {vue === "nouvelle" && <NouvelleObservation observations={observations} onSauver={sauverObservation} onAnnuler={() => setVue("collection")} onMettreDeCote={mettreDeCote} />}
       {vue === "edition" && selection && (
@@ -14091,9 +14152,36 @@ function BioDex() {
       {vue === "carte" && (
         <Carte observations={triees} onOuvrirFiche={(id) => { setSelectionId(id); setVue("detail"); }} />
       )}
+      {partagePropose && vue === "collection" && (
+        <div className="bd-sugg-voile" onClick={() => setPartagePropose(null)}>
+          <div className="bd-sugg-feuille" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Partager au mur">
+            <div className="bd-sugg-poignee" />
+            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}>
+              <PhotoBlobRecadree blob={partagePropose.photo} zone={partagePropose.cadrePhoto} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 12, flexShrink: 0 }} />
+              <div>
+                <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier }}>📌 Épinglée dans ta boîte !</div>
+                <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginTop: 3 }}>
+                  {partagePropose.nom ? <span>Montrer ta <b style={{ color: C.ambreClair }}>{partagePropose.nom}</b> à la bande ?</span> : "Demander à la bande de t'aider à l'identifier ?"}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Bouton onClick={() => setPartagePropose(null)} style={{ flex: 1 }}>Plus tard</Bouton>
+              <Bouton variante="primaire" style={{ flex: 2 }} onClick={() => { const o = partagePropose; setPartagePropose(null); setSelectionId(o.id); setPartageDemande(true); setVue("detail"); }}>
+                📤 Partager au mur
+              </Bouton>
+            </div>
+            <button className="bd-lien" style={{ display: "block", margin: "12px auto 0", color: C.papierSombre }}
+              onClick={() => { try { localStorage.setItem("biodex_proposer_partage", "non"); } catch {} setPartagePropose(null); }}>
+              Ne plus me le proposer
+            </button>
+          </div>
+        </div>
+      )}
       {vue === "detail" && selection && (
-        <Detail obs={selection} observations={observations}
-          onFermer={() => { setSelectionId(null); setVue("collection"); }}
+        <Detail key={selection.id + (partageDemande ? "-p" : "")} obs={selection} observations={observations}
+          partageDemande={partageDemande}
+          onFermer={() => { setSelectionId(null); setPartageDemande(false); setVue("collection"); }}
           onMajFiche={majFiche}
           onMajCarte={majCarte}
           onMajCadre={majCadre} onMajCadrePhoto={majCadrePhoto}
@@ -14101,7 +14189,7 @@ function BioDex() {
           onDefinirPrenom={definirPrenom}
           utilisateur={utilisateur}
           onAllerConnexion={() => setVue("connexion")}
-          onModifier={(id) => { setSelectionId(id); setVue("edition"); }}
+          onModifier={(id) => { setSelectionId(id); setPartageDemande(false); setVue("edition"); }}
           onSupprimer={supprimerObservation} />
       )}
 
@@ -14285,13 +14373,13 @@ function BioDex() {
           )}
 
           {chargement && (
-            <div style={{ textAlign: "center", padding: 40, fontFamily: sans, color: C.papierSombre }}>Ouverture du tiroir…</div>
+            <div style={{ textAlign: "center", padding: 40, fontFamily: sans, color: C.papierSombre }}>Ouverture de ta boîte…</div>
           )}
 
           {!chargement && triees.length === 0 && aTrier.length === 0 && !erreurGlobale && (
             <div style={{ textAlign: "center", padding: "56px 24px", border: `1px solid ${C.bordure}`, borderRadius: 14, background: "linear-gradient(#191F15, #14180F)", boxShadow: "0 2px 10px rgba(0,0,0,.25) inset" }}>
               <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.9 }}>🦋</div>
-              <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier, marginBottom: 6 }}>Le tiroir est vide</div>
+              <div style={{ fontFamily: serif, fontSize: 19, fontWeight: 600, color: C.papier, marginBottom: 6 }}>Ta boîte est vide</div>
               <div style={{ fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.5 }}>Appuie sur le bouton doré <b style={{ color: C.ambre }}>＋</b> en bas à droite pour épingler ta première observation.</div>
             </div>
           )}
