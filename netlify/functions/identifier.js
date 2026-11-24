@@ -117,9 +117,17 @@ async function rpc(nom, corps) {
     headers: enTetesSb,
     body: JSON.stringify(corps),
   });
-  if (!r.ok) throw new Error("rpc " + nom + " : " + r.status);
+  if (!r.ok) {
+    let detail = "";
+    try { const j = await r.json(); detail = j.message || j.msg || j.error || ""; } catch {}
+    throw new Error("rpc " + nom + " : " + r.status + (detail ? " " + String(detail).slice(0, 60) : ""));
+  }
   return r.json();
 }
+
+// État du compteur, renvoyé dans chaque réponse (« budget ») : jamais de secret, juste
+// « inactif », « ok » ou le code d'erreur de Supabase. Sert à voir s'il fonctionne.
+let etatBudget = BUDGET_ACTIF ? "non essayé" : "inactif (variables absentes)";
 
 // Réserve le coût estimé. Renvoie null si le budget du mois est épuisé.
 async function reserverBudget(micro) {
@@ -127,8 +135,10 @@ async function reserverBudget(micro) {
   try {
     const d = await rpc("reserver_budget_ia", { p_micro: micro });
     const l = Array.isArray(d) ? d[0] : d;
+    etatBudget = "ok";
     return l && l.autorise ? l : null;
   } catch (e) {
+    etatBudget = "erreur : " + String(e.message || e).slice(0, 80);
     // Si Supabase est injoignable, on laisse passer : le plafond du workspace
     // reste derrière. Couper l'appli parce que le compteur est en panne
     // serait pire que le risque budgétaire.
@@ -505,7 +515,7 @@ exports.handler = async (event) => {
     const source = estIdentification ? (cheminRapide ? "bioclip" : bio ? "claude+bioclip" : "claude") : undefined;
     if (source) console.log("identification :", source, bio ? "p=" + bio.top[0].p : "");
 
-    return { statusCode: 200, headers: enTetes, body: JSON.stringify({ ok: true, mode, resultat, source }) };
+    return { statusCode: 200, headers: enTetes, body: JSON.stringify({ ok: true, mode, resultat, source, budget: etatBudget }) };
   } catch (e) {
     // Échec réseau ou délai dépassé : on ne sait pas si Anthropic a facturé.
     // On rend la moitié de la réservation — prudent sans être punitif.
