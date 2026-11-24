@@ -292,6 +292,38 @@
   .bd-carr-vue { position: relative; }
   .bd-carr-vue.replie { max-height: 124px; overflow: hidden;
     -webkit-mask-image: linear-gradient(#000 62%, transparent); mask-image: linear-gradient(#000 62%, transparent); }
+  /* v1.92 — Suggestions du relecteur */
+  .bd-sugg-bandeau { display: flex; gap: 10px; align-items: center; padding: 10px 8px 10px 12px; border-radius: 14px; margin-bottom: 12px;
+    background: linear-gradient(135deg, #2B2214, #1E1A10); border: 1px solid rgba(227,154,91,.55); box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+  .bd-sugg-vig { width: 46px; height: 46px; border-radius: 10px; object-fit: cover; flex-shrink: 0; outline: 2px solid rgba(227,154,91,.45); background: #232B1D; }
+  .bd-sugg-voile { position: fixed; inset: 0; z-index: 1300; background: rgba(5,7,4,.72); display: flex; align-items: flex-end; justify-content: center; animation: bdFondu .2s ease; }
+  .bd-sugg-feuille { width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box;
+    background: linear-gradient(#1F2719, #161C12); border-radius: 22px 22px 0 0; border-top: 1px solid rgba(201,162,75,.4);
+    padding: 10px 16px calc(18px + env(safe-area-inset-bottom)); animation: bdMonte .28s cubic-bezier(.2,.8,.2,1); }
+  .bd-sugg-poignee { width: 40px; height: 4px; border-radius: 2px; background: #4A5640; margin: 0 auto 12px; }
+  .bd-sugg-photo { width: 100%; max-height: 230px; object-fit: cover; border-radius: 14px; margin: 10px 0 12px; display: block; }
+  .bd-sugg-nom { flex: 1; min-width: 0; padding: 10px 11px; border-radius: 12px; background: #151A11; border: 1px solid #3A4531; }
+  .bd-sugg-nom.prop { border-color: rgba(201,162,75,.6); background: linear-gradient(#2A2617, #1E1C12); }
+  .bd-sugg-nom small { display: block; font: 700 10.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: .6px; text-transform: uppercase; color: #A8A48F; margin-bottom: 4px; }
+  .bd-sugg-nom.prop small { color: #E4C878; }
+  .bd-sugg-nom b { display: block; font-family: 'Fraunces', Georgia, serif; font-size: 16px; line-height: 1.2; color: #EDE6D2; overflow-wrap: anywhere; }
+  .bd-sugg-nom i { display: block; font-family: Georgia, serif; font-size: 13px; color: #C9BF9F; margin-top: 2px; overflow-wrap: anywhere; }
+  .bd-sugg-nom em { display: block; font-style: normal; font: 11.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #A8A48F; margin-top: 4px; }
+  .bd-sugg-mot { margin: 12px 0 14px; padding: 11px 13px; border-radius: 12px; background: #151A11; border-left: 3px solid #E39A5B;
+    font: 13.5px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #E2DBC6; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .bd-sugg-deux { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .bd-sugg-deux button { min-height: 54px; border-radius: 12px; border: 1px solid rgba(201,162,75,.6); background: linear-gradient(#2A3322, #20281A); color: #E4C878;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px 8px; cursor: pointer;
+    font: 700 14px/1.15 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; }
+  .bd-sugg-deux button span { font-weight: 500; font-size: 11.5px; color: #A8A48F; }
+  .bd-sugg-deux button:active { transform: scale(.97); }
+  .bd-sugg-deux button:disabled { opacity: .55; cursor: default; }
+  .bd-sugg-merci { text-align: center; padding: 14px 6px 4px; }
+  .bd-sugg-merci h3 { font-family: 'Fraunces', Georgia, serif; font-size: 20px; margin: 8px 0 6px; color: #EDE6D2; }
+  .bd-sugg-merci p { font: 13.5px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #D6CEB6; margin: 0 0 14px; }
+  @keyframes bdMonte { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes bdFondu { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .bd-sugg-voile, .bd-sugg-feuille { animation: none; } }
   /* v1.90 — Stats : bandeau de synthèse */
   .bd-synth { position: relative; overflow: hidden; border-radius: 16px; padding: 18px 16px 14px; margin-bottom: 14px;
     background: radial-gradient(120% 90% at 0% 0%, rgba(201,162,75,.18), transparent 60%), linear-gradient(#232C1C, #191F14);
@@ -426,7 +458,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.91";
+const VERSION = "v1.92";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1931,6 +1963,10 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.92", date: "2026-11", items: [
+    "🦊 Le relecteur peut te souffler une idée. Quand tu as nommé une observation toi-même, le relecteur de Goupil peut te proposer un autre nom s'il est très sûr de lui. C'est privé : tu es seul·e à le voir. Un bandeau doux te prévient et la suggestion reste dans la cloche. Tu réponds « Oui, je corrige » ou « Non, je garde mon nom » : les deux réponses aident autant.",
+    "📜 Si tu acceptes, ton observation prend le nouveau nom, sur le mur comme dans ta boîte. L'ancien nom reste dans l'historique de la fiche.",
+  ] },
   { v: "1.91", date: "2026-11", items: [
     "🖼️ Nouvelle mise en page de la Boîte. Ta collection s'affiche en mosaïque, 3 photos par ligne, et elle est rangée par mois (« Novembre 2026 · 7 »). Tu préfères les étiquettes épinglées ? Choisis « Étiquettes » dans le bouton des filtres, à côté de la recherche.",
     "🔍 Recherche, filtres et import tiennent maintenant sur une seule ligne, juste au-dessus de ta collection.",
@@ -2469,8 +2505,46 @@ async function calculerNotifications(prenom) {
   const versionRecente = NOUVEAUTES.length ? NOUVEAUTES[0].v : "";
   const nouvelleVersion = versionRecente && vuVersion !== versionRecente ? 1 : 0;
 
-  const total = murNouveaux + ideesNouvelles + reactionsRecues + commentairesRecus + defisSubis + nouvelleVersion;
-  return { total, echecReseau, murNouveaux, ideesNouvelles, reactionsRecues, reactionsTotal, commentairesRecus, defisSubis, nouvelleVersion, versionRecente, murDetail, ideesDetail, reactionsDetail, commentairesDetail, defisDetail };
+  // 5) v1.92 — Suggestions du relecteur (privées). Seules celles pas encore ouvertes comptent.
+  const suggestions = await chargerSuggestions();
+  const suggestionsNouvelles = suggestions.filter((s) => s.statut === "envoyee").length;
+
+  const total = murNouveaux + ideesNouvelles + reactionsRecues + commentairesRecus + defisSubis + nouvelleVersion + suggestionsNouvelles;
+  return { total, echecReseau, murNouveaux, ideesNouvelles, reactionsRecues, reactionsTotal, commentairesRecus, defisSubis, nouvelleVersion, versionRecente, murDetail, ideesDetail, reactionsDetail, commentairesDetail, defisDetail, suggestions, suggestionsNouvelles };
+}
+
+// ---------- v1.92 — Suggestions du relecteur Goupil ----------
+// Une suggestion est PRIVÉE : la table n'est lisible que par l'auteur du post (RLS).
+// On ne crée pas d'identité juste pour regarder : sans session, il n'y a forcément
+// aucune suggestion (elles visent le propriétaire d'un post).
+async function chargerSuggestions() {
+  const sb = clientSupabase();
+  if (!sb || !sb.auth) return [];
+  try {
+    const { data: s } = await sb.auth.getSession();
+    if (!s || !s.session) return [];
+    majMonId(s.session.user);
+    const { data, error } = await avecDelai(sb.from("suggestions")
+      .select("id, created_at, post_id, owner_id, annonce, annonce_sci, texte, propose_rang, propose_sci, propose_fr, propose_famille, propose_ordre, statut, posts(photo_url, date_obs, espece, espece_sci)")
+      .in("statut", ["envoyee", "vue"])
+      .order("created_at", { ascending: false }).limit(20), 15000, "chargerSuggestions");
+    if (error) { noterErreur("chargerSuggestions", error); return []; }
+    // Un admin peut lire toutes les lignes (RLS) : on ne garde que les SIENNES.
+    return (data || []).filter((x) => x.owner_id && x.owner_id === _monId);
+  } catch (e) { noterErreur("chargerSuggestions", e); return []; }
+}
+async function marquerSuggestionVue(id) {
+  const sb = clientSupabase();
+  if (!sb) return;
+  try { await sb.rpc("marquer_suggestion_vue", { p_id: id }); } catch (e) { noterErreur("marquerSuggestionVue", e); }
+}
+async function repondreSuggestion(id, reponse) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service non configuré");
+  const { data, error } = await avecDelai(sb.rpc("repondre_suggestion", { p_id: id, p_reponse: reponse }), 15000, "repondreSuggestion");
+  if (error) throw erreurSupabase("repondreSuggestion", error, "Réponse impossible pour le moment");
+  if (!data || !data.ok) throw new Error(data && data.raison === "introuvable" ? "Cette suggestion n'est plus active." : "Réponse impossible pour le moment");
+  return data;
 }
 
 // Récupère la date de création du post le plus récent (léger, pour la pastille "nouveau")
@@ -8329,6 +8403,17 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
           <span style={val}>Non enregistrée</span>
         )}
       </div>
+      {/* v1.92 — Historique des noms (après une idée du relecteur acceptée). */}
+      {Array.isArray(obs.historiqueNoms) && obs.historiqueNoms.length > 0 && (
+        <div style={{ padding: "10px 0", fontFamily: sans, fontSize: 13, color: C.papierSombre, lineHeight: 1.5, borderBottom: `1px solid ${C.bordure}` }}>
+          {obs.historiqueNoms.map((h, i) => (
+            <div key={i}>
+              📜 Avant : <b style={{ color: C.papier, fontWeight: 600 }}>{h.nom || h.nomSci || "sans nom"}</b>{h.nom && h.nomSci ? <i> ({h.nomSci})</i> : null}
+              {" "}· changé le {new Date(h.le).toLocaleDateString("fr-FR")}{h.par === "relecteur" ? " sur une idée du relecteur" : ""}
+            </div>
+          ))}
+        </div>
+      )}
       {obs.notes && (
         <div style={{ padding: "12px 0", fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.5 }}>
           <div style={{ color: C.lichen, fontWeight: 600, marginBottom: 4 }}>Notes de terrain</div>
@@ -8748,7 +8833,130 @@ function AlerteLibKo() {
   );
 }
 
-function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees, onAllerLigue }) {
+// ---------- v1.92 — Suggestions du relecteur : bandeau d'accueil + carte ----------
+// Règle de ton (décision de Sylvain) : la suggestion est privée, aucun mot qui accuse,
+// et « garder son nom » est présenté comme une réponse aussi bonne que « corriger ».
+function nomSuggestion(s) {
+  return s.propose_fr || s.propose_sci || "";
+}
+function BandeauSuggestion({ s, onVoir, onMasquer }) {
+  const nom = (s.annonce || (s.posts && s.posts.espece) || "ton observation").trim();
+  return (
+    <div className="bd-sugg-bandeau">
+      {s.posts && s.posts.photo_url
+        ? <img className="bd-sugg-vig" src={s.posts.photo_url} alt="" loading="lazy" />
+        : <span className="bd-sugg-vig" style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🦊</span>}
+      <div style={{ flex: 1, minWidth: 0, fontFamily: sans, fontSize: 13.5, lineHeight: 1.35, color: C.papier }}>
+        🦊 Le relecteur a une idée sur ta <b style={{ color: "#F2C48F" }}>{nom}</b>
+        <span style={{ display: "block", color: C.papierSombre, fontSize: 12, marginTop: 2 }}>Rien d'obligatoire : c'est toi qui décides.</span>
+      </div>
+      <Bouton variante="primaire" onClick={onVoir} style={{ minHeight: 36, padding: "6px 12px", fontSize: 13 }}>Voir</Bouton>
+      <button onClick={onMasquer} aria-label="Plus tard" style={{ background: "none", border: "none", color: C.papierSombre, fontSize: 20, cursor: "pointer", padding: "0 2px" }}>×</button>
+    </div>
+  );
+}
+
+function CarteSuggestion({ s, onFermer, onRepondue, onVoirFiche }) {
+  const [etat, setEtat] = useState("question"); // question | envoi | acceptee | refusee
+  const [erreur, setErreur] = useState("");
+  const espece = s.propose_rang === "espece";
+  const nomPropose = nomSuggestion(s);
+  const annonce = s.annonce || (s.posts && s.posts.espece) || "";
+  const annonceSci = s.annonce_sci || (s.posts && s.posts.espece_sci) || "";
+  // Ouvrir la carte = l'avoir vue (une seule fois).
+  useEffect(() => { if (s.statut === "envoyee") marquerSuggestionVue(s.id); }, [s.id]);
+  // Échap ferme la feuille.
+  useEffect(() => {
+    const k = (e) => { if (e.key === "Escape") onFermer(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, []);
+
+  async function repondre(reponse) {
+    setEtat("envoi"); setErreur("");
+    try {
+      const r = await repondreSuggestion(s.id, reponse);
+      setEtat(reponse);
+      if (onRepondue) onRepondue(s, r);
+    } catch (e) {
+      setErreur(e.message || "Réponse impossible pour le moment. Réessaie plus tard.");
+      setEtat("question");
+    }
+  }
+
+  const sousTitreProp = s.propose_rang === "espece"
+    ? (s.propose_famille ? `Famille des ${s.propose_famille}` : "")
+    : s.propose_rang === "famille" ? "Une famille, pas encore une espèce" : "Un ordre, pas encore une espèce";
+
+  return (
+    <div className="bd-sugg-voile" onClick={etat === "envoi" ? undefined : onFermer}>
+      <div className="bd-sugg-feuille" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Une idée du relecteur">
+        <div className="bd-sugg-poignee" />
+        {(etat === "question" || etat === "envoi") && (
+          <React.Fragment>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: sans, fontSize: 11.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: "#F2C48F" }}>
+              🦊 Une idée du relecteur
+              <span style={{ marginLeft: "auto", color: C.papierSombre, fontWeight: 600, letterSpacing: 0, textTransform: "none", fontSize: 12 }}>🔒 Privé</span>
+            </div>
+            {s.posts && s.posts.photo_url && <img className="bd-sugg-photo" src={s.posts.photo_url} alt={annonce} />}
+            <div style={{ display: "flex", gap: 8, alignItems: "stretch", marginTop: s.posts && s.posts.photo_url ? 0 : 12 }}>
+              <div className="bd-sugg-nom">
+                <small>Ton nom</small>
+                <b>{annonce || "Sans nom"}</b>
+                {annonceSci && <i>{annonceSci}</i>}
+              </div>
+              <div style={{ alignSelf: "center", color: C.ambre, fontSize: 18 }}>→</div>
+              <div className="bd-sugg-nom prop">
+                <small>Son idée</small>
+                <b>{nomPropose}</b>
+                {s.propose_fr && s.propose_sci && <i>{s.propose_sci}</i>}
+                {sousTitreProp && <em>{sousTitreProp}</em>}
+              </div>
+            </div>
+            <div className="bd-sugg-mot">
+              {s.texte}
+              <span style={{ display: "block", marginTop: 6, fontSize: 12, color: C.papierSombre }}>— le relecteur de Goupil</span>
+            </div>
+            {erreur && <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", textAlign: "center", marginBottom: 10 }}>{erreur}</div>}
+            <div className="bd-sugg-deux">
+              <button disabled={etat === "envoi"} onClick={() => repondre("acceptee")}>
+                {espece ? "Oui, je corrige" : "Oui, je regarde"}<span>{espece ? "prend son nom" : "j'ouvrirai la fiche"}</span>
+              </button>
+              <button disabled={etat === "envoi"} onClick={() => repondre("refusee")}>
+                Non, je garde mon nom<span>rien ne change</span>
+              </button>
+            </div>
+            <div style={{ textAlign: "center", fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 12, lineHeight: 1.45 }}>
+              {etat === "envoi" ? "Envoi de ta réponse…" : "Les deux réponses aident autant. Ton choix reste entre toi et le relecteur : personne d'autre ne le voit."}
+            </div>
+          </React.Fragment>
+        )}
+        {etat === "acceptee" && (
+          <div className="bd-sugg-merci">
+            <div style={{ fontSize: 40 }}>🦋</div>
+            <h3>C'est noté !</h3>
+            {espece
+              ? <p>Ton observation s'appelle maintenant <b style={{ color: C.ambreClair }}>{nomPropose}</b>, sur le mur comme dans ta boîte. L'ancien nom reste dans l'historique de la fiche.</p>
+              : <p>Le relecteur pense à {s.propose_rang === "famille" ? "la famille" : "l'ordre"} <b style={{ color: C.ambreClair }}>{s.propose_sci}</b>. Ouvre la fiche pour choisir toi-même le nom qui convient.</p>}
+            {onVoirFiche
+              ? <Bouton variante="primaire" onClick={onVoirFiche} style={{ width: "100%" }}>Voir la fiche</Bouton>
+              : <Bouton onClick={onFermer} style={{ width: "100%" }}>Fermer</Bouton>}
+          </div>
+        )}
+        {etat === "refusee" && (
+          <div className="bd-sugg-merci">
+            <div style={{ fontSize: 40 }}>👍</div>
+            <h3>Merci pour ta réponse</h3>
+            <p>Tu gardes <b style={{ color: C.ambreClair }}>{annonce || "ton nom"}</b>. Ta réponse aide le relecteur à mieux viser la prochaine fois.</p>
+            <Bouton onClick={onFermer} style={{ width: "100%" }}>Fermer</Bouton>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees, onAllerLigue, onOuvrirSuggestion }) {
   // On FIGE le contenu à l'ouverture. Sans ça, le marquage « vu » déclenchait un
   // recalcul qui renvoyait 0, et le centre se vidait sous les yeux de la personne
   // (les effets de l'enfant s'exécutent avant ceux du parent en React).
@@ -8766,7 +8974,8 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees, onAllerLigue
     };
   }, []);
 
-  const rien = (n.murNouveaux || 0) === 0 && (n.ideesNouvelles || 0) === 0 && (n.reactionsRecues || 0) === 0 && (n.commentairesRecus || 0) === 0 && (n.defisSubis || 0) === 0;
+  const sugg = n.suggestions || [];
+  const rien = sugg.length === 0 && (n.murNouveaux || 0) === 0 && (n.ideesNouvelles || 0) === 0 && (n.reactionsRecues || 0) === 0 && (n.commentairesRecus || 0) === 0 && (n.defisSubis || 0) === 0;
 
   return (
     <div onClick={onFermer} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 1200, display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
@@ -8782,6 +8991,22 @@ function CentreNotifs({ notifs, onFermer, onAllerMur, onAllerIdees, onAllerLigue
               Rien de neuf pour l'instant.<br />Reviens après une sortie ou quand la bande aura partagé ses trouvailles !
             </div>
           )}
+
+          {/* v1.92 — Idées du relecteur : privées, en tête tant qu'elles attendent une réponse. */}
+          {sugg.map((s) => (
+            <button key={"s" + s.id} onClick={() => onOuvrirSuggestion && onOuvrirSuggestion(s)}
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", marginBottom: 8, borderRadius: 10, cursor: "pointer", textAlign: "left",
+                border: `1px solid ${s.statut === "envoyee" ? "rgba(227,154,91,.6)" : C.bordure}`, background: s.statut === "envoyee" ? "linear-gradient(135deg, #2B2214, #1E1A10)" : C.panneau }}>
+              {s.posts && s.posts.photo_url
+                ? <img src={s.posts.photo_url} alt="" loading="lazy" style={{ width: 42, height: 42, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
+                : <span style={{ fontSize: 22 }}>🦊</span>}
+              <span style={{ flex: 1, fontFamily: sans, fontSize: 13.5, color: C.papier, lineHeight: 1.35 }}>
+                🦊 <b>Une idée du relecteur</b> sur ta {s.annonce || "trouvaille"}
+                <span style={{ display: "block", fontSize: 11.5, color: C.papierSombre }}>Privé · {s.statut === "envoyee" ? "nouveau" : "en attente de ta réponse"}</span>
+              </span>
+              {s.statut === "envoyee" && <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#E39A5B", flexShrink: 0 }} />}
+            </button>
+          ))}
 
           {(n.murNouveaux || 0) > 0 && (
             <button onClick={onAllerMur} style={{ width: "100%", display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", marginBottom: 8, borderRadius: 10, border: `1px solid ${C.bordure}`, background: C.panneau, cursor: "pointer", textAlign: "left" }}>
@@ -12874,6 +13099,16 @@ function BioDex() {
 
   const [notifs, setNotifs] = useState({ total: 0 });
   const [centreOuvert, setCentreOuvert] = useState(false);
+  // v1.92 — Suggestion du relecteur ouverte (carte), et bandeaux masqués pour la journée.
+  const [suggestionOuverte, setSuggestionOuverte] = useState(null);
+  const [suggMasquees, setSuggMasquees] = useState(() => {
+    try { const v = JSON.parse(localStorage.getItem("biodex_sugg_masquees") || "{}"); return v.jour === new Date().toDateString() ? v.ids || [] : []; } catch { return []; }
+  });
+  const masquerSuggestion = (id) => {
+    const ids = [...suggMasquees, id];
+    setSuggMasquees(ids);
+    try { localStorage.setItem("biodex_sugg_masquees", JSON.stringify({ jour: new Date().toDateString(), ids })); } catch {}
+  };
   const [menuOuvert, setMenuOuvert] = useState(false);
   const [montrerPresentation, setMontrerPresentation] = useState(() => { try { return !localStorage.getItem("biodex_presentation_vue"); } catch { return false; } });
   const [profilVu, setProfilVu] = useState(null); // prénom du membre dont on regarde le profil
@@ -13202,6 +13437,48 @@ function BioDex() {
 
   // v1.86 — Une carte forgée automatiquement attend face cachée (carteNouvelle) jusqu'à
   // ce qu'on la révèle dans le bestiaire.
+  // ── v1.92 — Suggestions du relecteur ───────────────────────────────────────
+  // Retrouve, dans la boîte (locale), l'observation qui a donné le post : même nom
+  // annoncé et même date d'observation (à la minute près). Les posts ne gardent pas
+  // l'identifiant local, d'où ce rapprochement prudent : sans date sûre, on ne touche à rien.
+  function obsPourSuggestion(s) {
+    if (!s) return null;
+    const norm = (x) => (x || "").trim().toLowerCase();
+    const sci = norm(s.annonce_sci), nom = norm(s.annonce);
+    const dObs = s.posts && s.posts.date_obs ? new Date(s.posts.date_obs).getTime() : NaN;
+    if (isNaN(dObs)) return null;
+    return observationsRef.current.find((o) => {
+      const memeNom = (sci && norm(o.nomSci) === sci) || (nom && norm(o.nom) === nom);
+      const d = new Date(o.date).getTime();
+      return memeNom && !isNaN(d) && Math.abs(d - dObs) < 60000;
+    }) || null;
+  }
+  function ouvrirSuggestion(s) {
+    const o = obsPourSuggestion(s);
+    setSuggestionOuverte({ ...s, _obsId: o ? o.id : null });
+  }
+  async function suggestionRepondue(s, r) {
+    // La suggestion quitte la cloche et le bandeau.
+    setNotifs((ancien) => {
+      const liste = (ancien.suggestions || []).filter((x) => x.id !== s.id);
+      const nouv = liste.filter((x) => x.statut === "envoyee").length;
+      const retire = s.statut === "envoyee" ? 1 : 0;
+      return { ...ancien, suggestions: liste, suggestionsNouvelles: nouv, total: Math.max(0, (ancien.total || 0) - retire) };
+    });
+    if (!r || r.statut !== "acceptee" || r.rang !== "espece") return;
+    const obs = (s._obsId && observationsRef.current.find((o) => o.id === s._obsId)) || obsPourSuggestion(s);
+    if (!obs) return;
+    const histo = Array.isArray(obs.historiqueNoms) ? obs.historiqueNoms : [];
+    const maj = {
+      ...obs,
+      nom: s.propose_fr || obs.nom,
+      nomSci: s.propose_sci,
+      historiqueNoms: [...histo, { nom: obs.nom || "", nomSci: obs.nomSci || "", le: new Date().toISOString(), par: "relecteur" }],
+    };
+    try { await dbAjouter(maj); } catch {}
+    setObservations((prev) => prev.map((o) => (o.id === obs.id ? maj : o)));
+  }
+
   async function marquerCarteRevelee(id) {
     const obs = observationsRef.current.find((o) => o.id === id);
     if (!obs || !obs.carteNouvelle) return;
@@ -13589,8 +13866,20 @@ function BioDex() {
           onAllerMur={() => { setCentreOuvert(false); if (MUR_ACTIF) setVue("mur"); }}
           onAllerIdees={() => { setCentreOuvert(false); if (MUR_ACTIF) setVue("idees"); }}
           onAllerLigue={() => { setCentreOuvert(false); if (MUR_ACTIF) setVue("ligue"); }}
+          onOuvrirSuggestion={(s) => { setCentreOuvert(false); ouvrirSuggestion(s); }}
         />
       )}
+      {suggestionOuverte && (() => {
+        // Le lien vers l'observation est fixé à l'ouverture : une fois le nom corrigé,
+        // elle ne « ressemble » plus au nom annoncé.
+        const obsLiee = suggestionOuverte._obsId ? observations.find((o) => o.id === suggestionOuverte._obsId) : null;
+        return (
+          <CarteSuggestion s={suggestionOuverte}
+            onFermer={() => setSuggestionOuverte(null)}
+            onRepondue={suggestionRepondue}
+            onVoirFiche={obsLiee ? () => { setSuggestionOuverte(null); setSelectionId(obsLiee.id); setVue("detail"); } : null} />
+        );
+      })()}
       {menuOuvert && (
         <MenuPrincipal
           utilisateur={utilisateur}
@@ -13659,6 +13948,11 @@ function BioDex() {
 
       {vue === "collection" && (
         <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
+          {/* v1.92 — Une idée du relecteur en attente : un bandeau doux (la croix le masque pour la journée). */}
+          {(() => {
+            const s = (notifs.suggestions || []).find((x) => !suggMasquees.includes(x.id));
+            return s ? <BandeauSuggestion s={s} onVoir={() => ouvrirSuggestion(s)} onMasquer={() => masquerSuggestion(s.id)} /> : null;
+          })()}
           {/* Encarts d'ambiance regroupés en carrousel : sans ça, ils repoussaient
               la collection hors de l'écran (408 px de bandeaux mesurés). */}
           <CarrouselBandeaux>
