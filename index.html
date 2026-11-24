@@ -190,7 +190,37 @@
       conic-gradient(from var(--bd-angle), #8A6A1E, #F7E7A6, #C9A24B, #FFF8DC, #8A6A1E, #E4C878, #FFF2BF, #8A6A1E) border-box; }
   @keyframes bdTourOr { to { --bd-angle: 360deg; } }
   .bd-ident-tresrare .bd-ident-bandeau { color: #2A2008; background: linear-gradient(110deg, #C9A24B, #F7E7A6 45%, #E4C878 60%, #B8913A); }
+  /* v1.88 — Mur : publications habillées selon la rareté */
+  .bd-post { margin-bottom: 14px; border: 1px solid #3A4531; border-radius: 12px; overflow: hidden; background: #1C2318; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+  .bd-post-peucommune { border-color: #8AAE6B; box-shadow: 0 0 12px rgba(138,174,107,.3), 0 2px 8px rgba(0,0,0,.25); }
+  .bd-post-rare { border-color: #9FB2E0; box-shadow: 0 0 18px rgba(159,178,224,.4), 0 2px 8px rgba(0,0,0,.25); }
+  .bd-post-tresrare { border: 2px solid transparent; animation: bdTourOr 3.5s linear infinite, bdLueurLeg 2.8s ease-in-out infinite;
+    background: linear-gradient(#1C2318, #1C2318) padding-box,
+      conic-gradient(from var(--bd-angle), #8A6A1E, #F7E7A6, #C9A24B, #FFF8DC, #8A6A1E, #E4C878, #FFF2BF, #8A6A1E) border-box; }
+  .bd-post-rare .bd-post-photo::after, .bd-post-tresrare .bd-post-photo::after { content: ""; position: absolute; top: -20%; bottom: -20%; width: 40%; pointer-events: none;
+    background: linear-gradient(100deg, transparent 10%, rgba(255,255,255,.28) 48%, transparent 90%); animation: bdShimmer 4.2s ease-in-out infinite; }
+  .bd-post-ruban { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 12.5px; font-weight: 800; letter-spacing: .02em; padding: 6px 12px; }
+  .bd-post-rare .bd-post-ruban { color: #F4F7FF; text-shadow: 0 1px 2px rgba(0,0,0,.4);
+    background: linear-gradient(110deg, rgba(255,80,180,.55), rgba(255,200,60,.5), rgba(60,220,150,.5), rgba(80,160,255,.55), rgba(190,100,255,.55));
+    background-size: 300% 100%; animation: bdHoloBandeau 5s ease-in-out infinite; }
+  .bd-post-tresrare .bd-post-ruban { color: #2A2008; background: linear-gradient(110deg, #C9A24B, #F7E7A6 45%, #E4C878 60%, #B8913A); }
+  .bd-cc-pause *::after, .bd-cc-pause::after { animation-play-state: paused !important; }
+  /* v1.88 — Révélation plein écran après l'identification */
+  .bd-rev-fond { position: fixed; inset: 0; z-index: 10045; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 24px; text-align: center; overflow: hidden; cursor: pointer;
+    background: radial-gradient(circle at 50% 40%, rgba(32,42,26,.98), rgba(6,8,5,.99)); animation: bdFade .25s ease both; }
+  .bd-rev-fond .bd-rayons { -webkit-mask-image: radial-gradient(circle, #000 0%, rgba(0,0,0,.6) 12%, transparent 30%); mask-image: radial-gradient(circle, #000 0%, rgba(0,0,0,.6) 12%, transparent 30%); }
+  .bd-rev-medaille { position: relative; z-index: 1; width: 124px; height: 124px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 62px; box-shadow: 0 6px 30px rgba(0,0,0,.55); animation: bdPop .7s cubic-bezier(.2,1.6,.4,1) both; }
+  @keyframes bdPop { 0% { transform: scale(.2) rotate(-25deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+  .bd-rev-txt { position: relative; z-index: 1; max-width: 340px; animation: bdFade .5s ease .3s both; }
+  .bd-part { position: absolute; left: 50%; top: 40%; z-index: 2; font-size: 22px; pointer-events: none; opacity: 0;
+    animation: bdEclatPart 1.6s cubic-bezier(.1,.8,.3,1) forwards; }
+  @keyframes bdEclatPart { 0% { transform: translate(-50%,-50%) scale(.3); opacity: 0; } 12% { opacity: 1; }
+    100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.1) rotate(var(--rot)); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
+    .bd-post, .bd-post *::after, .bd-post-ruban, .bd-rev-medaille, .bd-rev-txt, .bd-part { animation: none !important; }
+    .bd-part { display: none; }
     .bd-ident, .bd-ident::after, .bd-ident-bandeau { animation: none !important; }
     .bd-cc, .bd-cc *, .bd-cc::before, .bd-rayons, .bd-cc-appel, .bd-trembler { animation: none !important; }
     .bd-flip-in { transition: none; }
@@ -334,7 +364,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.87";
+const VERSION = "v1.88";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1839,6 +1869,10 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.88", date: "2026-11", items: [
+    "🎉 Juste après l'identification, une révélation plein écran : la médaille de l'espèce surgit dans une gerbe de feuilles, d'éclats ou d'étoiles selon sa rareté, et te dit si c'est une nouvelle espèce pour toi ou combien de fois tu l'as déjà vue. Touche l'écran pour continuer.",
+    "🌐 Sur le mur aussi, les trouvailles brillent selon leur rareté : liseré vert pour les peu communes, halo bleu, reflet et ruban holographique pour les rares, cadre d'or animé et ruban doré pour les très rares.",
+  ] },
   { v: "1.87", date: "2026-11", items: [
     "🌟 Au moment de l'identification, la rareté de l'espèce se voit tout de suite : rien de spécial pour une commune, un liseré vert pour une peu commune, un éclair arc-en-ciel et un reflet holographique pour une rare, un cadre d'or animé, un éclair doré et des confettis pour une très rare. Si l'IA hésite, c'est « À confirmer ».",
     "⚖️ Rareté revue : elle se base maintenant sur les observations en FRANCE (avant : dans le monde entier, ce qui rendait « peu communes » des espèces très banales chez nous, comme le Myrtil ou le Paon-du-jour, et « légendaires » des mouches mal identifiées).",
@@ -6730,6 +6764,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
   // v1.87 — Rareté de l'espèce proposée, et l'effet qui va avec (une fois par proposition).
   const [rareteIdent, setRareteIdent] = useState(null); // { sci, count, niv } | null
   const [eclairIdent, setEclairIdent] = useState(null);  // fond de l'éclair en cours
+  const [revelationIdent, setRevelationIdent] = useState(null); // v1.88 : révélation plein écran
   useEffect(() => {
     const sci = cloudResultat && cloudResultat.nomSci;
     setRareteIdent(null);
@@ -6737,19 +6772,24 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
     let annule = false;
     (async () => {
       const count = await chargerRareteInat(sci);
-      if (annule || typeof count !== "number") return;
-      const niv = niveauRarete(count);
-      setRareteIdent({ sci, count, niv });
+      if (annule) return;
+      const niv = typeof count === "number" ? niveauRarete(count) : null;
       const sur = (pourcentConfiance(cloudResultat.confiance) ?? 100) >= 60; // pas de fanfare sur une identification douteuse
+      // v1.88 — Révélation plein écran, pour toutes les raretés (même commune) : l'espèce,
+      // sa rareté, et ce qu'elle représente pour TA collection (nouvelle ou déjà vue).
+      const cle = sci.toLowerCase().trim();
+      const dejaVue = (observations || []).filter((o) => o.statut !== "a_trier" && !(base && o.id === base.id) && binomeMin(o.nomSci) === binomeMin(cle)).length;
+      setRevelationIdent({ nom: cloudResultat.nom || "", sci, niv, count, dejaVue, doute: !sur });
+      if (!niv) return;
+      setRareteIdent({ sci, count, niv });
       const fx = REVELATION[{ commune: "commun", peucommune: "peucommun", rare: "rare", tresrare: "leg" }[niv.id]];
-      if (niv.id === "commune") return;
+      if (niv.id === "commune") { if (sur) sonCelebration("espece"); return; }
       if (niv.id === "peucommune") { sonCelebration("espece"); return; }
       setEclairIdent(fx.eclair);
       setTimeout(() => !annule && setEclairIdent(null), 1000);
       if (sur) {
         sonCelebration(fx.son);
         try { navigator.vibrate && navigator.vibrate(niv.id === "tresrare" ? [30, 40, 30, 40, 140] : [30, 40, 90]); } catch {}
-        if (niv.id === "tresrare") celebrer({ emoji: "🌟", titre: "Espèce très rare !", texte: (cloudResultat.nom || sci) + " : seulement " + count.toLocaleString("fr-FR") + " observations en France.", ton: "legendaire" });
       }
     })();
     return () => { annule = true; };
@@ -7398,6 +7438,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
           )}
 
           {eclairIdent && <div className="bd-eclair" style={{ background: eclairIdent }} />}
+          {revelationIdent && <RevelationEspece {...revelationIdent} onFermer={() => setRevelationIdent(null)} />}
           {cloudResultat && (() => {
             const ri = rareteIdent && rareteIdent.sci === cloudResultat.nomSci ? rareteIdent : null;
             const doute = (pourcentConfiance(cloudResultat.confiance) ?? 100) < 60;
@@ -10760,7 +10801,7 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
           </div>
         );
         return visibles.map((p) => (
-        <div key={p.id} style={{ marginBottom: 14, border: `1px solid ${C.bordure}`, borderRadius: 12, overflow: "hidden", background: C.panneau, boxShadow: "0 2px 8px rgba(0,0,0,.25)" }}>
+        <CadrePostRarete key={p.id} count={raretes[cleEspeceMur(p)]}>
           {(() => { const th = themeDe(p.auteur, profils); const ti = titreDe(p.auteur, profils); return (
           <div onClick={() => setPostDetail(p)} style={{ cursor: "pointer" }}>
             {/* En-tête auteur : ce qui rend le mur « social ». L'emblème est mis en médaillon
@@ -10789,7 +10830,7 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
 
             {/* Photo avec le nom d'espèce en surimpression sur un dégradé */}
             {p.photo_url && (
-              <div style={{ position: "relative" }}>
+              <div className="bd-post-photo" style={{ position: "relative", overflow: "hidden" }}>
                 <img src={p.photo_url} alt={p.espece} loading="lazy" style={{ width: "100%", maxHeight: 360, objectFit: "cover", display: "block" }} />
                 <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "26px 14px 10px", background: "linear-gradient(transparent, rgba(10,13,8,.88))" }}>
                   <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }}>
@@ -10940,10 +10981,85 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
               )
             )}
           </div>
-        </div>
+        </CadrePostRarete>
         ));
       })()}
       {postDetail && <DetailPost post={postDetail} reactions={reactions[postDetail.id] || {}} onReagir={(type) => surReaction(postDetail.id, type)} onFermer={() => { setPostDetail(null); setDetailFocusCom(false); }} monPrenom={prenom} onOuvrirProfil={onOuvrirProfil ? (nom) => { setPostDetail(null); onOuvrirProfil(nom); } : null} onDefinirPrenom={onDefinirPrenom} focusCommentaire={detailFocusCom} />}
+    </div>
+  );
+}
+
+// v1.88 — Publication du mur habillée selon la rareté de l'espèce (mêmes paliers que le badge) :
+// liseré vert (peu commune), halo bleu + reflet + ruban holographique (rare), cadre d'or animé
+// + ruban doré (très rare). Animations en pause hors de l'écran.
+function CadrePostRarete({ count, children }) {
+  const ref = useRef(null);
+  usePauseHorsEcran(ref);
+  const niv = typeof count === "number" ? niveauRarete(count) : null;
+  const id = niv ? niv.id : "commune";
+  return (
+    <div ref={ref} className={"bd-post bd-post-" + id}>
+      {(id === "rare" || id === "tresrare") && (
+        <div className="bd-post-ruban">
+          {id === "tresrare" ? "🌟 Espèce très rare" : "✨ Espèce rare"}
+          {count !== COMMUNE_SENTINELLE && <span style={{ fontWeight: 600, opacity: 0.8 }}> · {count.toLocaleString("fr-FR")} obs. en France</span>}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+// v1.88 — Révélation plein écran juste après l'identification, pour toutes les raretés :
+// médaille qui surgit, éclat de particules, rayons pour les rares, et ce que l'espèce
+// représente pour ta collection (nouvelle, ou déjà vue N fois).
+const STYLE_REVELATION = {
+  commune:    { emoji: "🍃", titre: "Espèce commune",       couleur: "#CFD8B0", medaille: "radial-gradient(circle at 35% 30%, #5E7448, #2C3A22)", bord: "#8AAE6B", parts: ["🍃", "🌿", "🍂"], n: 10 },
+  peucommune: { emoji: "🌿", titre: "Espèce peu commune",   couleur: "#B7DA8E", medaille: "radial-gradient(circle at 35% 30%, #7FA65E, #2F4424)", bord: "#B6C79E", parts: ["🌿", "✨", "🍃"], n: 14 },
+  rare:       { emoji: "💎", titre: "Espèce rare !",        couleur: "#C4D2F2", medaille: "conic-gradient(from 0deg, #FF6EC7, #FFE36E, #6EFFC0, #6EB8FF, #C77BFF, #FF6EC7)", bord: "#E6EEFF", parts: ["✨", "💎", "✦"], n: 18 },
+  tresrare:   { emoji: "🌟", titre: "Espèce très rare !",   couleur: "#F3E2A8", medaille: "radial-gradient(circle at 35% 30%, #FFF2BF, #C9A24B 55%, #7A5A14)", bord: "#FFF8DC", parts: ["🌟", "✨", "✦", "🏆"], n: 26 },
+};
+function RevelationEspece({ nom, sci, niv, count, dejaVue, doute, onFermer }) {
+  const id = niv ? niv.id : "commune";
+  const st = STYLE_REVELATION[id];
+  const fx = REVELATION[{ commune: "commun", peucommune: "peucommun", rare: "rare", tresrare: "leg" }[id]];
+  useEffect(() => {
+    const t = setTimeout(onFermer, id === "tresrare" ? 5500 : id === "rare" ? 4500 : 3500);
+    return () => clearTimeout(t);
+  }, []);
+  const particules = Array.from({ length: doute ? Math.ceil(st.n / 2) : st.n }).map((_, i, a) => {
+    const angle = (i / a.length) * Math.PI * 2 + (i % 2) * 0.3;
+    const dist = 120 + ((i * 37) % 90);
+    return { e: st.parts[i % st.parts.length], dx: Math.cos(angle) * dist, dy: Math.sin(angle) * dist, rot: ((i * 53) % 120) - 60, d: (i % 5) * 0.06 };
+  });
+  return (
+    <div className="bd-rev-fond" onClick={onFermer}>
+      {fx.rayons && !doute && <div className="bd-rayons" style={{ background: fx.rayons, borderRadius: "50%", top: "40%" }} />}
+      {particules.map((p, i) => (
+        <span key={i} className="bd-part" style={{ "--dx": p.dx + "px", "--dy": p.dy + "px", "--rot": p.rot + "deg", animationDelay: p.d + "s" }}>{p.e}</span>
+      ))}
+      <div className={"bd-rev-medaille" + (id === "tresrare" && !doute ? " bd-carte-legendaire" : "")}
+        style={{ background: st.medaille, border: `3px solid ${st.bord}` }}>
+        <span style={{ filter: "drop-shadow(0 2px 6px rgba(0,0,0,.4))" }}>{st.emoji}</span>
+      </div>
+      <div className="bd-rev-txt">
+        <div style={{ fontFamily: serif, fontSize: id === "tresrare" ? 30 : 26, fontWeight: 700, color: st.couleur, marginTop: 22, lineHeight: 1.15, textShadow: "0 2px 12px rgba(0,0,0,.6)" }}>
+          {niv ? st.titre : "Espèce identifiée"}
+        </div>
+        <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.papier, marginTop: 14 }}>{nom || sci}</div>
+        <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 15, color: C.ambreClair, marginTop: 2 }}>{sci}</div>
+        {niv && count !== COMMUNE_SENTINELLE && (
+          <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, marginTop: 10 }}>environ {count.toLocaleString("fr-FR")} observations en France</div>
+        )}
+        {doute && <div style={{ fontFamily: sans, fontSize: 13, color: "#E0B074", marginTop: 8 }}>🤔 L'IA hésite : proposition à confirmer</div>}
+        <div style={{ display: "inline-block", marginTop: 18, padding: "9px 16px", borderRadius: 22, fontFamily: sans, fontSize: 14, fontWeight: 700,
+          background: dejaVue ? "rgba(255,255,255,.07)" : "linear-gradient(#3A4A2C, #2C3623)", border: `1px solid ${dejaVue ? C.bordure : C.ambre}`, color: dejaVue ? C.papier : C.ambreClair }}>
+          {dejaVue
+            ? `👁 Déjà vue ${dejaVue} fois · sa carte gagnera +${XP_REVOIR} XP`
+            : "🆕 Nouvelle espèce pour toi ! Épingle-la pour débloquer sa carte"}
+        </div>
+        <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 22, opacity: 0.7 }}>Touche pour continuer</div>
+      </div>
     </div>
   );
 }
