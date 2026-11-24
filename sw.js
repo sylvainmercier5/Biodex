@@ -1,6 +1,6 @@
-// BioDex v1.94 — Service Worker
+// BioDex v1.95 — Service Worker
 // © 2026 Sylvain Mercier. Tous droits réservés.
-const CACHE = "biodex-v1-94";
+const CACHE = "biodex-v1-95";
 const SHELL = [
   "./",
   "./index.html",
@@ -39,6 +39,39 @@ self.addEventListener("activate", (e) => {
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
+});
+
+// v1.95 — Notifications push : la fonction « notifier » (Supabase) envoie
+// { titre, corps, tag, url }. Un même tag remplace la notification précédente
+// (ex. plusieurs réactions sur la même trouvaille) au lieu de les empiler.
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { corps: e.data ? e.data.text() : "" }; }
+  const titre = d.titre || "BioDex";
+  e.waitUntil(self.registration.showNotification(titre, {
+    body: d.corps || "",
+    icon: "./icon-192.png",
+    badge: "./icon-192.png",
+    tag: d.tag || undefined,
+    renotify: !!d.tag,
+    data: { url: d.url || "./" },
+  }));
+});
+
+// Toucher la notification : on remet l'appli au premier plan (ou on l'ouvre) sur le bon écran.
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const cible = new URL((e.notification.data && e.notification.data.url) || "./", self.registration.scope).href;
+  e.waitUntil((async () => {
+    const fenetres = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of fenetres) {
+      if (c.url.startsWith(self.registration.scope)) {
+        try { c.postMessage({ type: "biodex-notif", url: cible }); } catch {}
+        return c.focus();
+      }
+    }
+    return self.clients.openWindow(cible);
+  })());
 });
 
 self.addEventListener("fetch", (e) => {
