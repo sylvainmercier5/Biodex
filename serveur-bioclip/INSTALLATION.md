@@ -27,19 +27,22 @@ ssh spotyserbe "cd ~/biodex-installation && mv listes serveur-bioclip/ && mv nom
 
 L'installation prend 5 à 15 minutes : torch pour processeur, puis 1,7 Go de poids. Elle n'utilise pas sudo.
 
-Mémoire : le modèle reste chargé en permanence, environ 2 à 2,5 Go, avec un plafond à 3,5 Go fixé par systemd. Si spotyserbe manque de mémoire, relance le service avec `--decharge 30` : la mémoire est libérée après 30 minutes sans demande. Mais alors, la première identification après une pause prendra une dizaine de secondes de plus.
+**Démarrage automatique :** par la crontab de `sylvain` (`lancer.sh` au démarrage de la machine, puis toutes les 5 minutes s'il s'est arrêté). On n'utilise pas de service systemd `--user`, parce qu'il s'arrêterait à chaque fin de session SSH sans `loginctl enable-linger`, qui demande sudo.
 
-## 3. Ce qui demande sudo (à taper toi-même sur spotyserbe)
+**Mémoire :** le modèle reste chargé en permanence, environ 2,1 Go mesurés le 24/11. Si spotyserbe manque de mémoire, ajoute `--decharge 30` dans `lancer.sh` : la mémoire est libérée après 30 minutes sans demande. Mais alors, la première identification après une pause prendra environ 7 secondes de plus.
+
+**Mesuré sur spotyserbe le 24/11 :** environ 1 seconde par photo, et 7 secondes de chargement au démarrage.
+
+## 3. Ouvrir le service à BioDex (Tailscale Funnel)
 
 ```
-sudo loginctl enable-linger sylvain
-sudo tailscale funnel --bg --https=10000 http://127.0.0.1:8192
+tailscale funnel --bg --https=10000 http://127.0.0.1:8192
 ```
 
-- La première ligne fait tourner le service même quand personne n'est connecté.
-- La seconde ouvre **uniquement ce service** sur Internet, en https sur le port 10000. Rien d'autre de spotyserbe n'est exposé (ni Goupil, ni ComfyUI, ni SearXNG).
-- Si Tailscale refuse Funnel : dans la console d'administration de Tailscale, autoriser Funnel pour spotyserbe. Tailscale affiche le lien exact.
-- L'adresse publique s'affiche avec `tailscale funnel status`, sous la forme `https://spotyserbe.<ton-réseau>.ts.net:10000`.
+- Pas besoin de sudo : `sylvain` est déjà opérateur Tailscale sur spotyserbe.
+- La première fois, Tailscale répond « Funnel is not enabled on your tailnet » et donne un lien `https://login.tailscale.com/f/funnel?node=…`. Il faut l'ouvrir, autoriser Funnel avec le compte Tailscale, puis relancer la commande.
+- Seul ce service est ouvert sur Internet, en https sur le port 10000. Navidrome (443) et Goupil (8443) restent réservés au réseau privé Tailscale, et ni ComfyUI ni SearXNG ne sont exposés.
+- L'adresse publique s'affiche avec `tailscale funnel status` : `https://spotyserbe.taile648d9.ts.net:10000`.
 
 Protection : chaque demande doit porter le secret de `~/biodex-bioclip/secret`, sinon le service répond 401. Une seule identification à la fois, 12 Mo par photo au plus, aucune image n'est gardée.
 
@@ -61,8 +64,9 @@ Puis redéployer. Sans ces deux variables, BioDex marche comme avant (Claude seu
 ## Retirer
 
 ```
-sudo tailscale funnel --https=10000 off
-systemctl --user disable --now biodex-bioclip.service
-rm -rf ~/biodex-bioclip ~/.config/systemd/user/biodex-bioclip.service
+tailscale funnel --https=10000 off
+crontab -l | grep -v biodex-bioclip/lancer.sh | crontab -
+pkill -f biodex-bioclip.py
+rm -rf ~/biodex-bioclip
 ```
 Et supprimer `BIOCLIP_URL` et `BIOCLIP_CLE` dans Netlify.

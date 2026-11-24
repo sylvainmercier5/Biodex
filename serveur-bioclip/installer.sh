@@ -38,30 +38,18 @@ else
   echo "secret déjà présent, conservé"
 fi
 
-echo "== Service systemd (utilisateur)"
-mkdir -p "$HOME/.config/systemd/user"
-cat > "$HOME/.config/systemd/user/biodex-bioclip.service" <<EOF
-[Unit]
-Description=BioDex BioCLIP (identification d'insectes)
-After=network-online.target
-
-[Service]
-ExecStart=$DOSSIER/venv/bin/python $DOSSIER/biodex-bioclip.py
-Restart=always
-RestartSec=10
-Nice=5
-MemoryMax=3500M
-
-[Install]
-WantedBy=default.target
-EOF
-systemctl --user daemon-reload
-systemctl --user enable --now biodex-bioclip.service
-sleep 3
-systemctl --user --no-pager status biodex-bioclip.service | head -5 || true
+# Démarrage par la crontab de l'utilisateur, sans sudo : un service systemd « --user »
+# s'arrête à la fin de chaque session tant que « linger » (qui demande sudo) n'est pas activé.
+echo "== Démarrage automatique (crontab)"
+cp "$ICI/lancer.sh" "$DOSSIER/" && chmod +x "$DOSSIER/lancer.sh"
+( crontab -l 2>/dev/null | grep -v 'biodex-bioclip/lancer.sh'
+  echo "@reboot sleep 60 && $DOSSIER/lancer.sh"
+  echo "*/5 * * * * $DOSSIER/lancer.sh"
+) | crontab -
+"$DOSSIER/lancer.sh"
+sleep 15
+curl -s http://127.0.0.1:8192/etat; echo
 
 echo
-echo "== Reste à faire, avec sudo (à taper toi-même) :"
-echo "  sudo loginctl enable-linger $USER          # le service tourne même sans session ouverte"
-echo "  sudo tailscale funnel --bg --https=10000 http://127.0.0.1:8192"
-echo "Ensuite : curl -s http://127.0.0.1:8192/etat"
+echo "== Reste à faire : ouvrir le service à BioDex (pas besoin de sudo si sylvain est opérateur Tailscale)"
+echo "  tailscale funnel --bg --https=10000 http://127.0.0.1:8192"
