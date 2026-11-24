@@ -169,7 +169,29 @@
   .bd-eclair { position: fixed; inset: 0; z-index: 10045; pointer-events: none; animation: bdEclair .9s ease-out forwards; }
   @keyframes bdTrembler { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-2.5deg) scale(1.02); } 75% { transform: rotate(2.5deg) scale(1.02); } }
   .bd-trembler { animation: bdTrembler .18s ease-in-out infinite; }
+  /* v1.87 — Résultat d'identification habillé selon la rareté de l'espèce */
+  .bd-ident { position: relative; margin-bottom: 12px; padding: 10px 12px; border-radius: 9px; overflow: hidden;
+    background: linear-gradient(#2C3623, #232B1D); border: 1px solid #A8863A; transition: box-shadow .4s ease, border-color .4s ease; }
+  .bd-ident-bandeau { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; margin: -10px -12px 10px; padding: 10px 12px;
+    animation: bdBandeau .55s cubic-bezier(.2,1.4,.4,1) both; }
+  @keyframes bdBandeau { from { opacity: 0; transform: scale(.85) translateY(-8px); } to { opacity: 1; transform: none; } }
+  .bd-ident-peucommune { border-color: #8AAE6B; box-shadow: 0 0 14px rgba(138,174,107,.35); }
+  .bd-ident-peucommune .bd-ident-bandeau { background: linear-gradient(90deg, rgba(138,174,107,.28), rgba(138,174,107,.08)); color: #CDE5B5; }
+  .bd-ident-rare { border-color: #9FB2E0; box-shadow: 0 0 20px rgba(159,178,224,.45); }
+  .bd-ident-rare .bd-ident-bandeau { color: #EAF0FF;
+    background: linear-gradient(110deg, rgba(255,80,180,.35), rgba(255,220,80,.3), rgba(80,255,170,.3), rgba(80,170,255,.35), rgba(200,100,255,.35));
+    background-size: 300% 100%; animation: bdBandeau .55s cubic-bezier(.2,1.4,.4,1) both, bdHoloBandeau 5s ease-in-out infinite; }
+  @keyframes bdHoloBandeau { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+  .bd-ident-rare::after, .bd-ident-tresrare::after { content: ""; position: absolute; top: -20%; bottom: -20%; width: 40%; pointer-events: none;
+    background: linear-gradient(100deg, transparent 10%, rgba(255,255,255,.22) 48%, transparent 90%); animation: bdShimmer 3.8s ease-in-out infinite; }
+  @property --bd-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+  .bd-ident-tresrare { border: 2px solid transparent; animation: bdTourOr 3.5s linear infinite, bdLueurLeg 2.8s ease-in-out infinite;
+    background: linear-gradient(#2C2812, #211D0C) padding-box,
+      conic-gradient(from var(--bd-angle), #8A6A1E, #F7E7A6, #C9A24B, #FFF8DC, #8A6A1E, #E4C878, #FFF2BF, #8A6A1E) border-box; }
+  @keyframes bdTourOr { to { --bd-angle: 360deg; } }
+  .bd-ident-tresrare .bd-ident-bandeau { color: #2A2008; background: linear-gradient(110deg, #C9A24B, #F7E7A6 45%, #E4C878 60%, #B8913A); }
   @media (prefers-reduced-motion: reduce) {
+    .bd-ident, .bd-ident::after, .bd-ident-bandeau { animation: none !important; }
     .bd-cc, .bd-cc *, .bd-cc::before, .bd-rayons, .bd-cc-appel, .bd-trembler { animation: none !important; }
     .bd-flip-in { transition: none; }
   }
@@ -312,7 +334,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.86";
+const VERSION = "v1.87";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1817,6 +1839,11 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.87", date: "2026-11", items: [
+    "🌟 Au moment de l'identification, la rareté de l'espèce se voit tout de suite : rien de spécial pour une commune, un liseré vert pour une peu commune, un éclair arc-en-ciel et un reflet holographique pour une rare, un cadre d'or animé, un éclair doré et des confettis pour une très rare. Si l'IA hésite, c'est « À confirmer ».",
+    "⚖️ Rareté revue : elle se base maintenant sur les observations en FRANCE (avant : dans le monde entier, ce qui rendait « peu communes » des espèces très banales chez nous, comme le Myrtil ou le Paon-du-jour, et « légendaires » des mouches mal identifiées).",
+    "🃏 La carte et l'observation ont maintenant toujours la même rareté. Les cartes déjà forgées sont recalculées toutes seules, en arrière-plan.",
+  ] },
   { v: "1.86", date: "2026-11", items: [
     "🃏 Toutes les cartes du bestiaire ont maintenant le même format, comme un vrai album. Touche une carte : elle s'ouvre en grand, et se retourne pour montrer ses stats et sa capacité.",
     "✨ Plus une carte est rare, plus elle brille : papier mat pour les communes, métal gravé pour les peu communes, film holographique arc-en-ciel pour les rares, bordure d'or animée pour les légendaires. En grand, la carte s'incline sous ton doigt.",
@@ -3357,11 +3384,15 @@ async function chercherTaxons(terme, signal) {
     }));
 }
 
-// ---------- Rareté d'une espèce via iNaturalist (nombre d'observations mondiales) ----------
-// Mise en cache dans le navigateur : chaque espèce n'est interrogée qu'une fois.
-// Seuils ajustables selon ce qui te semble juste pour ta faune.
-// "peuCommune" abaissé à 80000 : une espèce vue 80 000+ fois dans le monde est vraiment commune.
-const SEUILS_RARETE = { tresRare: 2000, rare: 20000, peuCommune: 80000 };
+// ---------- Rareté d'une espèce via iNaturalist (observations EN FRANCE) ----------
+// v1.87 — Mesurée sur 54 espèces du Limousin (outils/mesurer-rarete*.mjs). Avant, on comptait
+// les observations MONDIALES : les espèces d'Europe étaient pénalisées face aux cosmopolites
+// (le Myrtil, le Paon-du-jour ou la Mante sortaient « peu communs », seule une poignée
+// d'espèces était « commune »). On compte maintenant les observations vérifiables en France,
+// plafonnées par le genre (voir chargerRareteInat). Mise en cache : une requête par espèce.
+// Un seul jeu de paliers pour le badge des observations ET les cartes :
+//   ≥ 5000 → Commune (carte Commun) · ≥ 1000 → Peu commune · ≥ 200 → Rare · < 200 → Très rare (carte Légendaire)
+const SEUILS_RARETE = { tresRare: 200, rare: 1000, peuCommune: 5000 };
 
 // Valeur "forcée" pour les banalités notoires (voir ESPECES_COMMUNES) : garantit "commune".
 const COMMUNE_SENTINELLE = 999999;
@@ -3383,8 +3414,9 @@ function estEspeceCommune(nom) {
   return ESPECES_COMMUNES.some((k) => n.includes(sansAccents(k)));
 }
 
-// Convertit un nombre d'observations mondiales iNaturalist en rareté de carte (1-100).
-// Aligné sur les paliers du jeu : holographique >= 65 (rare), légendaire >= 85 (très rare).
+// Convertit un nombre d'observations (France) en rareté de carte (1-100), sur les MÊMES paliers
+// que le badge : Légendaire ≥ 85, Rare ≥ 65, Peu commun ≥ 40 (palierRarete). Avant la v1.87,
+// une espèce « commune » pouvait recevoir une carte « peu commune » (bandes décalées).
 function rareteDepuisCount(count) {
   if (count == null || typeof count !== "number") return null;
   const lc = Math.log10(Math.max(1, count));
@@ -3393,10 +3425,10 @@ function rareteDepuisCount(count) {
     return Math.round(rMax - t * (rMax - rMin));
   };
   const S = SEUILS_RARETE;
-  if (count < S.tresRare) return seg(1, Math.log10(S.tresRare), 85, 100);
+  if (count < S.tresRare) return seg(0, Math.log10(S.tresRare), 85, 100);
   if (count < S.rare) return seg(Math.log10(S.tresRare), Math.log10(S.rare), 65, 84);
-  if (count < S.peuCommune) return seg(Math.log10(S.rare), Math.log10(S.peuCommune), 45, 64);
-  return seg(Math.log10(S.peuCommune), 7, 15, 44);
+  if (count < S.peuCommune) return seg(Math.log10(S.rare), Math.log10(S.peuCommune), 40, 64);
+  return seg(Math.log10(S.peuCommune), 5, 15, 39);
 }
 
 function niveauRarete(count) {
@@ -3411,25 +3443,39 @@ function BadgeRarete({ count, style }) {
   const niv = niveauRarete(count);
   if (!niv || niv.bonus <= 0) return null;
   return (
-    <span title={`${niv.label} (${count.toLocaleString("fr-FR")} observations mondiales sur iNaturalist)`}
+    <span title={count === COMMUNE_SENTINELLE ? niv.label : `${niv.label} (environ ${count.toLocaleString("fr-FR")} observations en France sur iNaturalist)`}
       style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: sans, fontSize: 11, fontWeight: 800, color: "#12160D", background: niv.couleur, borderRadius: 7, padding: "1px 6px", whiteSpace: "nowrap", ...style }}>
       {niv.emoji} {niv.label}
     </span>
   );
 }
 
+// v3 (v1.87) : compte en France ; les anciennes valeurs (mondiales, v2) sont ignorées.
 function litCacheRarete(sci) {
   try {
-    const brut = localStorage.getItem("biodex:rarete:v2:" + sci.toLowerCase().trim());
+    const brut = localStorage.getItem("biodex:rarete:v3:" + sci.toLowerCase().trim());
     if (!brut) return undefined;
     return JSON.parse(brut);
   } catch { return undefined; }
 }
 function ecritCacheRarete(sci, count) {
-  try { localStorage.setItem("biodex:rarete:v2:" + sci.toLowerCase().trim(), JSON.stringify({ count, maj: Date.now() })); } catch {}
+  try { localStorage.setItem("biodex:rarete:v3:" + sci.toLowerCase().trim(), JSON.stringify({ count, maj: Date.now() })); } catch {}
 }
 
-// Renvoie le nombre d'observations mondiales (number), ou null si inconnu/indispo.
+// Nombre d'observations vérifiables d'un taxon en France (place_id 6753 sur iNaturalist).
+async function compteFranceInat(taxonId) {
+  const r = await fetch(`https://api.inaturalist.org/v1/observations?taxon_id=${taxonId}&place_id=6753&verifiable=true&per_page=0`);
+  if (!r.ok) throw new Error("http");
+  const d = await r.json();
+  return typeof d.total_results === "number" ? d.total_results : null;
+}
+
+// Renvoie un nombre d'observations « effectif » en France (number), ou null si inconnu/indispo.
+// - Nom scientifique exact uniquement (avant : à défaut, le 1er résultat, parfois un autre taxon :
+//   « Sarcophaga carnaria » tombait sur le sous-genre et sortait légendaire).
+// - Plafond par le genre : une espèce ne peut être qu'UN cran plus rare que son genre. Une espèce
+//   peu photographiée d'un genre très vu (mouches, ichneumons, géométrides…) est surtout difficile
+//   à identifier, pas rare.
 async function chargerRareteInat(sci) {
   if (!sci || !sci.trim()) return null;
   const cle = sci.trim();
@@ -3438,15 +3484,26 @@ async function chargerRareteInat(sci) {
   const cache = litCacheRarete(cle);
   if (cache && typeof cache.count === "number") return cache.count;
   try {
-    const url = "https://api.inaturalist.org/v1/taxa/autocomplete?per_page=5&q=" + encodeURIComponent(cle);
-    const r = await fetch(url);
+    const nom = binomeMin(cle.replace(/\(.*?\)/g, " "));
+    const r = await fetch("https://api.inaturalist.org/v1/taxa/autocomplete?per_page=10&q=" + encodeURIComponent(nom));
     if (!r.ok) throw new Error("http");
     const d = await r.json();
-    const results = d.results || [];
-    const norm = (s) => (s || "").toLowerCase().trim();
-    let match = results.find((t) => norm(t.name) === norm(cle)) || results[0];
-    const count = match && typeof match.observations_count === "number" ? match.observations_count : null;
-    if (count != null) ecritCacheRarete(cle, count);
+    const taxon = (d.results || []).find((t) => (t.name || "").toLowerCase().trim() === nom);
+    if (!taxon) return null;
+    const espece = await compteFranceInat(taxon.id);
+    if (espece == null) return null;
+    let count = espece;
+    const parent = (taxon.ancestor_ids || []).slice(-2, -1)[0];
+    if (parent && (taxon.rank === "species" || taxon.rank === "subspecies")) {
+      try {
+        const genre = await compteFranceInat(parent);
+        const S = SEUILS_RARETE;
+        const cran = (n) => (n >= S.peuCommune ? 0 : n >= S.rare ? 1 : n >= S.tresRare ? 2 : 3);
+        const plancher = [S.peuCommune, S.rare, S.tresRare, 0][Math.min(3, cran(genre) + 1)];
+        if (genre != null) count = Math.max(espece, plancher);
+      } catch {}
+    }
+    ecritCacheRarete(cle, count);
     return count;
   } catch {
     return null; // réseau/API indispo -> pas de rareté iNat (on retombera sur la rareté "bande")
@@ -5088,7 +5145,7 @@ function Classement({ onFermer, onOuvrirProfil }) {
           <div><b style={{ color: C.papier }}>+2</b> si l'espèce est nouvelle sur le mur (jamais postée avant)</div>
           <div><b style={{ color: "#8AAE6B" }}>+1</b> espèce peu commune · <b style={{ color: "#D2A24A" }}>+2</b> rare · <b style={{ color: "#E5B84B" }}>+3</b> très rare</div>
           <div style={{ marginTop: 8, color: C.papierSombre, fontSize: 12 }}>
-            La rareté s'appuie sur le nombre d'observations mondiales dans iNaturalist. C'est un bon indice, pas un statut de conservation officiel — une espèce discrète peut être peu observée sans être menacée. Si iNaturalist ne répond pas pour une espèce, on compte +1 si elle est rare dans la bande (postée ≤ 2 fois).
+            La rareté s'appuie sur le nombre d'observations en France dans iNaturalist (commune : 5 000 et plus, peu commune : 1 000 à 5 000, rare : 200 à 1 000, très rare : moins de 200). C'est un bon indice, pas un statut de conservation officiel — une espèce discrète peut être peu observée sans être menacée. Si iNaturalist ne répond pas pour une espèce, on compte +1 si elle est rare dans la bande (postée ≤ 2 fois).
           </div>
         </div>
       )}
@@ -6670,6 +6727,33 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
   const [erreur, setErreur] = useState("");
   const [cloudEtat, setCloudEtat] = useState(""); // "" | recherche | ok | echec
   const [cloudResultat, setCloudResultat] = useState(null);
+  // v1.87 — Rareté de l'espèce proposée, et l'effet qui va avec (une fois par proposition).
+  const [rareteIdent, setRareteIdent] = useState(null); // { sci, count, niv } | null
+  const [eclairIdent, setEclairIdent] = useState(null);  // fond de l'éclair en cours
+  useEffect(() => {
+    const sci = cloudResultat && cloudResultat.nomSci;
+    setRareteIdent(null);
+    if (!sci) return;
+    let annule = false;
+    (async () => {
+      const count = await chargerRareteInat(sci);
+      if (annule || typeof count !== "number") return;
+      const niv = niveauRarete(count);
+      setRareteIdent({ sci, count, niv });
+      const sur = (pourcentConfiance(cloudResultat.confiance) ?? 100) >= 60; // pas de fanfare sur une identification douteuse
+      const fx = REVELATION[{ commune: "commun", peucommune: "peucommun", rare: "rare", tresrare: "leg" }[niv.id]];
+      if (niv.id === "commune") return;
+      if (niv.id === "peucommune") { sonCelebration("espece"); return; }
+      setEclairIdent(fx.eclair);
+      setTimeout(() => !annule && setEclairIdent(null), 1000);
+      if (sur) {
+        sonCelebration(fx.son);
+        try { navigator.vibrate && navigator.vibrate(niv.id === "tresrare" ? [30, 40, 30, 40, 140] : [30, 40, 90]); } catch {}
+        if (niv.id === "tresrare") celebrer({ emoji: "🌟", titre: "Espèce très rare !", texte: (cloudResultat.nom || sci) + " : seulement " + count.toLocaleString("fr-FR") + " observations en France.", ton: "legendaire" });
+      }
+    })();
+    return () => { annule = true; };
+  }, [cloudResultat]);
   const [cloudErreur, setCloudErreur] = useState("");
   const [affinageActif, setAffinageActif] = useState(false);
   const [affinageEtat, setAffinageEtat] = useState(""); // "" | recherche | question | final | echec
@@ -7313,8 +7397,25 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
             <div style={{ fontFamily: sans, fontSize: 13, color: "#E8A88F", marginBottom: 8 }}>{cloudErreur}</div>
           )}
 
-          {cloudResultat && (
-            <div style={{ marginBottom: 12, padding: "10px 12px", background: "linear-gradient(#2C3623, #232B1D)", border: `1px solid #A8863A`, borderRadius: 8 }}>
+          {eclairIdent && <div className="bd-eclair" style={{ background: eclairIdent }} />}
+          {cloudResultat && (() => {
+            const ri = rareteIdent && rareteIdent.sci === cloudResultat.nomSci ? rareteIdent : null;
+            const doute = (pourcentConfiance(cloudResultat.confiance) ?? 100) < 60;
+            return (
+            <div className={ri ? "bd-ident bd-ident-" + ri.niv.id : "bd-ident"}>
+              {ri && ri.niv.id !== "commune" && (
+                <div className="bd-ident-bandeau">
+                  <span style={{ fontSize: ri.niv.id === "tresrare" ? 22 : 18 }}>{ri.niv.id === "tresrare" ? "🌟" : ri.niv.id === "rare" ? "✨" : "🍃"}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: serif, fontSize: ri.niv.id === "tresrare" ? 18 : 16, fontWeight: 700, lineHeight: 1.2 }}>
+                      {doute ? "À confirmer : ce serait une espèce " + ri.niv.label.toLowerCase() + " !" : "Espèce " + ri.niv.label.toLowerCase() + " !"}
+                    </div>
+                    {ri.count !== COMMUNE_SENTINELLE && (
+                      <div style={{ fontFamily: sans, fontSize: 12, opacity: 0.85 }}>environ {ri.count.toLocaleString("fr-FR")} observations en France sur iNaturalist</div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", color: C.ambreClair }}>✨ Proposition</span>
                 <JaugeConfiance confiance={cloudResultat.confiance} niveau={cloudResultat.niveau} compact />
@@ -7362,7 +7463,8 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
                 ⚠️ Proposition d'IA, à vérifier — surtout entre espèces proches.
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Affinage par vues complémentaires : proposé APRÈS une première identification.
               Import galerie uniquement → n'ouvre jamais l'appareil natif, donc pas de crash. */}
@@ -7885,7 +7987,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
       try {
         const count = await chargerRareteInat(obs.nomSci || obs.nom);
         const rData = rareteDepuisCount(count);
-        if (rData != null && c) c.rarete = rData;
+        if (rData != null && c) { c.rarete = rData; c.rareteV = 3; }
       } catch {}
       await onMajCarte(obs.id, c);
       setCarteEtat("");
@@ -9824,7 +9926,7 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🏅 Le classement des chasseurs</div>
         <p style={p}>
-          Depuis le menu ☰, « Classement » établit le palmarès de la bande sur les 7 derniers jours (Semaine) ou 30 jours (Mois), à partir des trouvailles partagées sur le mur. Le système de points : +1 par trouvaille, +2 si l'espèce est nouvelle sur le mur (personne ne l'avait postée), et un bonus de rareté (+1 peu commune, +2 rare, +3 très rare). La rareté s'appuie sur le nombre d'observations mondiales dans iNaturalist — un bon indice, mais pas un statut de conservation officiel : une espèce discrète peut être peu observée sans être menacée. Les espèces rares affichent aussi un badge coloré (🌟 ✨ 🍃) partout dans l'appli : sur le mur, dans ta collection, sur la fiche détaillée, et un compteur dans les stats. Tu peux même filtrer ta collection sur « 🌟 Espèces rares ». Nécessite le réseau et le mur configuré.
+          Depuis le menu ☰, « Classement » établit le palmarès de la bande sur les 7 derniers jours (Semaine) ou 30 jours (Mois), à partir des trouvailles partagées sur le mur. Le système de points : +1 par trouvaille, +2 si l'espèce est nouvelle sur le mur (personne ne l'avait postée), et un bonus de rareté (+1 peu commune, +2 rare, +3 très rare). La rareté s'appuie sur le nombre d'observations en France dans iNaturalist — un bon indice, mais pas un statut de conservation officiel : une espèce discrète peut être peu observée sans être menacée. Les espèces rares affichent aussi un badge coloré (🌟 ✨ 🍃) partout dans l'appli : sur le mur, dans ta collection, sur la fiche détaillée, et un compteur dans les stats. Tu peux même filtrer ta collection sur « 🌟 Espèces rares ». Nécessite le réseau et le mur configuré.
         </p>
         <div style={t}>🏆 La Ligue</div>
         <p style={p}>
@@ -12890,6 +12992,33 @@ function BioDex() {
   const observationsRef = useRef(observations);
   observationsRef.current = observations;
   const plusFraiche = (o) => observationsRef.current.find((x) => x.id === o.id) || o;
+
+  // v1.87 — Rareté recalculée (France, mêmes paliers que le badge) pour les cartes forgées
+  // avant : une par une, en arrière-plan, une seule tentative par espèce et par ouverture.
+  const recalculRareteEnCours = useRef(false);
+  const recalculRareteTentes = useRef(new Set());
+  useEffect(() => {
+    if (chargement || recalculRareteEnCours.current) return;
+    try { if (navigator.onLine === false) return; } catch {}
+    const cible = observations.find((o) => o.carte && o.carte.rareteV !== 3 && o.nomSci && !recalculRareteTentes.current.has(o.id));
+    if (!cible) return;
+    recalculRareteEnCours.current = true;
+    recalculRareteTentes.current.add(cible.id);
+    (async () => {
+      try {
+        const rData = rareteDepuisCount(await chargerRareteInat(cible.nomSci));
+        const actuelle = plusFraiche(cible);
+        if (rData != null && actuelle.carte) {
+          const maj = { ...actuelle, carte: { ...actuelle.carte, rarete: rData, rareteV: 3 } };
+          try { await dbAjouter(maj); } catch {}
+          setObservations((prev) => prev.map((o) => (o.id === maj.id && o.carte ? { ...o, carte: { ...o.carte, rarete: rData, rareteV: 3 } } : o)));
+        } else {
+          setObservations((prev) => [...prev]); // passe à la suivante
+        }
+      } catch { setObservations((prev) => [...prev]); }
+      recalculRareteEnCours.current = false;
+    })();
+  }, [observations, chargement]);
   useEffect(() => {
     if (chargement || forgeAutoEnCours.current) return;
     const collection = observations.filter((o) => o.statut !== "a_trier");
@@ -12938,7 +13067,7 @@ function BioDex() {
         try {
           const count = await chargerRareteInat(aForger.nomSci || aForger.nom);
           const rData = rareteDepuisCount(count);
-          if (rData != null && c) c.rarete = rData;
+          if (rData != null && c) { c.rarete = rData; c.rareteV = 3; }
         } catch {}
         if (!c) throw new Error("vide");
         const actuelle = plusFraiche(aForger);
