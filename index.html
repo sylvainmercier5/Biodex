@@ -292,6 +292,28 @@
   .bd-carr-vue { position: relative; }
   .bd-carr-vue.replie { max-height: 124px; overflow: hidden;
     -webkit-mask-image: linear-gradient(#000 62%, transparent); mask-image: linear-gradient(#000 62%, transparent); }
+  /* v1.93 — Nouvelle observation en 3 étapes */
+  .bd-etapes { display: flex; gap: 4px; margin-bottom: 16px; padding: 3px; border-radius: 13px; background: #12170F; border: 1px solid #2E3826; }
+  .bd-etape { flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 0 4px;
+    border: none; border-radius: 10px; background: transparent; color: #8F8B76; cursor: pointer; white-space: nowrap;
+    font: 700 12.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  .bd-etape:disabled { opacity: .45; cursor: default; }
+  .bd-etape-n { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    border: 1px solid #4A5640; font-size: 11px; }
+  .bd-etape.fait { color: #A6CC82; }
+  .bd-etape.fait .bd-etape-n { background: rgba(127,163,95,.2); border-color: #7FA35F; }
+  .bd-etape.actif { background: linear-gradient(#2E3925, #232B1D); color: #E4C878; box-shadow: inset 0 0 0 1px rgba(168,134,58,.55), 0 2px 6px rgba(0,0,0,.35); }
+  .bd-etape.actif .bd-etape-n { background: #C9A24B; border-color: #C9A24B; color: #1B1A12; }
+  .bd-lien { background: none; border: none; padding: 6px 0; cursor: pointer; color: #C9BF9F; text-decoration: underline; text-underline-offset: 3px;
+    font: 600 12.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  .bd-barre-action { position: fixed; left: 0; right: 0; bottom: 0; z-index: 900; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: linear-gradient(rgba(18,22,15,.88), rgba(12,14,11,.98)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(201,162,75,.28); }
+  .bd-barre-action-in { display: flex; gap: 10px; max-width: 528px; margin: 0 auto; }
+  .bd-ident-attente { display: flex; gap: 12px; align-items: center; padding: 12px; margin-bottom: 12px; border-radius: 14px;
+    background: linear-gradient(135deg, #232C1C, #191F14); border: 1px solid rgba(201,162,75,.35); animation: bdPulse 1.6s ease-in-out infinite; }
+  @keyframes bdPulse { 50% { border-color: rgba(201,162,75,.8); } }
+  .bd-trois-lignes { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   /* v1.92 — Suggestions du relecteur */
   .bd-sugg-bandeau { display: flex; gap: 10px; align-items: center; padding: 10px 8px 10px 12px; border-radius: 14px; margin-bottom: 12px;
     background: linear-gradient(135deg, #2B2214, #1E1A10); border: 1px solid rgba(227,154,91,.55); box-shadow: 0 4px 14px rgba(0,0,0,.35); }
@@ -458,7 +480,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.92";
+const VERSION = "v1.93";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1963,6 +1985,11 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.93", date: "2026-11", items: [
+    "📷 La nouvelle observation se fait en 3 étapes : Photo, Espèce, puis Où & quand. Une barre en bas montre toujours le bouton de l'étape en cours, sans faire défiler l'écran.",
+    "🔍 Étape 1 : ta photo s'affiche en grand avec le cadre. Cadre l'insecte puis touche « Identifier ». Si tu connais déjà l'espèce, tu peux passer sans l'IA.",
+    "✨ Étape 2 : les noms proposés par l'IA remplissent ta fiche tout seuls, et tu peux toujours les modifier. L'explication et les autres hypothèses sont repliées pour aller à l'essentiel.",
+  ] },
   { v: "1.92", date: "2026-11", items: [
     "🦊 Le relecteur peut te souffler une idée. Quand tu as nommé une observation toi-même, le relecteur de Goupil peut te proposer un autre nom s'il est très sûr de lui. C'est privé : tu es seul·e à le voir. Un bandeau doux te prévient et la suggestion reste dans la cloche. Tu réponds « Oui, je corrige » ou « Non, je garde mon nom » : les deux réponses aident autant.",
     "📜 Si tu acceptes, ton observation prend le nouveau nom, sur le mur comme dans ta boîte. L'ancien nom reste dans l'historique de la fiche.",
@@ -7440,6 +7467,35 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
     else setErreur("Échec de l'enregistrement. Réessaie — si ça persiste, dis-le au développeur 😉");
   }
 
+  // ── v1.93 — Parcours en 3 étapes (Photo → Espèce → Où & quand), barre d'action fixe.
+  // La modification d'une observation garde la page unique (on y vient pour un détail).
+  const parEtapes = !modeEdition;
+  const [etape, setEtapeBrute] = useState(1);
+  const setEtape = (n) => { setEtapeBrute(n); try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch {} };
+  const voir = (n) => !parEtapes || etape === n;
+  const etapeAccessible = (n) => n === 1 || !!photoBlob || saisieManuelle || !!base;
+  function identifierEtContinuer(utiliserZone) {
+    setCiblage(!!utiliserZone);
+    lancerIdentificationCloud(!!utiliserZone);
+    setEtape(2);
+  }
+  // Une proposition arrive et la fiche n'a pas encore de nom : on reprend ses noms
+  // d'office (avant, il fallait trouver « Utiliser ces noms »). Rien n'est écrasé.
+  useEffect(() => {
+    if (cloudResultat && !nom.trim() && !nomSci.trim()) appliquerCloud();
+  }, [cloudResultat]);
+  // Un souci à l'enregistrement : on montre l'étape où il se règle.
+  useEffect(() => {
+    if (!parEtapes || !erreur) return;
+    if (erreur.includes("photo")) setEtapeBrute(1);
+    else setEtapeBrute(3);
+  }, [erreur]);
+  useEffect(() => { if (parEtapes && choixEspece) setEtapeBrute(3); }, [choixEspece]);
+  const [noteOuverte, setNoteOuverte] = useState(false);
+  const [altOuvertes, setAltOuvertes] = useState(false);
+  useEffect(() => { setNoteOuverte(false); setAltOuvertes(false); }, [cloudResultat]);
+  const nomsRepris = !!(cloudResultat && nom.trim() && nom.trim() === (cloudResultat.nom || "").trim());
+
   const champ = {
     width: "100%", boxSizing: "border-box", background: C.fond,
     border: `1px solid ${C.bordure}`, borderRadius: 8, color: C.papier,
@@ -7449,9 +7505,25 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
   const inputOverlay = { position: "absolute", top: 0, left: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" };
 
   return (
-    <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-      <h2 style={{ fontFamily: serif, color: C.papier, fontSize: 22, margin: "4px 0 16px" }}>{modeEdition ? "Modifier l’observation" : (modeTri ? "Compléter l’observation" : "Nouvelle observation")}</h2>
+    <div style={{ padding: 16, paddingBottom: parEtapes ? 110 : 16, maxWidth: 560, margin: "0 auto" }}>
+      <h2 style={{ fontFamily: serif, color: C.papier, fontSize: 22, margin: "4px 0 12px" }}>{modeEdition ? "Modifier l’observation" : (modeTri ? "Compléter l’observation" : "Nouvelle observation")}</h2>
+      {parEtapes && (
+        <div className="bd-etapes" role="tablist" aria-label="Étapes">
+          {[[1, "Photo"], [2, "Espèce"], [3, "Où & quand"]].map(([n, lab]) => (
+            <button key={n} role="tab" aria-selected={etape === n} disabled={!etapeAccessible(n)}
+              className={"bd-etape" + (etape === n ? " actif" : "") + (etape > n ? " fait" : "")}
+              onClick={() => etapeAccessible(n) && setEtape(n)}>
+              <span className="bd-etape-n">{etape > n ? "✓" : n}</span>{lab}
+            </button>
+          ))}
+        </div>
+      )}
 
+      {/* ═══ ÉTAPE 1 — PHOTO ═══ */}
+      {voir(1) && (<React.Fragment>
+      {parEtapes && erreur && erreur.includes("photo") && (
+        <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "#3A241C", color: "#E8A88F", fontFamily: sans, fontSize: 14 }}>{erreur}</div>
+      )}
       {brouillonPropose && (
         <div style={{ marginBottom: 16, padding: "12px 14px", background: "linear-gradient(#2C3623, #232B1D)", border: `1px solid #A8863A`, borderRadius: 10 }}>
           <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, marginBottom: 10 }}>
@@ -7523,6 +7595,36 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
         </div>
       )}
 
+      {/* Recadrage (étape 1 en parcours guidé ; dans le bloc d'identification en modification) */}
+      {parEtapes && photoUrl && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontFamily: sans, fontSize: 13, color: C.ambreClair, fontWeight: 700, marginBottom: 4 }}>Cadre l'insecte</div>
+          <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 8, lineHeight: 1.45 }}>
+            Place le cadre sur l'insecte et ajuste sa taille avec la poignée. Un cadrage serré aide beaucoup l'IA, surtout s'il est petit.
+          </div>
+          <SelecteurZone photoUrl={photoUrl} zone={zone} onChange={setZone} />
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 8 }}>
+            <button onClick={() => setMontrerZoom(true)} className="bd-lien">🔍 Zoomer</button>
+            <button onClick={() => identifierEtContinuer(false)} className="bd-lien">Déjà bien cadrée → photo entière</button>
+          </div>
+        </div>
+      )}
+      {parEtapes && (photoBlob || base) && (
+        <button onClick={() => { setSaisieManuelle(true); setEtape(2); }} className="bd-lien" style={{ display: "block", margin: "4px auto 0" }}>
+          ✏️ Je connais l'espèce : passer sans l'IA
+        </button>
+      )}
+      {parEtapes && !photoBlob && !base && (
+        <button onClick={() => { setSaisieManuelle(true); setEtape(2); }}
+          style={{ width: "100%", marginBottom: 14, padding: "11px 13px", borderRadius: 10, cursor: "pointer", textAlign: "left",
+            background: "transparent", border: `1px dashed ${C.bordure}`, color: C.papierSombre, fontFamily: sans, fontSize: 13 }}>
+          ✏️ Je connais déjà l'espèce — saisir le nom à la main
+        </button>
+      )}
+      </React.Fragment>)}
+
+      {/* ═══ ÉTAPE 3 — OÙ & QUAND (début) ═══ */}
+      {voir(3) && (<React.Fragment>
       {/* Retour clair sur ce que la photo contenait comme informations. */}
       {metaPhoto && (
       metaPhoto.lus.length > 0 ? (
@@ -7569,7 +7671,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
           n'a pas pu être lue dans la photo (voir v1.50). */}
       <SectionPliable
         titre="📅 Quand & où"
-        ouvertParDefaut={dateIncertaine || gpsIncertain || forcerOuvert || !!(metaPhoto && metaPhoto.lus.length === 0)}
+        ouvertParDefaut={parEtapes || dateIncertaine || gpsIncertain || forcerOuvert || !!(metaPhoto && metaPhoto.lus.length === 0)}
         alerte={((dateIncertaine || gpsIncertain) && !infosConfirmees) || !!(metaPhoto && metaPhoto.lus.length === 0)}
         resume={((dateIncertaine || gpsIncertain) && !infosConfirmees ? "⚠️ à vérifier · " : "") +
           [dateObs ? new Date(dateObs).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : "date ?",
@@ -7614,13 +7716,28 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
           )}
         </div>
       </SectionPliable>
+      </React.Fragment>)}
 
       {montrerZoom && photoUrl && <VisionneuseZoom url={photoUrl} onFermer={() => setMontrerZoom(false)} />}
 
+      {/* ═══ ÉTAPE 2 — ESPÈCE ═══ */}
+      {voir(2) && (<React.Fragment>
+      {parEtapes && photoBlob && cloudEtat === "recherche" && (
+        <div className="bd-ident-attente">
+          <PhotoBlobRecadree blob={photoBlob} zone={ciblage ? zone : null} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 10, flexShrink: 0 }} />
+          <div>
+            <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 600, color: C.papier }}>Identification en cours…</div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginTop: 3 }}>L'IA examine ta photo, quelques secondes.</div>
+          </div>
+        </div>
+      )}
+      {parEtapes && photoBlob && !cloudResultat && cloudEtat !== "recherche" && !affinageActif && (
+        <Bouton variante="primaire" onClick={() => identifierEtContinuer(true)} style={{ width: "100%", marginBottom: 12 }}>🔍 Identifier avec l'IA</Bouton>
+      )}
       {/* Identification précise avec recadrage systématique (échappatoire possible) */}
       {photoBlob && (
-        <div style={{ marginBottom: 16, padding: "12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}` }}>
-      {photoUrl && (
+        <div style={parEtapes ? { marginBottom: 12 } : { marginBottom: 16, padding: "12px", background: C.panneau, borderRadius: 8, border: `1px solid ${C.bordure}` }}>
+      {photoUrl && !parEtapes && (
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontFamily: sans, fontSize: 12.5, color: C.ambreClair, fontWeight: 700, marginBottom: 4 }}>
                 📷 Recadre sur l'insecte
@@ -7635,13 +7752,15 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
             </div>
           )}
 
-          {/* Bouton principal : identifier la zone recadrée */}
+          {/* Bouton principal : identifier la zone recadrée (modification ; en parcours guidé, il est dans la barre de l'étape 1) */}
+          {!parEtapes && (
           <Bouton variante="primaire" onClick={() => { setCiblage(true); lancerIdentificationCloud(true); }} disabled={cloudEtat === "recherche"} style={{ width: "100%", marginBottom: 6 }}>
             {cloudEtat === "recherche" ? "✨ Identification en cours…" : (cloudResultat ? "🔍 Relancer sur cette zone" : "🔍 Identifier cette zone")}
           </Bouton>
+          )}
 
           {/* Échappatoire : photo déjà bien cadrée → image entière */}
-          {cloudEtat !== "recherche" && (
+          {cloudEtat !== "recherche" && !parEtapes && (
             <button onClick={() => { setCiblage(false); lancerIdentificationCloud(false); }}
               style={{ width: "100%", background: "none", border: "none", color: C.papierSombre, fontFamily: sans, fontSize: 12.5, cursor: "pointer", padding: "2px 0 6px", textDecoration: "underline" }}>
               La photo est déjà bien cadrée → identifier l'image entière
@@ -7678,7 +7797,14 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
               </div>
               <div style={{ fontFamily: sans, fontSize: 16, fontWeight: 700, color: C.papier }}>{cloudResultat.nom || "—"}</div>
               <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 14, color: C.ambreClair, marginBottom: 6 }}>{cloudResultat.nomSci || ""}</div>
-              {cloudResultat.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginBottom: 10 }}>{cloudResultat.note}</div>}
+              {cloudResultat.note && (parEtapes ? (
+                <div style={{ marginBottom: 10 }}>
+                  <div className={noteOuverte ? "" : "bd-trois-lignes"} style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5 }}>{cloudResultat.note}</div>
+                  {String(cloudResultat.note).length > 160 && (
+                    <button className="bd-lien" onClick={() => setNoteOuverte((v) => !v)} style={{ padding: "4px 0 0" }}>{noteOuverte ? "Réduire ▴" : "Pourquoi cette espèce ? ▾"}</button>
+                  )}
+                </div>
+              ) : <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, marginBottom: 10 }}>{cloudResultat.note}</div>)}
               {cloudResultat.role && String(cloudResultat.role).trim().length > 3 && (
                 <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "10px 12px", marginBottom: 10, borderRadius: 9, background: "linear-gradient(#1E2A18, #182213)", border: "1px solid #6F9450" }}>
                   <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.2 }}>🌿</span>
@@ -7699,9 +7825,18 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
                   </div>
                 </div>
               )}
-              <Bouton variante="primaire" onClick={() => appliquerCloud()} style={{ width: "100%" }}>Utiliser ces noms</Bouton>
+              {parEtapes && nomsRepris ? (
+                <div style={{ fontFamily: sans, fontSize: 13, color: "#A6CC82", textAlign: "center", padding: "6px 0 2px" }}>✓ Noms repris dans ta fiche, plus bas (modifiables)</div>
+              ) : (
+                <Bouton variante="primaire" onClick={() => appliquerCloud()} style={{ width: "100%" }}>Utiliser ces noms</Bouton>
+              )}
 
-              {Array.isArray(cloudResultat.alternatives) && cloudResultat.alternatives.length > 0 && (
+              {Array.isArray(cloudResultat.alternatives) && cloudResultat.alternatives.length > 0 && parEtapes && !altOuvertes && (
+                <button className="bd-lien" onClick={() => setAltOuvertes(true)} style={{ display: "block", marginTop: 8 }}>
+                  Ce n'est pas ça ? Voir {cloudResultat.alternatives.length > 1 ? `les ${cloudResultat.alternatives.length} autres hypothèses` : "l'autre hypothèse"} ▾
+                </button>
+              )}
+              {Array.isArray(cloudResultat.alternatives) && cloudResultat.alternatives.length > 0 && (!parEtapes || altOuvertes) && (
                 <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.bordure}` }}>
                   <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 8 }}>Autres hypothèses</div>
                   {cloudResultat.alternatives.map((a, i) => (
@@ -7767,9 +7902,9 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
           )}
 
           {/* Affinage : proposé dès qu'une photo est là, mis en avant si l'ID cloud hésite */}
-          {photoBlob && !affinageActif && (
+          {photoBlob && !affinageActif && !(parEtapes && cloudEtat === "recherche") && (
             <Bouton
-              variante={cloudResultat && pourcentConfiance(cloudResultat.confiance) !== null && pourcentConfiance(cloudResultat.confiance) < 70 ? "primaire" : "normal"}
+              variante={cloudResultat && pourcentConfiance(cloudResultat.confiance) !== null && pourcentConfiance(cloudResultat.confiance) < 70 ? (parEtapes ? "secondaire" : "primaire") : "normal"}
               onClick={demarrerAffinage} style={{ width: "100%", marginBottom: 8 }}>
               🔍 Affiner l'identification (questions)
             </Bouton>
@@ -7843,7 +7978,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
       )}
 
       {/* Identification — masquée tant qu'aucune photo n'est là (voir saisieManuelle) */}
-      {!photoBlob && !base && !saisieManuelle && (
+      {!parEtapes && !photoBlob && !base && !saisieManuelle && (
         <button onClick={() => setSaisieManuelle(true)}
           style={{ width: "100%", marginBottom: 14, padding: "11px 13px", borderRadius: 10, cursor: "pointer", textAlign: "left",
             background: "transparent", border: `1px dashed ${C.bordure}`, color: C.papierSombre, fontFamily: sans, fontSize: 13 }}>
@@ -7903,6 +8038,10 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
         );
       })()}
 
+      </React.Fragment>)}
+
+      {/* ═══ ÉTAPE 3 — OÙ & QUAND (suite) ═══ */}
+      {voir(3) && (<React.Fragment>
       {/* Biotope — champ OBLIGATOIRE, gardé au premier niveau (jamais dans une section
           repliée). Quand le garde-fou a mordu, c'est CE bloc qui se signale : avant, le
           message renvoyait vers « Détails du terrain », où le biotope ne se trouve pas. */}
@@ -7910,14 +8049,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
         <label style={libelle}>Biotope {forcerOuvert && !biotope && <span style={{ color: "#E4C878", fontWeight: 700 }}>· à choisir</span>}</label>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {BIOTOPES.map((b) => (
-            <button key={b.id} onClick={() => setBiotope(b.id)}
-              style={{
-                fontFamily: sans, fontSize: 13, padding: "7px 12px", borderRadius: 20, cursor: "pointer",
-                border: `1px solid ${biotope === b.id ? C.ambre : C.bordure}`,
-                background: biotope === b.id ? C.ambre : C.panneau,
-                color: biotope === b.id ? C.encre : C.papier,
-                fontWeight: biotope === b.id ? 700 : 400,
-              }}>
+            <button key={b.id} onClick={() => setBiotope(b.id)} className={"bd-puce" + (biotope === b.id ? " actif" : "")}>
               {b.emoji} {b.label}
             </button>
           ))}
@@ -8055,7 +8187,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
             éviter les observations oubliées sans nom.
           </div>
           <div style={{ display: "grid", gap: 8 }}>
-            <Bouton onClick={() => setChoixEspece(false)} style={{ width: "100%" }}>← Je l'identifie maintenant</Bouton>
+            <Bouton onClick={() => { setChoixEspece(false); if (parEtapes) setEtape(2); }} style={{ width: "100%" }}>← Je l'identifie maintenant</Bouton>
             <Bouton variante="primaire" onClick={() => { setAideDemandee(true); setChoixEspece(false); sauver(true); }} style={{ width: "100%" }}>
               🙋 Je ne sais pas — demander de l'aide
             </Bouton>
@@ -8068,13 +8200,40 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
           {erreur}
         </div>
       )}
+      </React.Fragment>)}
 
+      {!parEtapes && (
       <div style={{ display: "flex", gap: 10 }}>
         <Bouton onClick={onAnnuler} style={{ flex: 1 }}>Annuler</Bouton>
         <Bouton variante="primaire" onClick={sauver} disabled={enregistrement} style={{ flex: 2 }}>
           {enregistrement ? "Enregistrement…" : (modeEdition ? "Enregistrer les modifications" : (modeTri ? "Classer dans la collection" : "Épingler dans la collection"))}
         </Bouton>
       </div>
+      )}
+
+      {/* v1.93 — Barre d'action fixe : l'action de l'étape toujours sous le pouce. */}
+      {parEtapes && (
+        <div className="bd-barre-action">
+          <div className="bd-barre-action-in">
+            {etape === 1 && (<React.Fragment>
+              <Bouton onClick={onAnnuler} style={{ flex: 1 }}>Annuler</Bouton>
+              <Bouton variante="primaire" disabled={!photoBlob || cloudEtat === "recherche"} onClick={() => identifierEtContinuer(true)} style={{ flex: 2 }}>
+                🔍 {photoBlob ? "Identifier" : "Ajoute une photo"}
+              </Bouton>
+            </React.Fragment>)}
+            {etape === 2 && (<React.Fragment>
+              <Bouton onClick={() => setEtape(1)} style={{ flex: 1 }}>← Photo</Bouton>
+              <Bouton variante="primaire" onClick={() => setEtape(3)} style={{ flex: 2 }}>Continuer →</Bouton>
+            </React.Fragment>)}
+            {etape === 3 && (<React.Fragment>
+              <Bouton onClick={() => setEtape(2)} style={{ flex: 1 }}>← Espèce</Bouton>
+              <Bouton variante="primaire" onClick={sauver} disabled={enregistrement} style={{ flex: 2 }}>
+                {enregistrement ? "Enregistrement…" : (modeTri ? "Classer dans la collection" : "📌 Épingler")}
+              </Bouton>
+            </React.Fragment>)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
