@@ -238,7 +238,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.83";
+const VERSION = "v1.84";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1743,6 +1743,9 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.84", date: "2026-11", items: [
+    "💡 La boîte à idées ne te redemande plus ton prénom à chaque visite : comme sur le mur, la ligue et les missions, un simple rappel avec « modifier ».",
+  ] },
   { v: "1.83", date: "2026-11", items: [
     "🎮 Le Jeu est plus simple à parcourir : Cartes, Ligue, Arène et Quiz sont maintenant côte à côte, en haut de l'écran. Fini le Combat caché derrière plusieurs rangées d'onglets.",
   ] },
@@ -10019,11 +10022,11 @@ function BoiteIdees({ prenom, onDefinirPrenom, onFermer, estAdmin }) {
 
       {/* Formulaire */}
       <div style={{ padding: "12px 14px", background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10, marginBottom: 18 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: besoinPrenom ? 6 : 8 }}>
-          <span style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, whiteSpace: "nowrap" }}>Ton prénom :</span>
-          <input value={saisiePrenom} onChange={(e) => { setSaisiePrenom(e.target.value); if (e.target.value.trim()) setBesoinPrenom(false); }} placeholder="ex : Sylvain" maxLength={40}
-            style={{ flex: 1, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${besoinPrenom ? C.ambre : C.bordure}`, borderRadius: 8, padding: "8px 10px", fontFamily: sans, fontSize: 14, outline: "none" }} />
-        </div>
+        {/* v1.84 — Comme sur le mur, la ligue et les missions : prénom connu = simple rappel. */}
+        <LignePrenom etiquette="Tu proposes en tant que" prenom={besoinPrenom ? "" : prenom} saisie={saisiePrenom} alerte={besoinPrenom}
+          onSaisie={(v) => { setSaisiePrenom(v); if (v.trim()) setBesoinPrenom(false); }}
+          onValider={(v) => { if (v && onDefinirPrenom) onDefinirPrenom(v); }}
+          style={{ marginBottom: besoinPrenom ? 6 : 8 }} />
         {besoinPrenom && (
           <div style={{ fontFamily: sans, fontSize: 12, color: C.ambreClair, marginBottom: 8 }}>👆 Indique ton prénom pour réagir aux idées.</div>
         )}
