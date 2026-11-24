@@ -264,6 +264,34 @@
   .bd-puce.rare { border-color: rgba(229,184,75,.55); color: #F0D894; }
   .bd-puce.rare.actif { background: linear-gradient(135deg, #F0D07A, #C9962E); color: #1B1A12; }
   .bd-puce-sep { flex-shrink: 0; width: 1px; margin: 6px 2px; background: #3A4531; }
+  /* v1.91 — Boîte : barre de recherche, boutons carrés arrondis, en-têtes de mois, carrousel replié */
+  .bd-recherche { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 6px 0 12px; box-sizing: border-box;
+    border-radius: 12px; background: #1C2318; border: 1px solid #3A4531; color: #8F8B76; cursor: text; }
+  .bd-recherche:focus-within { border-color: #A8863A; box-shadow: 0 0 0 3px rgba(201,162,75,.15); color: #E4C878; }
+  .bd-recherche input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: #EDE6D2; padding: 0;
+    font: 14.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-overflow: ellipsis; }
+  .bd-recherche input::placeholder { color: #8F8B76; }
+  .bd-recherche-x { width: 30px; height: 30px; border: none; border-radius: 50%; background: #2A3322; color: #CFC6A8; font-size: 18px; line-height: 1; cursor: pointer; }
+  .bd-rond-carre { position: relative; flex-shrink: 0; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 12px; border: 1px solid #3A4531; background: #1C2318; color: #CFC6A8; cursor: pointer; padding: 0; }
+  .bd-rond-carre:active { transform: scale(.94); }
+  .bd-rond-carre.actif { border-color: #A8863A; background: linear-gradient(#2C3623, #232B1D); color: #E4C878; }
+  .bd-point { position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: #E4C878; box-shadow: 0 0 0 2px #1C2318; }
+  .bd-mois { display: flex; align-items: center; gap: 10px; margin: 18px 0 10px; }
+  .bd-mois:first-child { margin-top: 4px; }
+  .bd-mois-nom { font-family: 'Fraunces', Georgia, serif; font-size: 17px; font-weight: 600; color: #EDE6D2; text-transform: capitalize; }
+  .bd-mois-ligne { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(201,162,75,.45), transparent); }
+  .bd-mois-n { font: 700 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #A8A48F; }
+  .bd-tuile { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; cursor: pointer; background: #1C2318;
+    box-shadow: 0 2px 6px rgba(0,0,0,.35); outline: 1px solid rgba(201,162,75,.18); outline-offset: -1px; }
+  .bd-tuile:active { transform: scale(.96); }
+  .bd-tuile-nom { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 7px 6px; color: #F2ECDA; line-height: 1.2;
+    font: 700 11.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-shadow: 0 1px 2px rgba(0,0,0,.8);
+    background: linear-gradient(transparent, rgba(8,10,6,.85)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bd-tuile-rare { position: absolute; top: 4px; right: 5px; font-size: 14px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
+  .bd-carr-vue { position: relative; }
+  .bd-carr-vue.replie { max-height: 124px; overflow: hidden;
+    -webkit-mask-image: linear-gradient(#000 62%, transparent); mask-image: linear-gradient(#000 62%, transparent); }
   /* v1.90 — Stats : bandeau de synthèse */
   .bd-synth { position: relative; overflow: hidden; border-radius: 16px; padding: 18px 16px 14px; margin-bottom: 14px;
     background: radial-gradient(120% 90% at 0% 0%, rgba(201,162,75,.18), transparent 60%), linear-gradient(#232C1C, #191F14);
@@ -308,7 +336,7 @@
 <body>
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useLayoutEffect } = React;
 
 // ── Détection de la connexion ──
 // L'identification par IA passe par le réseau : hors ligne, mieux vaut le dire
@@ -398,7 +426,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.90";
+const VERSION = "v1.91";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1903,6 +1931,11 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.91", date: "2026-11", items: [
+    "🖼️ Nouvelle mise en page de la Boîte. Ta collection s'affiche en mosaïque, 3 photos par ligne, et elle est rangée par mois (« Novembre 2026 · 7 »). Tu préfères les étiquettes épinglées ? Choisis « Étiquettes » dans le bouton des filtres, à côté de la recherche.",
+    "🔍 Recherche, filtres et import tiennent maintenant sur une seule ligne, juste au-dessus de ta collection.",
+    "📰 L'encart du moment (« À guetter », « Le savais-tu ? »…) est replié sur deux lignes. Touche « Lire la suite » pour le déplier.",
+  ] },
   { v: "1.90", date: "2026-11", items: [
     "🎨 Passe visuelle, 2e étape : les sous-onglets du Jeu, de la Ligue et de la Carte ont tous le même style, avec des icônes dessinées.",
     "📊 Stats : un bandeau de synthèse remplace les 7 petites tuiles. Ton nombre d'espèces s'affiche en grand, et les espèces rares, cartes, notables et fiches sont dessous.",
@@ -2717,6 +2750,10 @@ const ICONES = {
   livre: <React.Fragment><path d="M12 6.5C10.3 5 7.6 4.4 4 4.6v13.6c3.6-.2 6.3.4 8 1.9 1.7-1.5 4.4-2.1 8-1.9V4.6c-3.6-.2-6.3.4-8 1.9z" /><path d="M12 6.5v13.6" /></React.Fragment>,
   trophee: <React.Fragment><path d="M7.5 4h9v5a4.5 4.5 0 0 1-9 0z" /><path d="M7.5 6H4.5a3 3 0 0 0 3 4M16.5 6h3a3 3 0 0 1-3 4" /><path d="M12 13.5v3.5M8.5 20h7M9.5 17h5" /></React.Fragment>,
   epees: <React.Fragment><path d="M4 4l9.5 9.5M4 4h3.5L15 11.5M4 4v3.5L11.5 15" /><path d="M20 4l-6.5 6.5M20 4h-3.5l-3 3M20 4v3.5l-3 3" /><path d="M12.5 15.5l4 4M15.5 12.5l4 4M17.5 21l3.5-3.5" /><path d="M8.5 15.5l-4 4M3 17.5L6.5 21" /></React.Fragment>,
+  // v1.91 — barre de recherche de la Boîte
+  loupe: <React.Fragment><circle cx="10.5" cy="10.5" r="6" /><path d="M15 15l5 5" /></React.Fragment>,
+  filtres: <React.Fragment><path d="M4 7h9M17 7h3M4 17h3M11 17h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></React.Fragment>,
+  importer: <React.Fragment><path d="M12 3.5v10M8 9.5l4 4 4-4" /><path d="M4 14.5v3a2.5 2.5 0 0 0 2.5 2.5h11a2.5 2.5 0 0 0 2.5-2.5v-3" /></React.Fragment>,
   ampoule: <React.Fragment><path d="M9 17.5h6M9.8 20.5h4.4" /><path d="M12 3.5a6 6 0 0 0-3.6 10.8c.4.3.6.8.6 1.3v1.9h6v-1.9c0-.5.2-1 .6-1.3A6 6 0 0 0 12 3.5z" /></React.Fragment>,
 };
 // v1.90 — Onglets en segments : un seul style pour les sous-onglets (Jeu, Carte…).
@@ -5363,17 +5400,28 @@ function CarrouselBandeaux({ children, delai = 15000 }) {
   // Si un bandeau se ferme, on reste dans les bornes.
   useEffect(() => { if (i >= slides.length && slides.length > 0) setI(0); }, [slides.length, i]);
 
+  // v1.91 — Encart replié sur ~120 px (avant : jusqu'à 230 px, qui repoussaient la
+  // collection hors de l'écran). « Lire la suite » le déplie ; changer d'encart le replie.
+  const [deplie, setDeplie] = useState(false);
+  const [deborde, setDeborde] = useState(false);
+  const vueRef = useRef(null);
+  useEffect(() => { setDeplie(false); }, [i]);
+  useLayoutEffect(() => {
+    const el = vueRef.current;
+    if (el) setDeborde(el.scrollHeight > el.clientHeight + 4);
+  });
+
   if (slides.length === 0) return null;
-  if (slides.length === 1) return <div>{slides[0]}</div>;
 
   const aller = (n) => { setManuel(true); setI((n + slides.length) % slides.length); };
+  const plusieurs = slides.length > 1;
 
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div
+    <div style={{ marginBottom: 14 }}>
+      <div ref={vueRef} className={"bd-carr-vue" + (deplie ? "" : " replie")}
         onTouchStart={(e) => { toucheX.current = e.touches[0].clientX; }}
         onTouchEnd={(e) => {
-          if (toucheX.current === null) return;
+          if (toucheX.current === null || !plusieurs) return;
           const d = e.changedTouches[0].clientX - toucheX.current;
           if (Math.abs(d) > 45) aller(i + (d < 0 ? 1 : -1));
           toucheX.current = null;
@@ -5381,13 +5429,21 @@ function CarrouselBandeaux({ children, delai = 15000 }) {
       >
         {slides[Math.min(i, slides.length - 1)]}
       </div>
-      {/* Points de navigation : indiquent aussi qu'il y a d'autres encarts à voir */}
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 7, marginTop: -6 }}>
-        {slides.map((_, n) => (
-          <button key={n} onClick={() => aller(n)} aria-label={`Encart ${n + 1}`}
-            style={{ width: n === i ? 18 : 7, height: 7, borderRadius: 4, border: "none", padding: 0, cursor: "pointer",
-              background: n === i ? C.ambre : C.bordure, transition: "width .2s" }} />
-        ))}
+      {/* Points de navigation (indiquent aussi qu'il y a d'autres encarts) + « Lire la suite » */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 7, marginTop: deplie ? -8 : 2, minHeight: 22 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          {plusieurs && slides.map((_, n) => (
+            <button key={n} onClick={() => aller(n)} aria-label={`Encart ${n + 1}`}
+              style={{ width: n === i ? 18 : 7, height: 7, borderRadius: 4, border: "none", padding: 0, cursor: "pointer",
+                background: n === i ? C.ambre : C.bordure, transition: "width .2s" }} />
+          ))}
+        </div>
+        {(deborde || deplie) && (
+          <button onClick={() => { setManuel(true); setDeplie((v) => !v); }}
+            style={{ background: "none", border: "none", padding: "2px 0", cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambre }}>
+            {deplie ? "Réduire ▴" : "Lire la suite ▾"}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -12921,6 +12977,9 @@ function BioDex() {
   const [fOrdre, setFOrdre] = useState("");
   const [fRare, setFRare] = useState(false); // filtre "espèces rares seulement"
   const [montrerFiltres, setMontrerFiltres] = useState(false);
+  // v1.91 — Affichage de la boîte : étiquettes (2 par ligne) ou mosaïque (3 photos par ligne).
+  const [vueBoite, setVueBoiteBrute] = useState(() => { try { return localStorage.getItem("biodex_vue_boite") || "mosaique"; } catch { return "mosaique"; } });
+  const setVueBoite = (v) => { setVueBoiteBrute(v); try { localStorage.setItem("biodex_vue_boite", v); } catch {} };
   const raretesGlobal = useRaretes(observations); // rareté iNaturalist globale (cache + arrière-plan)
 
   // ── Bouton/geste retour du système : inscriptions au registre central bdRetour ──
@@ -13629,22 +13688,9 @@ function BioDex() {
               <EncartBande key="bande" post={dernierPostBande} onOuvrir={() => setVue("mur")} onMasquer={() => masquerEncart("bande")} />
             )}
           </CarrouselBandeaux>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
-            <span style={{ fontFamily: serif, color: C.ambre, fontWeight: 700, fontSize: 26, flexShrink: 0 }}>{triees.length}</span>
-            <span style={{ flex: 1, fontFamily: sans, fontSize: 13.5, color: C.papierSombre }}>
-              spécimen{triees.length > 1 ? "s" : ""} épinglé{triees.length > 1 ? "s" : ""}
-              {nbBiotopes > 0 && <span> · {nbBiotopes} biotope{nbBiotopes > 1 ? "s" : ""}</span>}
-            </span>
-            {/* v1.75 — L'import en masse occupait une rangée entière en permanence, alors
-                qu'il ne sert qu'au retour de balade. Il tient ici, au bout du compteur. */}
-            {aTrier.length === 0 && triees.length > 0 && (
-              <button onClick={() => setVue("atrier")} title="Importer plusieurs photos d'un coup"
-                style={{ flexShrink: 0, alignSelf: "center", padding: "7px 11px", borderRadius: 9, cursor: "pointer",
-                  background: "transparent", border: `1px dashed ${C.bordure}`, color: C.papierSombre, fontFamily: sans, fontSize: 12 }}>
-                📥 Importer
-              </button>
-            )}
-          </div>
+          {/* v1.91 — Le compteur a rejoint la barre de recherche (« Rechercher parmi 10
+              spécimens… ») et l'import est un bouton rond à côté : une rangée de moins
+              avant les premières photos. */}
 
 
           {/* Rappel : observations en attente d'un nom (aide demandée ou non renseignée) */}
@@ -13668,49 +13714,34 @@ function BioDex() {
             );
           })()}
 
-          {/* Onglets par ordre taxonomique */}
-          {/* v1.90 — Groupes et « Espèces rares » sur une seule rangée (avant : deux). */}
-          {((ordresDispo.length + (nbAutres > 0 ? 1 : 0)) > 1 || nbRares > 0) && (
-            <div className="bd-puces" style={{ marginBottom: 10 }}>
-              {nbRares > 0 && (
-                <button className={"bd-puce rare" + (fRare ? " actif" : "")} onClick={() => setFRare((v) => !v)}>
-                  🌟 Rares <span className="n">{nbRares}</span>
-                </button>
-              )}
-              {nbRares > 0 && (ordresDispo.length + (nbAutres > 0 ? 1 : 0)) > 1 && <span className="bd-puce-sep" />}
-              {(ordresDispo.length + (nbAutres > 0 ? 1 : 0)) > 1 && (
-                <React.Fragment>
-                  <button className={"bd-puce" + (fOrdre === "" ? " actif" : "")} onClick={() => setFOrdre("")}>
-                    Tous <span className="n">{triees.length}</span>
-                  </button>
-                  {ordresDispo.map((o) => (
-                    <button key={o.id} className={"bd-puce" + (fOrdre === o.id ? " actif" : "")} onClick={() => setFOrdre(fOrdre === o.id ? "" : o.id)}>
-                      {o.emoji} {o.court} <span className="n">{o.n}</span>
-                    </button>
-                  ))}
-                  {nbAutres > 0 && (
-                    <button className={"bd-puce" + (fOrdre === "autres" ? " actif" : "")} onClick={() => setFOrdre(fOrdre === "autres" ? "" : "autres")}>
-                      🔎 Autres <span className="n">{nbAutres}</span>
-                    </button>
-                  )}
-                </React.Fragment>
-              )}
-            </div>
-          )}
-
-          {triees.length > 1 && (
-            <div style={{ marginBottom: 16 }}>
+          {triees.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input value={fTexte} onChange={(e) => setFTexte(e.target.value)} placeholder="🔍 Rechercher un nom…"
-                  style={{ flex: 1, boxSizing: "border-box", background: C.panneau, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 9, padding: "10px 12px", fontFamily: sans, fontSize: 15, outline: "none" }} />
-                <button className="bd-press" onClick={() => setMontrerFiltres((v) => !v)}
-                  style={{ fontFamily: sans, fontSize: 14, fontWeight: 600, padding: "10px 12px", borderRadius: 9, cursor: "pointer", border: `1px solid ${filtresActifs || montrerFiltres ? "#A8863A" : C.bordure}`, background: filtresActifs || montrerFiltres ? "linear-gradient(#2C3623, #232B1D)" : C.panneau, color: filtresActifs ? C.ambreClair : C.papierSombre }}>
-                  ⚙︎ Filtres{filtresActifs ? " •" : ""}
+                <label className="bd-recherche">
+                  <Icone nom="loupe" taille={18} />
+                  <input value={fTexte} onChange={(e) => setFTexte(e.target.value)}
+                    placeholder={`Chercher parmi ${triees.length} spécimen${triees.length > 1 ? "s" : ""}`} />
+                  {fTexte && <button className="bd-recherche-x" onClick={() => setFTexte("")} aria-label="Effacer la recherche">×</button>}
+                </label>
+                <button className={"bd-rond-carre" + (filtresActifs || montrerFiltres ? " actif" : "")} onClick={() => setMontrerFiltres((v) => !v)}
+                  aria-label="Trier et filtrer" title="Trier et filtrer">
+                  <Icone nom="filtres" taille={20} />
+                  {filtresActifs && <span className="bd-point" />}
                 </button>
+                {/* v1.75 — L'import en masse ne sert qu'au retour de balade : un bouton rond suffit. */}
+                {aTrier.length === 0 && (
+                  <button className="bd-rond-carre" onClick={() => setVue("atrier")} aria-label="Importer plusieurs photos" title="Importer plusieurs photos d'un coup">
+                    <Icone nom="importer" taille={20} />
+                  </button>
+                )}
               </div>
 
               {montrerFiltres && (
                 <div style={{ marginTop: 10, padding: 12, background: C.panneau, border: `1px solid ${C.bordure}`, borderRadius: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div>
+                    <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 6 }}>Affichage</div>
+                    <Segments petit options={[["etiquettes", "Étiquettes"], ["mosaique", "Mosaïque"]]} valeur={vueBoite} onChange={setVueBoite} />
+                  </div>
                   {/* Tri déplacé ici : il occupait une rangée entière en permanence alors
                       qu'on le change rarement, contrairement à la recherche. */}
                   {triees.length > 1 && (
@@ -13757,6 +13788,36 @@ function BioDex() {
             </div>
           )}
 
+          {/* Onglets par ordre taxonomique */}
+          {/* v1.90 — Groupes et « Espèces rares » sur une seule rangée (avant : deux). */}
+          {((ordresDispo.length + (nbAutres > 0 ? 1 : 0)) > 1 || nbRares > 0) && (
+            <div className="bd-puces" style={{ marginBottom: 10 }}>
+              {nbRares > 0 && (
+                <button className={"bd-puce rare" + (fRare ? " actif" : "")} onClick={() => setFRare((v) => !v)}>
+                  🌟 Rares <span className="n">{nbRares}</span>
+                </button>
+              )}
+              {nbRares > 0 && (ordresDispo.length + (nbAutres > 0 ? 1 : 0)) > 1 && <span className="bd-puce-sep" />}
+              {(ordresDispo.length + (nbAutres > 0 ? 1 : 0)) > 1 && (
+                <React.Fragment>
+                  <button className={"bd-puce" + (fOrdre === "" ? " actif" : "")} onClick={() => setFOrdre("")}>
+                    Tous <span className="n">{triees.length}</span>
+                  </button>
+                  {ordresDispo.map((o) => (
+                    <button key={o.id} className={"bd-puce" + (fOrdre === o.id ? " actif" : "")} onClick={() => setFOrdre(fOrdre === o.id ? "" : o.id)}>
+                      {o.emoji} {o.court} <span className="n">{o.n}</span>
+                    </button>
+                  ))}
+                  {nbAutres > 0 && (
+                    <button className={"bd-puce" + (fOrdre === "autres" ? " actif" : "")} onClick={() => setFOrdre(fOrdre === "autres" ? "" : "autres")}>
+                      🔎 Autres <span className="n">{nbAutres}</span>
+                    </button>
+                  )}
+                </React.Fragment>
+              )}
+            </div>
+          )}
+
           {erreurGlobale && (
             <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 8, background: "#3A241C", color: "#E8A88F", fontFamily: sans, fontSize: 14 }}>
               {erreurGlobale}
@@ -13789,8 +13850,45 @@ function BioDex() {
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 14 }}>
-            {trierObservations(listeFiltree, tri).map((o, i) => (
+          {/* v1.91 — Rangée par mois quand le tri est chronologique : la boîte se lit comme
+              un carnet (« Novembre 2026 · 7 »). Les autres tris gardent une seule grille. */}
+          {(() => {
+            const liste = trierObservations(listeFiltree, tri);
+            const parDate = tri === "recent" || tri === "ancien" || !tri;
+            const groupes = [];
+            liste.forEach((o) => {
+              const cle = parDate ? moisDe(o.date) : "tout";
+              if (!groupes.length || groupes[groupes.length - 1].cle !== cle) groupes.push({ cle, obs: [] });
+              groupes[groupes.length - 1].obs.push(o);
+            });
+            const nomMois = (cle) => {
+              const [a, m] = (cle || "").split("-");
+              const noms = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+              return `${noms[parseInt(m, 10) - 1] || "Sans date"} ${a || ""}`.trim();
+            };
+            let rang = 0;
+            return groupes.map((g) => (
+              <React.Fragment key={g.cle}>
+                {parDate && groupes.length > 1 && (
+                  <div className="bd-mois">
+                    <span className="bd-mois-nom">{nomMois(g.cle)}</span>
+                    <span className="bd-mois-ligne" />
+                    <span className="bd-mois-n">{g.obs.length}</span>
+                  </div>
+                )}
+          {vueBoite === "mosaique" ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 6 }}>
+            {g.obs.map((o) => { const i = rang++; const niv = niveauRarete(raretesGlobal[cleEspeceMur(o)]); return (
+              <div key={o.id} className="bd-tuile bd-fade" onClick={() => { setSelectionId(o.id); setVue("detail"); }} style={{ animationDelay: `${Math.min(i * 25, 300)}ms` }}>
+                <PhotoBlobRecadree blob={o.photo} zone={o.cadrePhoto} alt={o.nom} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                {niv && niv.bonus > 0 && <span className="bd-tuile-rare" title={niv.label}>{niv.emoji}</span>}
+                <span className="bd-tuile-nom">{o.nom || "Non identifié"}</span>
+              </div>
+            ); })}
+          </div>
+          ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
+            {g.obs.map((o) => { const i = rang++; return (
               <div key={o.id} className="bd-card bd-fade" onClick={() => { setSelectionId(o.id); setVue("detail"); }}
                 style={{ background: "linear-gradient(#212A1B, #1A2015)", border: `1px solid ${C.bordure}`, borderRadius: 11, overflow: "hidden", cursor: "pointer", position: "relative", paddingTop: 16, boxShadow: "0 3px 10px rgba(0,0,0,.3), 0 1px 0 rgba(255,255,255,.03) inset", animationDelay: `${Math.min(i * 40, 400)}ms` }}>
                 <div className="bd-pin-shaft" />
@@ -13805,8 +13903,12 @@ function BioDex() {
                   <Etiquette obs={o} />
                 </div>
               </div>
-            ))}
+            ); })}
           </div>
+          )}
+              </React.Fragment>
+            ));
+          })()}
         </div>
       )}
     </div>
