@@ -17,9 +17,10 @@ const MODELE_VISION = process.env.BIODEX_MODELE_VISION || "claude-opus-5-5";
 // FICHE   : la fiche naturaliste AFFIRME des faits (statut de conservation,
 //           répartition, période de vol). On garde Sonnet : c'est le seul
 //           texte où une approximation serait un mensonge.
-const MODELE_FICHE  = process.env.BIODEX_MODELE_FICHE  || "claude-sonnet-5";
+const MODELE_FICHE  = process.env.BIODEX_MODELE_FICHE  || "claude-sonnet-5-5";
 // CARTE   : stats de jeu inventées, aucun enjeu factuel. Haiku suffit.
-const MODELE_CARTE  = process.env.BIODEX_MODELE_CARTE  || "claude-haiku-4-5";
+// v2.03 : Haiku 5.5, 10 fois moins cher que Haiku 4.5 (0,10 $ / 0,50 $ par million de jetons).
+const MODELE_CARTE  = process.env.BIODEX_MODELE_CARTE  || "claude-haiku-5-5";
 
 // Tarifs publics, en dollars par million de tokens. Sert au calcul du budget.
 // À remettre à jour si Anthropic change sa grille.
@@ -410,8 +411,10 @@ exports.handler = async (event) => {
   // Les modèles 5.5 réfléchissent toujours avant de répondre : on règle l'effort,
   // et la réflexion compte dans max_tokens (d'où les marges plus larges ci-dessus).
   const reflechit = /-5-5$/.test(modeleUtilise);
-  const effort = cheminRapide ? "low" : mode === "affinage" ? "low" : "medium";
+  const effort = cheminRapide || mode === "affinage" || mode === "carte" ? "low" : "medium";
   if (reflechit && mode === "affinage") maxTokens = Math.max(maxTokens, 3000);
+  if (reflechit && mode === "carte") maxTokens = Math.max(maxTokens, 2500);
+  if (reflechit && mode === "fiche") maxTokens = Math.max(maxTokens, 5000);
 
   // ── Réservation du budget ──────────────────────────────────────────────
   // On estime haut : nombre d'images x pire cas, plus le prompt système, plus

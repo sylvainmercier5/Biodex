@@ -114,7 +114,8 @@
   .bd-nav-ico { font-size: 21px; line-height: 1; transition: transform .18s ease; filter: grayscale(.55) brightness(.9); }
   .bd-nav-item.actif { background: linear-gradient(#2C3623, #232B1D); box-shadow: inset 0 0 0 1px rgba(168,134,58,.55), 0 2px 8px rgba(0,0,0,.3); }
   .bd-nav-item.actif .bd-nav-ico { transform: translateY(-1px) scale(1.12); filter: none; }
-  .bd-nav-lbl { font-size: 9.5px; font-weight: 700; letter-spacing: .3px; color: #6E6A57; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  /* v1.82 — libellés plus lisibles : contraste 7:1 (au lieu de 3,3:1) et 10,5 px (au lieu de 9,5) */
+  .bd-nav-lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .3px; color: #A8A48F; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   .bd-nav-item.actif .bd-nav-lbl { color: #E4C878; }
   .bd-nav-badge { position: absolute; top: 2px; right: calc(50% - 22px); min-width: 16px; height: 16px; line-height: 16px;
     padding: 0 4px; box-sizing: border-box; border-radius: 8px; font-size: 9.5px; font-weight: 800; text-align: center;
@@ -237,7 +238,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.81";
+const VERSION = "v1.82";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1742,6 +1743,10 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.82", date: "2026-11", items: [
+    "👓 Plus lisible : les libellés de la barre du bas sont plus clairs et plus grands, et les plus petits textes de l'appli grossissent un peu.",
+    "📖 Fiches naturalistes et cartes de combat rédigées par des modèles d'IA plus récents (fiches plus justes sur les statuts de protection).",
+  ] },
   { v: "1.81", date: "2026-11", items: [
     "🔬 Identification bien plus précise : un modèle spécialisé dans le vivant (BioCLIP) reconnaît d'abord l'espèce parmi celles de ta région, et Claude prend le relais quand il hésite. Sur 123 photos de test, la bonne espèce passe de 78 % à 91 %.",
     "⚡ Quand le spécialiste est sûr de lui, la réponse arrive en deux secondes environ.",
@@ -2581,7 +2586,7 @@ function Etiquette({ obs }) {
       <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 12, color: "#6B6350", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {obs.nomSci || "—"}
       </div>
-      <div style={{ fontFamily: sans, fontSize: 10.5, letterSpacing: 0.4, textTransform: "uppercase", color: "#8A8065", marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(0,0,0,.08)", display: "flex", justifyContent: "space-between" }}>
+      <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: 0.4, textTransform: "uppercase", color: "#8A8065", marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(0,0,0,.08)", display: "flex", justifyContent: "space-between" }}>
         <span>{biotopeOf(obs.biotope).emoji} {biotopeOf(obs.biotope).label}</span>
         <span>{new Date(obs.date).toLocaleDateString("fr-FR")}</span>
       </div>
@@ -2914,7 +2919,7 @@ function Stats({ observations, raretes, onFermer }) {
             <span style={{ fontSize: 24 }}>{emo}</span>
             <div>
               <div style={{ fontFamily: serif, fontSize: 26, fontWeight: 600, color: C.ambreClair, lineHeight: 1 }}>{val}</div>
-              <div style={{ fontFamily: sans, fontSize: 10.5, letterSpacing: 0.3, textTransform: "uppercase", color: C.papierSombre, marginTop: 4 }}>{lab}</div>
+              <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: 0.3, textTransform: "uppercase", color: C.papierSombre, marginTop: 4 }}>{lab}</div>
             </div>
           </div>
         ))}
@@ -2926,7 +2931,7 @@ function Stats({ observations, raretes, onFermer }) {
           <div key={lab} style={{ ...carte, padding: "12px 8px", textAlign: "center" }}>
             <div style={{ fontSize: 18 }}>{emo}</div>
             <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.ambreClair, lineHeight: 1, marginTop: 2 }}>{val}</div>
-            <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 4 }}>{lab}</div>
+            <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: C.papierSombre, marginTop: 4 }}>{lab}</div>
           </div>
         ))}
       </div>
@@ -3036,7 +3041,7 @@ function Stats({ observations, raretes, onFermer }) {
                 </div>
               ))}
             </div>
-            <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, marginTop: 11, lineHeight: 1.45, fontStyle: "italic" }}>
+            <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 11, lineHeight: 1.45, fontStyle: "italic" }}>
               ⚠️ Ce sont des tendances personnelles, pas des vérités scientifiques : elles reflètent tes habitudes de sortie autant que la biologie des insectes !
             </div>
           </div>
@@ -3051,14 +3056,14 @@ function Stats({ observations, raretes, onFermer }) {
                 <div style={{ flex: 1, textAlign: "center", padding: "12px 8px", borderRadius: 10, background: C.fond, border: `1px solid ${C.bordure}` }}>
                   <div style={{ fontSize: 22, marginBottom: 3 }}>🌡️</div>
                   <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{tempMoy}°C</div>
-                  <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Température moyenne</div>
+                  <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Température moyenne</div>
                 </div>
               )}
               {cielTop && (
                 <div style={{ flex: 1, textAlign: "center", padding: "12px 8px", borderRadius: 10, background: C.fond, border: `1px solid ${C.bordure}` }}>
                   <div style={{ fontSize: 22, marginBottom: 3 }}>{cielTop.emoji}</div>
                   <div style={{ fontFamily: serif, fontSize: 17, fontWeight: 700, color: C.ambreClair, lineHeight: 1.2 }}>{cielTop.label}</div>
-                  <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Ciel le plus fréquent</div>
+                  <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Ciel le plus fréquent</div>
                 </div>
               )}
             </div>
@@ -3089,7 +3094,7 @@ function Stats({ observations, raretes, onFermer }) {
           </div>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 600, color: C.ambreClair, lineHeight: 1 }}>{star[1]}</div>
-            <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre }}>fois</div>
+            <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>fois</div>
           </div>
         </div>
       )}
@@ -3104,7 +3109,7 @@ function Stats({ observations, raretes, onFermer }) {
           {badges.map((b, i) => (
             <div key={i} style={{ textAlign: "center", opacity: b.atteint ? 1 : 0.32, filter: b.atteint ? "none" : "grayscale(1)" }} title={b.label}>
               <div style={{ fontSize: 26, lineHeight: 1.1 }}>{b.emoji}</div>
-              <div style={{ fontFamily: sans, fontSize: 10.5, color: b.atteint ? C.papier : C.papierSombre, marginTop: 3, lineHeight: 1.2 }}>{b.label}</div>
+              <div style={{ fontFamily: sans, fontSize: 11, color: b.atteint ? C.papier : C.papierSombre, marginTop: 3, lineHeight: 1.2 }}>{b.label}</div>
             </div>
           ))}
         </div>
@@ -3128,7 +3133,7 @@ function Stats({ observations, raretes, onFermer }) {
                   <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                     <span style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: C.papier }}>{b.label}</span>
                     {b.niveau > 0 && (
-                      <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, color: C.encre, background: C.ambreClair, padding: "2px 7px", borderRadius: 10 }}>NIV. {b.niveau}</span>
+                      <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 0.4, color: C.encre, background: C.ambreClair, padding: "2px 7px", borderRadius: 10 }}>NIV. {b.niveau}</span>
                     )}
                   </div>
                   {/* Barre de progression vers le prochain palier */}
@@ -3136,7 +3141,7 @@ function Stats({ observations, raretes, onFermer }) {
                     <div style={{ height: 5, borderRadius: 3, background: C.fond, overflow: "hidden" }}>
                       <div style={{ height: "100%", width: `${b.prochainSeuil ? Math.min(100, Math.round(b.n / b.prochainSeuil * 100)) : 100}%`, background: b.niveau >= PALIERS_CAT.length ? "#C9A24B" : "#7FA658", borderRadius: 3 }} />
                     </div>
-                    <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, marginTop: 3 }}>
+                    <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 3 }}>
                       {b.n} espèce{b.n > 1 ? "s" : ""}{b.prochainSeuil ? ` · ${b.prochainSeuil - b.n} avant niv. ${b.niveau + 1}` : " · niveau max 🏆"}
                     </div>
                   </div>
@@ -3177,7 +3182,7 @@ function Stats({ observations, raretes, onFermer }) {
               <div key={m} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                 <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.ambreClair }}>{n}</div>
                 <div style={{ width: "100%", maxWidth: 44, height: `${maxMois ? (n / maxMois) * 84 : 0}px`, minHeight: 4, borderRadius: "5px 5px 0 0", background: `linear-gradient(${C.ambreClair}, ${C.ambre})`, transition: "height .5s ease" }} />
-                <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, textAlign: "center", lineHeight: 1.2 }}>{moisLisible(m)}</div>
+                <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, textAlign: "center", lineHeight: 1.2 }}>{moisLisible(m)}</div>
               </div>
             ))}
           </div>
@@ -3312,7 +3317,7 @@ function BadgeRarete({ count, style }) {
   if (!niv || niv.bonus <= 0) return null;
   return (
     <span title={`${niv.label} (${count.toLocaleString("fr-FR")} observations mondiales sur iNaturalist)`}
-      style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: sans, fontSize: 10.5, fontWeight: 800, color: "#12160D", background: niv.couleur, borderRadius: 7, padding: "1px 6px", whiteSpace: "nowrap", ...style }}>
+      style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: sans, fontSize: 11, fontWeight: 800, color: "#12160D", background: niv.couleur, borderRadius: 7, padding: "1px 6px", whiteSpace: "nowrap", ...style }}>
       {niv.emoji} {niv.label}
     </span>
   );
@@ -3588,12 +3593,12 @@ function JardinRefuge({ onFermer }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
                     <span style={{ fontFamily: serif, fontSize: 16, fontWeight: 600, color: fait ? "#B7DA8E" : C.papier }}>{g.titre}</span>
-                    {g.cle && !fait && <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#E0B341", border: "1px solid #6B5A2E", borderRadius: 10, padding: "1px 6px" }}>Essentiel</span>}
+                    {g.cle && !fait && <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#E0B341", border: "1px solid #6B5A2E", borderRadius: 10, padding: "1px 6px" }}>Essentiel</span>}
                   </div>
                   <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierClair, lineHeight: 1.55, marginBottom: 8 }}>{g.texte}</div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 10, padding: "2px 8px" }}>💪 {g.effort}</span>
-                    <span style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 10, padding: "2px 8px" }}>📅 {g.saison}</span>
+                    <span style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 10, padding: "2px 8px" }}>💪 {g.effort}</span>
+                    <span style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 10, padding: "2px 8px" }}>📅 {g.saison}</span>
                   </div>
                 </div>
                 <span style={{ fontSize: 20, flexShrink: 0, color: fait ? "#8AAE6B" : C.bordure }}>{fait ? "✓" : "○"}</span>
@@ -3932,7 +3937,7 @@ function MonProfil({ prenom, onDefinirPrenom, observations, onFermer }) {
                     background: `linear-gradient(${t.c1}, ${t.c2})`,
                     border: `2px solid ${theme === t.id ? t.accent : C.bordure}`,
                     boxShadow: theme === t.id ? `0 0 0 2px ${t.bord}` : "none" }}>
-                  <span style={{ fontFamily: sans, fontSize: 10, fontWeight: 700, color: t.accent }}>{t.nom}</span>
+                  <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: t.accent }}>{t.nom}</span>
                 </button>
               ))}
             </div>
@@ -4121,10 +4126,10 @@ function SuiviEspeces({ onFermer }) {
             <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 74 }}>
               {parMois.map((n, i) => (
                 <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                  <span style={{ fontFamily: sans, fontSize: 10.5, color: n > 0 ? C.papierSombre : "transparent", height: 11 }}>{n || ""}</span>
+                  <span style={{ fontFamily: sans, fontSize: 11, color: n > 0 ? C.papierSombre : "transparent", height: 11 }}>{n || ""}</span>
                   <div style={{ width: "100%", height: `${maxMois ? (n / maxMois) * 42 : 0}px`, minHeight: n > 0 ? 3 : 0, borderRadius: "3px 3px 0 0",
                     background: i === pic ? "linear-gradient(#E4C878, #C9A24B)" : (n > 0 ? "linear-gradient(#6E8B4E, #4A5F35)" : "transparent") }} />
-                  <span style={{ fontFamily: sans, fontSize: 10.5, color: i === pic ? C.ambreClair : C.papierSombre, fontWeight: i === pic ? 800 : 400 }}>{MOIS_C[i]}</span>
+                  <span style={{ fontFamily: sans, fontSize: 11, color: i === pic ? C.ambreClair : C.papierSombre, fontWeight: i === pic ? 800 : 400 }}>{MOIS_C[i]}</span>
                 </div>
               ))}
             </div>
@@ -4420,7 +4425,7 @@ function Administration({ onFermer }) {
                 <span style={{ fontSize: 21 }}>{e}</span>
                 <div>
                   <div style={{ fontFamily: serif, fontSize: 21, fontWeight: 700, color: C.ambreClair, lineHeight: 1 }}>{v}</div>
-                  <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 3 }}>{l}</div>
+                  <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: C.papierSombre, marginTop: 3 }}>{l}</div>
                 </div>
               </div>
             ))}
@@ -4508,7 +4513,7 @@ function Administration({ onFermer }) {
           <div style={{ ...carte, display: "flex", alignItems: "center", gap: 14, marginBottom: 12 }}>
             <div style={{ textAlign: "center", flexShrink: 0 }}>
               <div style={{ fontFamily: serif, fontSize: 30, fontWeight: 700, color: C.ambreClair, lineHeight: 1 }}>{noteMoyenne ? noteMoyenne.toFixed(1) : "—"}</div>
-              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 3 }}>sur 5</div>
+              <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: C.papierSombre, marginTop: 3 }}>sur 5</div>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <Etoiles note={Math.round(noteMoyenne)} taille={18} />
@@ -4793,15 +4798,15 @@ function ProfilPublic({ auteur, onFermer }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9, marginBottom: 14 }}>
             <div style={{ ...carte, textAlign: "center", padding: "13px 6px" }}>
               <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.ambreClair }}>{total}</div>
-              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Trouvailles</div>
+              <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Trouvailles</div>
             </div>
             <div style={{ ...carte, textAlign: "center", padding: "13px 6px" }}>
               <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.ambreClair }}>{nbEspeces}</div>
-              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Espèces</div>
+              <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Espèces</div>
             </div>
             <div style={{ ...carte, textAlign: "center", padding: "13px 6px" }}>
               <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: C.ambreClair }}>{points}</div>
-              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Points</div>
+              <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Points</div>
             </div>
           </div>
 
@@ -4810,7 +4815,7 @@ function ProfilPublic({ auteur, onFermer }) {
             <div style={{ ...carte, marginBottom: 14, display: "flex", alignItems: "center", gap: 12, background: "linear-gradient(#2A2417, #201B12)", border: "1px solid #4A3E22" }}>
               <span style={{ fontSize: 28 }}>🌟</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: "#D2A24A", letterSpacing: 0.5 }}>Espèces rares dénichées</div>
+                <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: "#D2A24A", letterSpacing: 0.5 }}>Espèces rares dénichées</div>
                 <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 2 }}>peu communes à très rares</div>
               </div>
               <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: "#E5B84B" }}>{raresSet.size}</div>
@@ -4855,7 +4860,7 @@ function ProfilPublic({ auteur, onFermer }) {
                     {niv && niv.bonus > 0 && (
                       <span style={{ position: "absolute", top: 5, right: 5, fontSize: 14, filter: "drop-shadow(0 1px 2px rgba(0,0,0,.7))" }}>{niv.emoji}</span>
                     )}
-                    <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papier, marginTop: 4, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ fontFamily: sans, fontSize: 11, color: C.papier, marginTop: 4, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {p.espece || "Spécimen"}
                     </div>
                   </div>
@@ -6291,7 +6296,7 @@ function Presentation({ onCommencer, prenomActuel, onDefinirPrenom }) {
           <div style={{ textAlign: "center", fontFamily: serif, fontStyle: "italic", fontSize: 12.5, color: C.ambre, marginTop: 16 }}>
             Une création de Sylvain Mercier
           </div>
-          <div style={{ textAlign: "center", fontFamily: sans, fontSize: 10.5, color: C.papierSombre, marginTop: 3 }}>
+          <div style={{ textAlign: "center", fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 3 }}>
             © 2026 · Tous droits réservés
           </div>
         </div>
@@ -6482,7 +6487,7 @@ function CaptureRapide({ onAjout, onFermer, aTrier, onOuvrir, onSupprimer }) {
                   <span>{o.gps ? "📍" : "—"}</span>
                 </div>
               </div>
-              <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(201,162,75,.92)", color: C.encre, fontFamily: sans, fontSize: 10.5, fontWeight: 700, padding: "3px 7px", borderRadius: 12 }}>À trier</div>
+              <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(201,162,75,.92)", color: C.encre, fontFamily: sans, fontSize: 11, fontWeight: 700, padding: "3px 7px", borderRadius: 12 }}>À trier</div>
               {/* Bouton supprimer */}
               {onSupprimer && confirmSuppr !== o.id && (
                 <button onClick={(e) => { e.stopPropagation(); setConfirmSuppr(o.id); }} aria-label="Supprimer cette photo" title="Supprimer"
@@ -7050,7 +7055,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
             </div>
             <div style={{ position: "relative", flex: 1, boxSizing: "border-box", padding: "30px 12px", textAlign: "center", background: C.panneau, border: `2px dashed ${C.bordure}`, borderRadius: 10, color: C.papierSombre, fontFamily: sans, fontSize: 15 }}>
               🖼️<br />Galerie
-              <div style={{ fontSize: 10.5, marginTop: 4, opacity: 0.8 }}>plusieurs vues possibles</div>
+              <div style={{ fontSize: 11, marginTop: 4, opacity: 0.8 }}>plusieurs vues possibles</div>
               <input type="file" accept="image/*" multiple onChange={choisirPhotosGalerie} style={inputOverlay} />
             </div>
           </div>
@@ -7660,8 +7665,8 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
       {legendaire && !compact && (
         <React.Fragment>
           <span className="bd-etoile" style={{ top: 8, left: 10, fontSize: 11 }}>✦</span>
-          <span className="bd-etoile" style={{ top: "38%", right: 8, fontSize: 10.5, animationDelay: ".9s" }}>✦</span>
-          <span className="bd-etoile" style={{ bottom: 14, left: "22%", fontSize: 10.5, animationDelay: "1.7s" }}>✦</span>
+          <span className="bd-etoile" style={{ top: "38%", right: 8, fontSize: 11, animationDelay: ".9s" }}>✦</span>
+          <span className="bd-etoile" style={{ bottom: 14, left: "22%", fontSize: 11, animationDelay: "1.7s" }}>✦</span>
         </React.Fragment>
       )}
       {/* Cadre intérieur */}
@@ -7714,11 +7719,11 @@ function CarteInsecte({ obs, taille = "normal", onClick }) {
         {!compact && c.capacite && (
           <div style={{ margin: "5px 2px 2px", padding: "6px 9px", background: "rgba(42,36,22,.14)", border: "1px solid rgba(42,36,22,.2)", borderRadius: 7 }}>
             <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, color: "#2A2416" }}>✦ {c.capacite.nom}</div>
-            <div style={{ fontFamily: sans, fontSize: 10.5, color: "#3A3220", lineHeight: 1.35 }}>{c.capacite.effet}</div>
+            <div style={{ fontFamily: sans, fontSize: 11, color: "#3A3220", lineHeight: 1.35 }}>{c.capacite.effet}</div>
           </div>
         )}
         {!compact && c.citation && (
-          <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 10.5, color: "#4A4228", textAlign: "center", padding: "3px 8px 3px" }}>« {c.citation} »</div>
+          <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 11, color: "#4A4228", textAlign: "center", padding: "3px 8px 3px" }}>« {c.citation} »</div>
         )}
       </div>
     </div>
@@ -8490,7 +8495,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
     catch { alert("Partage ce lien : " + url); }
   };
   const titreSection = (texte) => (
-    <div style={{ padding: "12px 16px 5px", fontFamily: sans, fontSize: 10.5, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: C.lichen, background: "rgba(0,0,0,.18)" }}>
+    <div style={{ padding: "12px 16px 5px", fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: C.lichen, background: "rgba(0,0,0,.18)" }}>
       {texte}
     </div>
   );
@@ -8499,7 +8504,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
       style={{ width: "100%", display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: "none", border: "none", borderBottom: `1px solid ${C.bordure}`, cursor: "pointer", textAlign: "left" }}>
       <span style={{ fontSize: 22, position: "relative" }}>
         {emoji}
-        {pastille > 0 && <span style={{ position: "absolute", top: -6, right: -8, minWidth: 15, height: 15, lineHeight: "15px", padding: "0 3px", borderRadius: 8, background: C.rouge, color: "#fff", fontFamily: sans, fontSize: 10.5, fontWeight: 800, boxSizing: "border-box", textAlign: "center" }}>{pastille > 9 ? "9+" : pastille}</span>}
+        {pastille > 0 && <span style={{ position: "absolute", top: -6, right: -8, minWidth: 15, height: 15, lineHeight: "15px", padding: "0 3px", borderRadius: 8, background: C.rouge, color: "#fff", fontFamily: sans, fontSize: 11, fontWeight: 800, boxSizing: "border-box", textAlign: "center" }}>{pastille > 9 ? "9+" : pastille}</span>}
       </span>
       <span style={{ flex: 1 }}>
         <span style={{ display: "block", fontFamily: sans, fontSize: 15, fontWeight: 700, color: C.papier }}>{titre}</span>
@@ -8550,7 +8555,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
 
         <div style={{ padding: "14px 16px 16px", textAlign: "center" }}>
           <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 12, color: C.ambre }}>Une création de Sylvain Mercier</div>
-          <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, marginTop: 2 }}>BioDex © 2026 · Tous droits réservés</div>
+          <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 2 }}>BioDex © 2026 · Tous droits réservés</div>
         </div>
         </div>
       </div>
@@ -8704,7 +8709,7 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
                     {c.photo_url ? <img src={c.photo_url} alt={c.nom} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>{t.emoji}</div>}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.papier }}>{c.nom} {c.authentique === false && <span title="Photo non vérifiée" style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 800, color: "#FFDDD4", background: "rgba(140,40,30,.92)", border: "1px solid #E5603E", borderRadius: 8, padding: "1px 5px", verticalAlign: "middle" }}>⚠ non vérifiée</span>}</div>
+                    <div style={{ fontFamily: sans, fontSize: 14.5, fontWeight: 700, color: C.papier }}>{c.nom} {c.authentique === false && <span title="Photo non vérifiée" style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, color: "#FFDDD4", background: "rgba(140,40,30,.92)", border: "1px solid #E5603E", borderRadius: 8, padding: "1px 5px", verticalAlign: "middle" }}>⚠ non vérifiée</span>}</div>
                     <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre }}>par {c.proprietaire} · {t.emoji} {t.label}</div>
                     <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 2 }}>⚔️{c.attaque} 🛡️{c.defense} 💨{c.vitesse} · <span style={{ color: "#8AAE6B" }}>{c.victoires || 0}V</span>/<span style={{ color: "#E5603E" }}>{c.defaites || 0}D</span></div>
                   </div>
@@ -8732,7 +8737,7 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
                       {c.photo_url ? <img src={c.photo_url} alt={c.nom} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{t.emoji}</div>}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: C.papier }}>{c.nom} {c.authentique === false && <span title="Photo non vérifiée" style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 800, color: "#FFDDD4", background: "rgba(140,40,30,.92)", border: "1px solid #E5603E", borderRadius: 8, padding: "1px 5px", verticalAlign: "middle" }}>⚠ non vérifiée</span>}</div>
+                      <div style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, color: C.papier }}>{c.nom} {c.authentique === false && <span title="Photo non vérifiée" style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, color: "#FFDDD4", background: "rgba(140,40,30,.92)", border: "1px solid #E5603E", borderRadius: 8, padding: "1px 5px", verticalAlign: "middle" }}>⚠ non vérifiée</span>}</div>
                       <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>{t.emoji} {t.label} · <span style={{ color: "#8AAE6B" }}>{c.victoires || 0}V</span>/<span style={{ color: "#E5603E" }}>{c.defaites || 0}D</span></div>
                     </div>
                     <button onClick={() => retirer(c)} disabled={enCours === "retirer-" + c.id} style={{ flexShrink: 0, background: "none", border: `1px solid ${C.bordure}`, color: C.papierSombre, borderRadius: 8, padding: "6px 10px", fontFamily: sans, fontSize: 12, cursor: "pointer" }}>Retirer</button>
@@ -8876,7 +8881,7 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
                 <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginBottom: 8 }}>Classé au taux de réussite · au moins {MIN_COMBATS} défis joués</div>
                 {classes.map((s, i) => ligne(s, i, true))}
                 {qualif.length > 0 && (
-                  <div style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: C.lichen, margin: "14px 0 8px" }}>En qualification</div>
+                  <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: C.lichen, margin: "14px 0 8px" }}>En qualification</div>
                 )}
                 {qualif.map((s, i) => ligne(s, i, false))}
               </div>
@@ -9362,7 +9367,7 @@ function Carte({ observations, onOuvrirFiche }) {
             return tuiles.map((t, i) => (
               <div key={i} style={{ flex: 1, textAlign: "center", padding: "7px 4px", borderRadius: 9, background: C.panneau, border: `1px solid ${C.bordure}` }}>
                 <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 700, color: t.c, lineHeight: 1.1 }}>{t.v}</div>
-                <div style={{ fontFamily: sans, fontSize: 10.5, color: C.papierSombre, letterSpacing: 0.3 }}>{t.l}</div>
+                <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, letterSpacing: 0.3 }}>{t.l}</div>
               </div>
             ));
           })()}
@@ -9410,15 +9415,15 @@ function Carte({ observations, onOuvrirFiche }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9, marginBottom: 12 }}>
             <div style={{ textAlign: "center", padding: "12px 6px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
               <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{postsAvecPos.length}</div>
-              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Trouvailles</div>
+              <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Trouvailles</div>
             </div>
             <div style={{ textAlign: "center", padding: "12px 6px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
               <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{zonesTri.length}</div>
-              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Zones explorées</div>
+              <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>Zones explorées</div>
             </div>
             <div style={{ textAlign: "center", padding: "12px 6px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}` }}>
               <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair }}>{etendue > 0 ? etendue : "—"}</div>
-              <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>km de territoire</div>
+              <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: C.papierSombre, marginTop: 2 }}>km de territoire</div>
             </div>
           </div>
 
@@ -9427,7 +9432,7 @@ function Carte({ observations, onOuvrirFiche }) {
             <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 11, background: "linear-gradient(#2A2417, #201B12)", border: "1px solid #6B5A2E", marginBottom: 12 }}>
               <span style={{ fontSize: 24 }}>🏅</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontFamily: sans, fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.5, color: "#D2A24A" }}>Le coin le plus riche</div>
+                <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, color: "#D2A24A" }}>Le coin le plus riche</div>
                 <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierClair, marginTop: 3, lineHeight: 1.45 }}>
                   <b style={{ color: C.papier }}>{zonesTri[0].especes.size} espèces</b> y ont été trouvées, par {zonesTri[0].auteurs.size} membre{zonesTri[0].auteurs.size > 1 ? "s" : ""}. Un secteur à explorer !
                 </div>
@@ -11222,7 +11227,7 @@ function PortraitCombat({ combattant, cote, anim, ko }) {
       </div>
       <div style={{ marginTop: 6, fontFamily: sans, fontSize: 13, fontWeight: 700, color: C.papier, textAlign: "center", lineHeight: 1.2 }}>{combattant.nom}</div>
       {niv > 0 && (
-        <div style={{ fontFamily: sans, fontSize: 10.5, color: C.ambreClair, marginTop: 1 }}>{"⭐".repeat(niv)}</div>
+        <div style={{ fontFamily: sans, fontSize: 11, color: C.ambreClair, marginTop: 1 }}>{"⭐".repeat(niv)}</div>
       )}
       <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: "#fff", background: t.couleur || C.ambre, borderRadius: 10, padding: "1px 9px", marginTop: 3 }}>{t.emoji} {t.label}</div>
     </div>
@@ -11618,7 +11623,7 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial
             return (
               <div key={o.id} style={{ position: "relative" }}>
                 <CarteInsecte obs={o} taille="compact" onClick={() => demarrer(o)} />
-                <div style={{ textAlign: "center", marginTop: 5, fontFamily: sans, fontSize: 10.5, fontWeight: 800, color: "#fff", background: t.couleur || C.ambre, borderRadius: 9, padding: "2px 6px", display: "block", boxSizing: "border-box", width: "100%" }}>{t.emoji} {t.label}</div>
+                <div style={{ textAlign: "center", marginTop: 5, fontFamily: sans, fontSize: 11, fontWeight: 800, color: "#fff", background: t.couleur || C.ambre, borderRadius: 9, padding: "2px 6px", display: "block", boxSizing: "border-box", width: "100%" }}>{t.emoji} {t.label}</div>
               </div>
             );
           })}
@@ -11668,8 +11673,8 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial
             <div style={{ marginTop: 8 }}>{moi && BarreVie({ combattant: moi, aGauche: true })}</div>
             {moi && (
               <div style={{ display: "flex", gap: 5, justifyContent: "flex-start", marginTop: 5, flexWrap: "wrap", minHeight: 16 }}>
-                {moi.garde && <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#20282E", border: "1px solid #4C6675", color: "#AFC4D0" }}>🛡️ Garde</span>}
-                {moi.poison && moi.poison.tours > 0 && <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#241A2E", border: "1px solid #6A4C8A", color: "#C9A0E0" }}>☠️ Poison {moi.poison.tours}</span>}
+                {moi.garde && <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#20282E", border: "1px solid #4C6675", color: "#AFC4D0" }}>🛡️ Garde</span>}
+                {moi.poison && moi.poison.tours > 0 && <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#241A2E", border: "1px solid #6A4C8A", color: "#C9A0E0" }}>☠️ Poison {moi.poison.tours}</span>}
               </div>
             )}
           </div>
@@ -11680,8 +11685,8 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial
             <div style={{ marginTop: 8 }}>{adv && BarreVie({ combattant: adv, aGauche: false })}</div>
             {adv && (
               <div style={{ display: "flex", gap: 5, justifyContent: "flex-end", marginTop: 5, flexWrap: "wrap", minHeight: 16 }}>
-                {adv.garde && <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#20282E", border: "1px solid #4C6675", color: "#AFC4D0" }}>🛡️ Garde</span>}
-                {adv.poison && adv.poison.tours > 0 && <span style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#241A2E", border: "1px solid #6A4C8A", color: "#C9A0E0" }}>☠️ Poison {adv.poison.tours}</span>}
+                {adv.garde && <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#20282E", border: "1px solid #4C6675", color: "#AFC4D0" }}>🛡️ Garde</span>}
+                {adv.poison && adv.poison.tours > 0 && <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: "#241A2E", border: "1px solid #6A4C8A", color: "#C9A0E0" }}>☠️ Poison {adv.poison.tours}</span>}
               </div>
             )}
           </div>
@@ -11724,14 +11729,14 @@ function Combat({ cartes, adversaireImpose, defieur, onResultatDefi, modeInitial
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => actionJoueur("base")} style={{ flex: 1, padding: "13px", borderRadius: 10, border: "1px solid #5A6B3E", background: "linear-gradient(#3A4A28, #2C3820)", color: C.papier, fontFamily: sans, fontSize: 14.5, fontWeight: 700, cursor: "pointer" }}>⚔️ Attaquer</button>
-                <button onClick={() => actionJoueur("parade")} style={{ flex: 1, padding: "13px", borderRadius: 10, border: "1px solid #4C6675", background: "linear-gradient(#28323A, #20282E)", color: C.papier, fontFamily: sans, fontSize: 14.5, fontWeight: 700, cursor: "pointer" }}>🛡️ Parade<br /><span style={{ fontSize: 10.5, fontWeight: 400, color: C.papierSombre }}>coup réduit · +3⚡</span></button>
+                <button onClick={() => actionJoueur("parade")} style={{ flex: 1, padding: "13px", borderRadius: 10, border: "1px solid #4C6675", background: "linear-gradient(#28323A, #20282E)", color: C.papier, fontFamily: sans, fontSize: 14.5, fontWeight: 700, cursor: "pointer" }}>🛡️ Parade<br /><span style={{ fontSize: 11, fontWeight: 400, color: C.papierSombre }}>coup réduit · +3⚡</span></button>
               </div>
               <button onClick={() => actionJoueur("capacite")} disabled={moi && moi.energie < 4}
                 style={{ width: "100%", padding: "12px", borderRadius: 10, border: `1px solid ${(moi && moi.energie >= 4) ? "#A8863A" : C.bordure}`,
                   background: (moi && moi.energie >= 4) ? "linear-gradient(#4A3D18, #382E10)" : C.panneau,
                   color: (moi && moi.energie >= 4) ? C.ambreClair : C.papierSombre,
                   fontFamily: sans, fontSize: 14, fontWeight: 700, cursor: (moi && moi.energie >= 4) ? "pointer" : "default", opacity: (moi && moi.energie >= 4) ? 1 : 0.55 }}>
-                {moi && FAMILLES_CAPACITE[moi.famille] ? FAMILLES_CAPACITE[moi.famille].emoji : "✨"} {moi ? moi.capacite.nom : "Capacité"} <span style={{ fontSize: 10.5, fontWeight: 400 }}>· 4⚡{moi && FAMILLES_CAPACITE[moi.famille] ? " · " + FAMILLES_CAPACITE[moi.famille].desc : ""}</span>
+                {moi && FAMILLES_CAPACITE[moi.famille] ? FAMILLES_CAPACITE[moi.famille].emoji : "✨"} {moi ? moi.capacite.nom : "Capacité"} <span style={{ fontSize: 11, fontWeight: 400 }}>· 4⚡{moi && FAMILLES_CAPACITE[moi.famille] ? " · " + FAMILLES_CAPACITE[moi.famille].desc : ""}</span>
               </button>
             </div>
           ) : (
@@ -11801,7 +11806,7 @@ function ChoixTaille({ valeur, onChange }) {
               style={{ flex: "1 1 auto", minWidth: 88, fontFamily: sans, padding: "8px 10px", borderRadius: 10, cursor: "pointer", textAlign: "center",
                 border: `1px solid ${actif ? C.ambre : C.bordure}`, background: actif ? "linear-gradient(#3A4A2C, #2C3623)" : C.panneau, color: C.papier }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: actif ? C.ambreClair : C.papier }}>{t.label}</div>
-              <div style={{ fontSize: 10.5, color: C.papierSombre, marginTop: 2 }}>{t.exemple}</div>
+              <div style={{ fontSize: 11, color: C.papierSombre, marginTop: 2 }}>{t.exemple}</div>
             </button>
           );
         })}
@@ -12482,7 +12487,7 @@ function BioDex() {
           <img src="emblem.png" width="32" height="32" alt="" aria-hidden="true" style={{ flexShrink: 0, display: "block", filter: "drop-shadow(0 0 6px rgba(201,162,75,.45))" }} />
           <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <span style={{ fontFamily: serif, fontSize: 27, fontWeight: 600, color: C.papier, letterSpacing: 0.3 }}>Bio<span style={{ color: C.ambre }}>Dex</span></span>
-            <span style={{ fontFamily: sans, fontSize: 10.5, letterSpacing: 1, textTransform: "uppercase", color: C.papierSombre }}>{VERSION}</span>
+            <span style={{ fontFamily: sans, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: C.papierSombre }}>{VERSION}</span>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -12491,7 +12496,7 @@ function BioDex() {
             aria-label="Notifications" title="Notifications">
             🔔
             {notifs.total > 0 && (
-              <span style={{ position: "absolute", top: -4, right: -4, minWidth: 17, height: 17, lineHeight: "17px", padding: "0 4px", borderRadius: 9, background: C.rouge, color: "#fff", fontFamily: sans, fontSize: 10.5, fontWeight: 800, boxSizing: "border-box" }}>{notifs.total > 9 ? "9+" : notifs.total}</span>
+              <span style={{ position: "absolute", top: -4, right: -4, minWidth: 17, height: 17, lineHeight: "17px", padding: "0 4px", borderRadius: 9, background: C.rouge, color: "#fff", fontFamily: sans, fontSize: 11, fontWeight: 800, boxSizing: "border-box" }}>{notifs.total > 9 ? "9+" : notifs.total}</span>
             )}
           </button>
           <button className="bd-press" onClick={() => setMenuOuvert(true)}
@@ -12621,7 +12626,7 @@ function BioDex() {
                     {/* Pastille « quiz du jour disponible » : elle apparaît et disparaît chaque
                         jour, contrairement au compteur de cartes qui était toujours là. */}
                     {id === "cartes" && quizDispo && (
-                      <span className="bd-nav-badge" style={{ background: "#7FA658", color: "#12160D", fontSize: 10 }}>🧠</span>
+                      <span className="bd-nav-badge" style={{ background: "#7FA658", color: "#12160D", fontSize: 11 }}>🧠</span>
                     )}
                     {id === "cartes" && !quizDispo && cartes.length > 0 && (
                       <span className="bd-nav-badge" style={{ background: C.ambre, color: C.encre }}>{cartes.length}</span>
