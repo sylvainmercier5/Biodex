@@ -242,6 +242,35 @@
   .bd-nav-item.actif .bd-nav-ico { transform: translateY(-1px); color: #E4C878; }
   .bd-nav-item.actif .bd-nav-ico svg { fill: rgba(228,200,120,.16); }
   .bd-spin-ico { display: inline-block; animation: bdSpin 1s linear infinite; }
+  /* v1.90 — Onglets en segments (Jeu, Carte) et pastilles de filtre communes */
+  .bd-seg { display: flex; gap: 3px; padding: 3px; border-radius: 13px; background: #12170F; border: 1px solid #2E3826; }
+  .bd-seg-btn { flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; padding: 0 4px;
+    border: none; border-radius: 10px; background: transparent; color: #A8A48F; cursor: pointer; white-space: nowrap;
+    font: 700 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; transition: background .18s ease, color .18s ease; }
+  .bd-seg-btn:active { transform: scale(.96); }
+  .bd-seg-btn.actif { background: linear-gradient(#2E3925, #232B1D); color: #E4C878; box-shadow: inset 0 0 0 1px rgba(168,134,58,.55), 0 2px 6px rgba(0,0,0,.35); }
+  .bd-seg-btn.actif svg { fill: rgba(228,200,120,.16); }
+  .bd-seg.petit .bd-seg-btn { min-height: 34px; font-size: 12.5px; }
+  .bd-seg.empile .bd-seg-btn { flex-direction: column; gap: 3px; min-height: 52px; font-size: 12px; }
+  .bd-puces { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .bd-puces::-webkit-scrollbar { display: none; }
+  .bd-puce { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; padding: 0 13px; min-height: 34px; border-radius: 999px;
+    border: 1px solid #3A4531; background: transparent; color: #D8D0B4; cursor: pointer; white-space: nowrap;
+    font: 600 12.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  .bd-puce .n { font-weight: 700; opacity: .6; }
+  .bd-puce.actif { background: #C9A24B; border-color: #C9A24B; color: #1B1A12; font-weight: 700; }
+  .bd-puce.actif .n { opacity: .75; }
+  .bd-puce.vert.actif { background: #7FA35F; border-color: #7FA35F; }
+  .bd-puce.rare { border-color: rgba(229,184,75,.55); color: #F0D894; }
+  .bd-puce.rare.actif { background: linear-gradient(135deg, #F0D07A, #C9962E); color: #1B1A12; }
+  .bd-puce-sep { flex-shrink: 0; width: 1px; margin: 6px 2px; background: #3A4531; }
+  /* v1.90 — Stats : bandeau de synthèse */
+  .bd-synth { position: relative; overflow: hidden; border-radius: 16px; padding: 18px 16px 14px; margin-bottom: 14px;
+    background: radial-gradient(120% 90% at 0% 0%, rgba(201,162,75,.18), transparent 60%), linear-gradient(#232C1C, #191F14);
+    border: 1px solid rgba(201,162,75,.35); box-shadow: 0 6px 18px rgba(0,0,0,.3); }
+  .bd-synth-grille { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(201,162,75,.2); }
+  .bd-synth-grille > div { text-align: center; }
+  .bd-synth-grille > div + div { border-left: 1px solid rgba(201,162,75,.14); }
   /* v1.89 — Boutons ronds de l'en-tête */
   .bd-rond { position: relative; width: 38px; height: 38px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
     border: 1px solid #3A4531; background: #1C2318; color: #CFC6A8; cursor: pointer; padding: 0; }
@@ -369,7 +398,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.89";
+const VERSION = "v1.90";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1874,6 +1903,11 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "1.90", date: "2026-11", items: [
+    "🎨 Passe visuelle, 2e étape : les sous-onglets du Jeu, de la Ligue et de la Carte ont tous le même style, avec des icônes dessinées.",
+    "📊 Stats : un bandeau de synthèse remplace les 7 petites tuiles. Ton nombre d'espèces s'affiche en grand, et les espèces rares, cartes, notables et fiches sont dessous.",
+    "🔎 Accueil : « Rares » rejoint la rangée des groupes, ce qui fait une rangée de filtres en moins. Les filtres du Mur et du Bestiaire prennent le même style.",
+  ] },
   { v: "1.89", date: "2026-11", items: [
     "🎨 Passe visuelle, 1re étape : de vraies icônes dessinées dans la barre du bas et l'en-tête (à la place des emojis, qui changeaient d'allure d'un téléphone à l'autre).",
     "🔘 Boutons harmonisés : mêmes arrondis, même hauteur confortable au doigt, une variante « contour doré » pour les actions secondaires.",
@@ -2679,7 +2713,25 @@ const ICONES = {
   cloche: <React.Fragment><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 2H4.4z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></React.Fragment>,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   aide: <React.Fragment><circle cx="12" cy="12" r="9" /><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .9-1 1.6v.6" /><path d="M12 17.2h.01" strokeWidth="2.6" /></React.Fragment>,
+  // v1.90 — sous-onglets du Jeu
+  livre: <React.Fragment><path d="M12 6.5C10.3 5 7.6 4.4 4 4.6v13.6c3.6-.2 6.3.4 8 1.9 1.7-1.5 4.4-2.1 8-1.9V4.6c-3.6-.2-6.3.4-8 1.9z" /><path d="M12 6.5v13.6" /></React.Fragment>,
+  trophee: <React.Fragment><path d="M7.5 4h9v5a4.5 4.5 0 0 1-9 0z" /><path d="M7.5 6H4.5a3 3 0 0 0 3 4M16.5 6h3a3 3 0 0 1-3 4" /><path d="M12 13.5v3.5M8.5 20h7M9.5 17h5" /></React.Fragment>,
+  epees: <React.Fragment><path d="M4 4l9.5 9.5M4 4h3.5L15 11.5M4 4v3.5L11.5 15" /><path d="M20 4l-6.5 6.5M20 4h-3.5l-3 3M20 4v3.5l-3 3" /><path d="M12.5 15.5l4 4M15.5 12.5l4 4M17.5 21l3.5-3.5" /><path d="M8.5 15.5l-4 4M3 17.5L6.5 21" /></React.Fragment>,
+  ampoule: <React.Fragment><path d="M9 17.5h6M9.8 20.5h4.4" /><path d="M12 3.5a6 6 0 0 0-3.6 10.8c.4.3.6.8.6 1.3v1.9h6v-1.9c0-.5.2-1 .6-1.3A6 6 0 0 0 12 3.5z" /></React.Fragment>,
 };
+// v1.90 — Onglets en segments : un seul style pour les sous-onglets (Jeu, Carte…).
+// options : [[id, libellé, nomIcone?]]
+function Segments({ options, valeur, onChange, petit, empile, style }) {
+  return (
+    <div className={"bd-seg" + (petit ? " petit" : "") + (empile ? " empile" : "")} role="tablist" style={style}>
+      {options.map(([id, label, ico]) => (
+        <button key={id} role="tab" aria-selected={valeur === id} className={"bd-seg-btn" + (valeur === id ? " actif" : "")} onClick={() => onChange(id)}>
+          {ico && <Icone nom={ico} taille={petit ? 15 : 17} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 function Icone({ nom, taille = 22, style }) {
   return (
     <svg viewBox="0 0 24 24" width={taille} height={taille} fill="none" stroke="currentColor" strokeWidth="1.8"
@@ -3108,28 +3160,31 @@ function Stats({ observations, raretes, onFermer }) {
 
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-      {/* Chiffres clés — 4 tuiles */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, marginBottom: 12 }}>
-        {[["Spécimens", total, "🗃️"], ["Espèces différentes", especesUniques, "🦋"], ["Identifiés", identifies, "🔖"], ["Localisés", positionnees, "📍"]].map(([lab, val, emo]) => (
-          <div key={lab} style={{ ...carte, padding: "14px 12px", display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: 24 }}>{emo}</span>
-            <div>
-              <div style={{ fontFamily: serif, fontSize: 26, fontWeight: 600, color: C.ambreClair, lineHeight: 1 }}>{val}</div>
-              <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: 0.3, textTransform: "uppercase", color: C.papierSombre, marginTop: 4 }}>{lab}</div>
+      {/* v1.90 — Un bandeau de synthèse au lieu de 7 tuiles à emojis : le chiffre qui compte
+          (les espèces) en grand, les autres en ligne dessous. */}
+      <div className="bd-synth">
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 12 }}>
+          <div style={{ fontFamily: serif, fontSize: 52, fontWeight: 700, lineHeight: 0.9, color: C.ambreClair, textShadow: "0 2px 12px rgba(228,200,120,.25)" }}>{especesUniques}</div>
+          <div style={{ paddingBottom: 3 }}>
+            <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.papier, lineHeight: 1.1 }}>espèce{especesUniques > 1 ? "s" : ""} différente{especesUniques > 1 ? "s" : ""}</div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginTop: 3 }}>
+              sur {total} spécimen{total > 1 ? "s" : ""} · {biotopesSet.size} biotope{biotopesSet.size > 1 ? "s" : ""}
             </div>
           </div>
-        ))}
-      </div>
-
-      {/* Ligne d'indicateurs secondaires */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
-        {[["Notables", notables, "🌟"], ["Cartes", cartesForgees, "🃏"], ["Fiches", fichesGenerees, "📖"]].map(([lab, val, emo]) => (
-          <div key={lab} style={{ ...carte, padding: "12px 8px", textAlign: "center" }}>
-            <div style={{ fontSize: 18 }}>{emo}</div>
-            <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.ambreClair, lineHeight: 1, marginTop: 2 }}>{val}</div>
-            <div style={{ fontFamily: sans, fontSize: 11, textTransform: "uppercase", color: C.papierSombre, marginTop: 4 }}>{lab}</div>
+        </div>
+        <div className="bd-synth-grille">
+          {[["Rares", nbEspecesRares], ["Cartes", cartesForgees], ["Notables", notables], ["Fiches", fichesGenerees]].map(([lab, val]) => (
+            <div key={lab}>
+              <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: val > 0 ? C.ambreClair : "#6E6B5C", lineHeight: 1 }}>{val}</div>
+              <div style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: C.papierSombre, marginTop: 5 }}>{lab}</div>
+            </div>
+          ))}
+        </div>
+        {(identifies < total || positionnees < total) && (
+          <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 10, textAlign: "center" }}>
+            {identifies}/{total} identifiés · {positionnees}/{total} localisés
           </div>
-        ))}
+        )}
       </div>
 
       {/* Analyses détaillées — repliées : l'essentiel (chiffres clés, badges) reste visible. */}
@@ -3268,17 +3323,7 @@ function Stats({ observations, raretes, onFermer }) {
       </SectionPliable>
 
 
-      {/* Espèces rares */}
-      {nbEspecesRares > 0 && (
-        <div style={{ ...carte, marginBottom: 16, display: "flex", alignItems: "center", gap: 12, background: "linear-gradient(#2A2417, #201B12)", border: "1px solid #4A3E22" }}>
-          <span style={{ fontSize: 30 }}>🌟</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: "#D2A24A" }}>Espèces rares dénichées</div>
-            <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 2 }}>peu communes à très rares (données iNaturalist)</div>
-          </div>
-          <div style={{ fontFamily: serif, fontSize: 26, fontWeight: 700, color: "#E5B84B", lineHeight: 1 }}>{nbEspecesRares}</div>
-        </div>
-      )}
+      {/* v1.90 — Le compteur d'espèces rares est maintenant dans le bandeau de synthèse. */}
 
       {/* Espèce star */}
       {star && star[1] > 1 && (
@@ -8973,11 +9018,8 @@ function Ligue({ observations, prenom, onDefinirPrenom, onDefier, onFermer, emba
       {message && <div style={{ fontFamily: sans, fontSize: 13, color: message.startsWith("✓") ? "#A6CC82" : "#E8A88F", marginBottom: 12, textAlign: "center" }}>{message}</div>}
 
       {/* Onglets */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, background: C.panneau, padding: 4, borderRadius: 10, border: `1px solid ${C.bordure}` }}>
-        {[["champions", "⚔️ Défier"], ["mescartes", "🃏 Mes cartes"], ["classement", "📊 Classement"], ["journal", "📜 Défis"]].map(([id, lab]) => (
-          <button key={id} onClick={() => setOnglet(id)} style={{ flex: 1, padding: "8px 6px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: 700, background: onglet === id ? "linear-gradient(#C9A24B, #B8912F)" : "transparent", color: onglet === id ? C.encre : C.papierSombre }}>{lab}</button>
-        ))}
-      </div>
+      <Segments petit options={[["champions", "Défier"], ["mescartes", "Mes cartes"], ["classement", "Classement"], ["journal", "Défis"]]}
+        valeur={onglet} onChange={setOnglet} style={{ marginBottom: 16 }} />
 
       {etat === "chargement" && <div style={{ textAlign: "center", color: C.papierSombre, fontStyle: "italic", padding: 20 }}>Chargement…</div>}
       {etat === "echec" && <div style={{ textAlign: "center", color: "#E8A88F", padding: 20 }}>Impossible de charger la ligue.</div>}
@@ -9639,10 +9681,7 @@ function Carte({ observations, onOuvrirFiche }) {
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
       {/* Bascule Ma carte / Carte de la bande */}
       {MUR_ACTIF && (
-        <div style={{ display: "flex", gap: 6, marginBottom: 12, background: C.panneau, padding: 4, borderRadius: 10, border: `1px solid ${C.bordure}` }}>
-          <button onClick={() => setMode("moi")} style={{ flex: 1, padding: "8px 10px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: sans, fontSize: 13.5, fontWeight: 700, background: mode === "moi" ? "linear-gradient(#C9A24B, #B8912F)" : "transparent", color: mode === "moi" ? C.encre : C.papierSombre }}>🗃️ Ma carte</button>
-          <button onClick={() => setMode("bande")} style={{ flex: 1, padding: "8px 10px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: sans, fontSize: 13.5, fontWeight: 700, background: mode === "bande" ? "linear-gradient(#8AAE6B, #6F9450)" : "transparent", color: mode === "bande" ? C.encre : C.papierSombre }}>🌐 La bande</button>
-        </div>
+        <Segments options={[["moi", "Ma carte", "boite"], ["bande", "La bande", "mur"]]} valeur={mode} onChange={setMode} style={{ marginBottom: 12 }} />
       )}
 
       {/* Barre d'infos de la carte : trois repères d'un coup d'œil. */}
@@ -10014,11 +10053,11 @@ function Aide({ onFermer, onImportTermine }) {
         </p>
         <div style={t}>🏅 Le classement des chasseurs</div>
         <p style={p}>
-          Depuis le menu ☰, « Classement » établit le palmarès de la bande sur les 7 derniers jours (Semaine) ou 30 jours (Mois), à partir des trouvailles partagées sur le mur. Le système de points : +1 par trouvaille, +2 si l'espèce est nouvelle sur le mur (personne ne l'avait postée), et un bonus de rareté (+1 peu commune, +2 rare, +3 très rare). La rareté s'appuie sur le nombre d'observations en France dans iNaturalist — un bon indice, mais pas un statut de conservation officiel : une espèce discrète peut être peu observée sans être menacée. Les espèces rares affichent aussi un badge coloré (🌟 ✨ 🍃) partout dans l'appli : sur le mur, dans ta collection, sur la fiche détaillée, et un compteur dans les stats. Tu peux même filtrer ta collection sur « 🌟 Espèces rares ». Nécessite le réseau et le mur configuré.
+          Depuis le menu ☰, « Classement » établit le palmarès de la bande sur les 7 derniers jours (Semaine) ou 30 jours (Mois), à partir des trouvailles partagées sur le mur. Le système de points : +1 par trouvaille, +2 si l'espèce est nouvelle sur le mur (personne ne l'avait postée), et un bonus de rareté (+1 peu commune, +2 rare, +3 très rare). La rareté s'appuie sur le nombre d'observations en France dans iNaturalist — un bon indice, mais pas un statut de conservation officiel : une espèce discrète peut être peu observée sans être menacée. Les espèces rares affichent aussi un badge coloré (🌟 ✨ 🍃) partout dans l'appli : sur le mur, dans ta collection, sur la fiche détaillée, et un compteur dans les stats. Tu peux même filtrer ta collection sur « 🌟 Rares ». Nécessite le réseau et le mur configuré.
         </p>
         <div style={t}>🏆 La Ligue</div>
         <p style={p}>
-          Depuis le menu ☰, la Ligue te permet de défier les cartes de la bande. Engage jusqu'à 3 de tes cartes forgées (elles restent dans ta collection), et défie celles des autres : quand tu défies une carte, son propriétaire n'a pas besoin d'être connecté, l'appli la joue pour lui. Chaque défi met à jour le classement des joueurs (victoires/défaites) et les stats de chaque carte. L'onglet « 📜 Défis » garde la trace de tous tes défis de ligue (lancés et subis) avec ton bilan victoires/défaites — les combats d'arène, eux, ne comptent que pour ton record. Le classement de la ligue est établi au taux de réussite, et il faut avoir joué au moins 3 défis pour y figurer. Quand une de tes cartes est défiée pendant ton absence, tu es prévenu dans ta cloche 🔔 : qui t'a défié, quelle carte, et si elle a tenu bon. Tu peux jouer le combat en manuel, en auto, ou juste voir le résultat. Pour que le jeu reste fair-play, chaque carte forgée est vérifiée : si la photo ne ressemble pas à une vraie photo d'insecte prise sur le terrain (capture d'écran, image trouvée sur internet, dessin), la carte est marquée « non vérifiée » et porte un badge visible dans la ligue. La carte reste jouable, mais tout le monde voit qu'elle est douteuse.
+          Depuis le menu ☰, la Ligue te permet de défier les cartes de la bande. Engage jusqu'à 3 de tes cartes forgées (elles restent dans ta collection), et défie celles des autres : quand tu défies une carte, son propriétaire n'a pas besoin d'être connecté, l'appli la joue pour lui. Chaque défi met à jour le classement des joueurs (victoires/défaites) et les stats de chaque carte. L'onglet « Défis » garde la trace de tous tes défis de ligue (lancés et subis) avec ton bilan victoires/défaites — les combats d'arène, eux, ne comptent que pour ton record. Le classement de la ligue est établi au taux de réussite, et il faut avoir joué au moins 3 défis pour y figurer. Quand une de tes cartes est défiée pendant ton absence, tu es prévenu dans ta cloche 🔔 : qui t'a défié, quelle carte, et si elle a tenu bon. Tu peux jouer le combat en manuel, en auto, ou juste voir le résultat. Pour que le jeu reste fair-play, chaque carte forgée est vérifiée : si la photo ne ressemble pas à une vraie photo d'insecte prise sur le terrain (capture d'écran, image trouvée sur internet, dessin), la carte est marquée « non vérifiée » et porte un badge visible dans la ligue. La carte reste jouable, mais tout le monde voit qu'elle est douteuse.
         </p>
         <div style={t}>💡 Boîte à idées</div>
         <p style={p}>
@@ -10791,27 +10830,15 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
         return (
           <div style={{ marginBottom: 12 }}>
             {dispo.length > 1 && (
-              <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, marginBottom: auteurs.length > 1 ? 7 : 0 }}>
-                {dispo.map(([id, lab]) => (
-                  <button key={id} onClick={() => setPeriode(id)}
-                    style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 16, cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: periode === id ? 700 : 500,
-                      border: `1px solid ${periode === id ? C.ambre : C.bordure}`, background: periode === id ? C.ambre : "transparent", color: periode === id ? C.encre : C.papierSombre }}>
-                    {lab}
-                  </button>
-                ))}
-              </div>
+              <Segments petit options={dispo} valeur={periode} onChange={setPeriode} style={{ marginBottom: auteurs.length > 1 ? 8 : 0 }} />
             )}
             {auteurs.length > 1 && (
-              <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4 }}>
-                <button onClick={() => setAuteurFiltre("")}
-                  style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 16, cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: !auteurFiltre ? 700 : 500,
-                    border: `1px solid ${!auteurFiltre ? "#6F9450" : C.bordure}`, background: !auteurFiltre ? "#6F9450" : "transparent", color: !auteurFiltre ? C.encre : C.papierSombre }}>
-                  🐛 Toute la bande
+              <div className="bd-puces">
+                <button className={"bd-puce vert" + (!auteurFiltre ? " actif" : "")} onClick={() => setAuteurFiltre("")}>
+                  Toute la bande
                 </button>
                 {auteurs.map((a) => (
-                  <button key={a} onClick={() => setAuteurFiltre(auteurFiltre === a ? "" : a)}
-                    style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 16, cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: auteurFiltre === a ? 700 : 500,
-                      border: `1px solid ${auteurFiltre === a ? "#6F9450" : C.bordure}`, background: auteurFiltre === a ? "#6F9450" : "transparent", color: auteurFiltre === a ? C.encre : C.papierSombre }}>
+                  <button key={a} className={"bd-puce vert" + (auteurFiltre === a ? " actif" : "")} onClick={() => setAuteurFiltre(auteurFiltre === a ? "" : a)}>
                     {a}
                   </button>
                 ))}
@@ -11478,24 +11505,11 @@ function ModeCartes({ cartes, onOuvrir, onRevelee, observations, prenom, onDefin
     else liste.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)); // récentes
     return liste;
   })();
-  const sousOnglets = [["galerie", "📖 Bestiaire"], MUR_ACTIF ? ["ligue", "🏆 Ligue"] : ["libre", "⚔️ Combat"], ["arene", "🏟️ Arène"], ["quiz", "🧠 Quiz"]];
+  const sousOnglets = [["galerie", "Bestiaire", "livre"], MUR_ACTIF ? ["ligue", "Ligue", "trophee"] : ["libre", "Combat", "epees"], ["arene", "Arène", "epees"], ["quiz", "Quiz", "ampoule"]];
   const vueCombat = sousVue === "ligue" || sousVue === "libre" || sousVue === "arene";
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
-      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        {sousOnglets.map(([id, label]) => {
-          const actif = sousVue === id;
-          return (
-          <button key={id} className="bd-press" onClick={() => setSousVue(id)}
-            style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "9px 2px", borderRadius: 9, cursor: "pointer",
-              border: `1px solid ${actif ? "#A8863A" : C.bordure}`,
-              background: actif ? "linear-gradient(#2C3623, #232B1D)" : "transparent",
-              color: actif ? C.ambreClair : C.papierSombre }}>
-            {label}
-          </button>
-          );
-        })}
-      </div>
+      <Segments empile options={sousOnglets} valeur={sousVue} onChange={setSousVue} style={{ marginBottom: 14 }} />
 
       {/* Bouton schéma des types (hub combat) */}
       {vueCombat && (
@@ -11513,32 +11527,27 @@ function ModeCartes({ cartes, onOuvrir, onRevelee, observations, prenom, onDefin
       )}
 
       {sousVue === "galerie" && (ordresCartes.length + (nbAutresC > 0 ? 1 : 0)) > 1 && (
-        <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 6, marginBottom: 14, WebkitOverflowScrolling: "touch" }}>
-          <button onClick={() => setFOrdreC("")} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdreC === "" ? C.ambre : C.bordure}`, background: fOrdreC === "" ? C.ambre : "transparent", color: fOrdreC === "" ? C.encre : C.papier }}>
-            Toutes {especesCartes.length}
+        <div className="bd-puces" style={{ marginBottom: 10 }}>
+          <button className={"bd-puce" + (fOrdreC === "" ? " actif" : "")} onClick={() => setFOrdreC("")}>
+            Toutes <span className="n">{especesCartes.length}</span>
           </button>
           {ordresCartes.map((o) => (
-            <button key={o.id} onClick={() => setFOrdreC(fOrdreC === o.id ? "" : o.id)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdreC === o.id ? C.ambre : C.bordure}`, background: fOrdreC === o.id ? C.ambre : "transparent", color: fOrdreC === o.id ? C.encre : C.papier }}>
-              {o.emoji} {o.court} {o.n}
+            <button key={o.id} className={"bd-puce" + (fOrdreC === o.id ? " actif" : "")} onClick={() => setFOrdreC(fOrdreC === o.id ? "" : o.id)}>
+              {o.emoji} {o.court} <span className="n">{o.n}</span>
             </button>
           ))}
           {nbAutresC > 0 && (
-            <button onClick={() => setFOrdreC(fOrdreC === "autres" ? "" : "autres")} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdreC === "autres" ? C.ambre : C.bordure}`, background: fOrdreC === "autres" ? C.ambre : "transparent", color: fOrdreC === "autres" ? C.encre : C.papier }}>
-              🔎 Autres {nbAutresC}
+            <button className={"bd-puce" + (fOrdreC === "autres" ? " actif" : "")} onClick={() => setFOrdreC(fOrdreC === "autres" ? "" : "autres")}>
+              🔎 Autres <span className="n">{nbAutresC}</span>
             </button>
           )}
         </div>
       )}
 
+      {/* v1.90 — Tri en petits segments (avant : une rangée de pastilles « Trier : »). */}
       {sousVue === "galerie" && cartes.length > 1 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14, flexWrap: "wrap" }}>
-          <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: C.papierSombre }}>Trier :</span>
-          {[["recentes", "🕘 Récentes"], ["rarete", "🌟 Rareté"], ["type", "🎭 Type"]].map(([id, label]) => (
-            <button key={id} onClick={() => setTriCartes(id)} style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "6px 12px", borderRadius: 18, cursor: "pointer", border: `1px solid ${triCartes === id ? C.ambre : C.bordure}`, background: triCartes === id ? C.ambre : "transparent", color: triCartes === id ? C.encre : C.papier }}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <Segments petit options={[["recentes", "Récentes"], ["rarete", "Rareté"], ["type", "Type"]]}
+          valeur={triCartes} onChange={setTriCartes} style={{ marginBottom: 14 }} />
       )}
 
       {sousVue === "galerie" && (
@@ -13660,30 +13669,32 @@ function BioDex() {
           })()}
 
           {/* Onglets par ordre taxonomique */}
-          {(ordresDispo.length + (nbAutres > 0 ? 1 : 0)) > 1 && (
-            <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 6, marginBottom: 12, WebkitOverflowScrolling: "touch" }}>
-              <button onClick={() => setFOrdre("")} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdre === "" ? C.ambre : C.bordure}`, background: fOrdre === "" ? C.ambre : "transparent", color: fOrdre === "" ? C.encre : C.papier }}>
-                Tous {triees.length}
-              </button>
-              {ordresDispo.map((o) => (
-                <button key={o.id} onClick={() => setFOrdre(fOrdre === o.id ? "" : o.id)} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdre === o.id ? C.ambre : C.bordure}`, background: fOrdre === o.id ? C.ambre : "transparent", color: fOrdre === o.id ? C.encre : C.papier }}>
-                  {o.emoji} {o.court} {o.n}
-                </button>
-              ))}
-              {nbAutres > 0 && (
-                <button onClick={() => setFOrdre(fOrdre === "autres" ? "" : "autres")} style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fOrdre === "autres" ? C.ambre : C.bordure}`, background: fOrdre === "autres" ? C.ambre : "transparent", color: fOrdre === "autres" ? C.encre : C.papier }}>
-                  🔎 Autres {nbAutres}
+          {/* v1.90 — Groupes et « Espèces rares » sur une seule rangée (avant : deux). */}
+          {((ordresDispo.length + (nbAutres > 0 ? 1 : 0)) > 1 || nbRares > 0) && (
+            <div className="bd-puces" style={{ marginBottom: 10 }}>
+              {nbRares > 0 && (
+                <button className={"bd-puce rare" + (fRare ? " actif" : "")} onClick={() => setFRare((v) => !v)}>
+                  🌟 Rares <span className="n">{nbRares}</span>
                 </button>
               )}
-            </div>
-          )}
-
-          {/* Filtre espèces rares */}
-          {nbRares > 0 && (
-            <div style={{ marginBottom: 12 }}>
-              <button onClick={() => setFRare((v) => !v)} style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "7px 13px", borderRadius: 18, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${fRare ? "#E5B84B" : C.bordure}`, background: fRare ? "#E5B84B" : "transparent", color: fRare ? C.encre : C.papier }}>
-                🌟 Espèces rares {nbRares}
-              </button>
+              {nbRares > 0 && (ordresDispo.length + (nbAutres > 0 ? 1 : 0)) > 1 && <span className="bd-puce-sep" />}
+              {(ordresDispo.length + (nbAutres > 0 ? 1 : 0)) > 1 && (
+                <React.Fragment>
+                  <button className={"bd-puce" + (fOrdre === "" ? " actif" : "")} onClick={() => setFOrdre("")}>
+                    Tous <span className="n">{triees.length}</span>
+                  </button>
+                  {ordresDispo.map((o) => (
+                    <button key={o.id} className={"bd-puce" + (fOrdre === o.id ? " actif" : "")} onClick={() => setFOrdre(fOrdre === o.id ? "" : o.id)}>
+                      {o.emoji} {o.court} <span className="n">{o.n}</span>
+                    </button>
+                  ))}
+                  {nbAutres > 0 && (
+                    <button className={"bd-puce" + (fOrdre === "autres" ? " actif" : "")} onClick={() => setFOrdre(fOrdre === "autres" ? "" : "autres")}>
+                      🔎 Autres <span className="n">{nbAutres}</span>
+                    </button>
+                  )}
+                </React.Fragment>
+              )}
             </div>
           )}
 
