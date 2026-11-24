@@ -242,6 +242,14 @@
   .bd-nav-item.actif .bd-nav-ico { transform: translateY(-1px); color: #E4C878; }
   .bd-nav-item.actif .bd-nav-ico svg { fill: rgba(228,200,120,.16); }
   .bd-spin-ico { display: inline-block; animation: bdSpin 1s linear infinite; }
+  /* v2.00 — Accueil au centre de la barre, légèrement surélevé dans un médaillon doré */
+  .bd-nav-item.centre .bd-nav-ico { width: 44px; height: 44px; margin-top: -18px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(#2E3925, #1C2318); border: 1px solid rgba(201,162,75,.6); box-shadow: 0 4px 12px rgba(0,0,0,.45); color: #E4C878; }
+  .bd-nav-item.centre.actif { background: transparent; box-shadow: none; }
+  .bd-nav-item.centre.actif .bd-nav-ico { transform: none; background: linear-gradient(#E2C26C, #C9A24B); border-color: #E4C878; color: #1B1A12;
+    box-shadow: 0 4px 14px rgba(201,162,75,.45); }
+  .bd-nav-item.centre.actif .bd-nav-ico svg { fill: rgba(27,26,18,.12); }
+  .bd-nav-item.centre.actif .bd-nav-lbl { color: #E4C878; }
   /* v1.90 — Onglets en segments (Jeu, Carte) et pastilles de filtre communes */
   .bd-seg { display: flex; gap: 3px; padding: 3px; border-radius: 13px; background: #12170F; border: 1px solid #2E3826; }
   .bd-seg-btn { flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; padding: 0 4px;
@@ -572,7 +580,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v1.99";
+const VERSION = "v2.00";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -2077,6 +2085,9 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.00", date: "2026-11", items: [
+    "🧭 Nouvelle barre du bas : Collection · Mur · Accueil · Lieux · Jeu. L'Accueil est au centre, dans un médaillon doré, là où le pouce le trouve sans regarder.",
+  ] },
   { v: "1.99", date: "2026-11", items: [
     "🌟 Montre ta collection ! Dans Collection → Vitrine, touche « Les montrer » : tes trésors défilent en plein écran, comme des stories. « Partager ma collection » crée une belle image (ton prénom, ton total, tes 9 plus belles espèces) à envoyer à qui tu veux.",
     "👥 Le Mur s'anime. Un rond par membre de la bande apparaît en haut : il est cerclé d'or quand la personne vient de publier, et le toucher montre ses trouvailles. La trouvaille la plus aimée de la semaine (ou du mois) est mise en avant, et un raccourci rassemble les trouvailles qui attendent un nom.",
@@ -14621,13 +14632,15 @@ function BioDex() {
         // sinon il pointe vers un écran vide et prend une place précieuse sur la barre.
         const montrerTrier = aTrier.length > 0 || vue === "atrier";
         // v1.98 — Accueil + Collection (Stats y est un onglet). « Trier » reste conditionnel.
-        const items = [["accueil", "maison", "Accueil"], ["collection", "boite", "Collection"], ...(montrerTrier ? [["atrier", "trier", "Trier"]] : []), ["cartes", "jeu", "Jeu"], ...(MUR_ACTIF ? [["mur", "mur", "Mur"]] : []), ["carte", "carte", "Lieux"]];
+        // v2.00 — Ordre choisi par Sylvain : Collection · Mur · ACCUEIL (au centre) · Lieux · Jeu.
+        // « Trier » (seulement s'il y a des photos en attente) se glisse juste après la Collection.
+        const items = [["collection", "boite", "Collection"], ...(montrerTrier ? [["atrier", "trier", "Trier"]] : []), ...(MUR_ACTIF ? [["mur", "mur", "Mur"]] : []), ["accueil", "maison", "Accueil"], ["carte", "carte", "Lieux"], ["cartes", "jeu", "Jeu"]];
         return (
           <React.Fragment>
             <nav className="bd-nav" aria-label="Navigation principale">
               <div className="bd-nav-inner">
                 {items.map(([id, ico, label]) => (
-                  <button key={id} className={`bd-nav-item${vue === id ? " actif" : ""}`} onClick={() => setVue(id)} aria-label={label}>
+                  <button key={id} className={`bd-nav-item${vue === id ? " actif" : ""}${id === "accueil" ? " centre" : ""}`} onClick={() => setVue(id)} aria-label={label}>
                     <span className="bd-nav-ico"><Icone nom={ico} taille={23} /></span>
                     <span className="bd-nav-lbl">{label}</span>
                     {id === "atrier" && aTrier.length > 0 && (
