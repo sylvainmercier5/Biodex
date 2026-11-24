@@ -19,8 +19,11 @@ if [ ! -x "$DOSSIER/venv/bin/python" ]; then
   python3 -m venv "$DOSSIER/venv"
 fi
 "$DOSSIER/venv/bin/pip" install --quiet --upgrade pip
-"$DOSSIER/venv/bin/pip" install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+# torch ET torchvision depuis la même source (processeur) : sinon open_clip tire un torchvision
+# incompatible (« operator torchvision::nms does not exist »).
+"$DOSSIER/venv/bin/pip" install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cpu
 "$DOSSIER/venv/bin/pip" install --quiet open_clip_torch pillow numpy huggingface_hub
+"$DOSSIER/venv/bin/python" -c "import torch, torchvision; print('torch', torch.__version__, '/ torchvision', torchvision.__version__)"
 
 echo "== Poids de BioCLIP 2 (une seule fois, environ 1,7 Go)"
 HF_HOME="$DOSSIER/hf" HF_HUB_OFFLINE=0 "$DOSSIER/venv/bin/python" -c \
