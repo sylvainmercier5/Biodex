@@ -33,16 +33,24 @@ L'installation prend 5 à 15 minutes : torch pour processeur, puis 1,7 Go de poi
 
 **Mesuré sur spotyserbe le 24/11 :** environ 1 seconde par photo, et 7 secondes de chargement au démarrage.
 
-## 3. Ouvrir le service à BioDex (Tailscale Funnel)
+## 3. Ouvrir le service à BioDex (tunnel Cloudflare dédié, sans sudo)
+
+Tailscale Funnel demandait `sudo` (`tailscale set --operator`), donc on a choisi un **tunnel Cloudflare réservé à BioCLIP**, créé le 24/11/2026 par le compte `sylvain` :
 
 ```
-tailscale funnel --bg --https=10000 http://127.0.0.1:8192
+cloudflared tunnel create biodex-bioclip
+cloudflared tunnel route dns biodex-bioclip bioclip.larenardiere87.com
 ```
 
-- Pas besoin de sudo : `sylvain` est déjà opérateur Tailscale sur spotyserbe.
-- La première fois, Tailscale répond « Funnel is not enabled on your tailnet » et donne un lien `https://login.tailscale.com/f/funnel?node=…`. Il faut l'ouvrir, autoriser Funnel avec le compte Tailscale, puis relancer la commande.
-- Seul ce service est ouvert sur Internet, en https sur le port 10000. Navidrome (443) et Goupil (8443) restent réservés au réseau privé Tailscale, et ni ComfyUI ni SearXNG ne sont exposés.
-- L'adresse publique s'affiche avec `tailscale funnel status` : `https://spotyserbe.taile648d9.ts.net:10000`.
+- Configuration : `~/biodex-bioclip/tunnel.yml` (copie dans `serveur-bioclip/tunnel.yml`). Seul `POST /identifier` est relayé ; tout le reste répond 404, y compris `/etat`.
+- Démarré et relancé par `lancer.sh`, depuis la crontab, comme le service. Journal : `~/biodex-bioclip/tunnel.log`.
+- Le tunnel de la musique (`musique.larenardiere87.com`, service système `/etc/cloudflared`) n'est pas touché.
+- Ni Goupil, ni ComfyUI, ni SearXNG ne sont exposés.
+
+Vérifié depuis Internet le 24/11 :
+- `/` et `/etat` répondent 404 ;
+- sans le secret, ou avec un faux secret, la réponse est 401 ;
+- avec le secret, environ 1,1 s par photo.
 
 Protection : chaque demande doit porter le secret de `~/biodex-bioclip/secret`, sinon le service répond 401. Une seule identification à la fois, 12 Mo par photo au plus, aucune image n'est gardée.
 
@@ -50,7 +58,7 @@ Protection : chaque demande doit porter le secret de `~/biodex-bioclip/secret`, 
 
 | Variable | Valeur |
 |---|---|
-| `BIOCLIP_URL` | l'adresse de `tailscale funnel status`, par exemple `https://spotyserbe.xxxx.ts.net:10000` |
+| `BIOCLIP_URL` | `https://bioclip.larenardiere87.com` |
 | `BIOCLIP_CLE` | le contenu de `~/biodex-bioclip/secret` sur spotyserbe : `ssh spotyserbe cat ~/biodex-bioclip/secret` (coche « Contains secret values ») |
 
 Puis redéployer. Sans ces deux variables, BioDex marche comme avant (Claude seul).
@@ -64,9 +72,11 @@ Puis redéployer. Sans ces deux variables, BioDex marche comme avant (Claude seu
 ## Retirer
 
 ```
-tailscale funnel --https=10000 off
 crontab -l | grep -v biodex-bioclip/lancer.sh | crontab -
+pkill -f biodex-bioclip/tunnel.yml
 pkill -f biodex-bioclip.py
+cloudflared tunnel route dns -h   # (supprimer le CNAME bioclip dans le tableau de bord Cloudflare)
+cloudflared tunnel delete biodex-bioclip
 rm -rf ~/biodex-bioclip
 ```
 Et supprimer `BIOCLIP_URL` et `BIOCLIP_CLE` dans Netlify.

@@ -1,0 +1,11 @@
+# Tunnel Cloudflare réservé à BioCLIP (créé le 24/11/2026, sans sudo, par le compte sylvain).
+# Il ne sert QUE le service BioCLIP ; tout le reste répond 404.
+# Le tunnel de la musique (musique.larenardiere87.com, /etc/cloudflared) n'est pas concerné.
+tunnel: 43ab7eb3-ff41-48c9-ac40-c98ad429eef8
+credentials-file: /home/sylvain/.cloudflared/43ab7eb3-ff41-48c9-ac40-c98ad429eef8.json
+
+ingress:
+  - hostname: bioclip.larenardiere87.com
+    path: ^/identifier$
+    service: http://127.0.0.1:8192
+  - service: http_status:404

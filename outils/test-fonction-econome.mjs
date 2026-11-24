@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const ESSAI = "C:/Goupil/naturaliste/essai";
 process.env.ANTHROPIC_API_KEY = fs.readFileSync(path.join(os.homedir(), ".biodex", "cle-anthropic.txt"), "utf8").trim();
 process.env.BIOCLIP_URL = process.env.BIOCLIP_URL || "http://127.0.0.1:8192";
-process.env.BIOCLIP_CLE = fs.readFileSync(path.join(os.homedir(), "biodex-bioclip", "secret"), "utf8").trim();
+process.env.BIOCLIP_CLE = process.env.BIOCLIP_CLE || fs.readFileSync(path.join(os.homedir(), "biodex-bioclip", "secret"), "utf8").trim();
 const { handler } = require("../netlify/functions/identifier.js");
 
 const nbMax = Number(process.argv[2] || 999);

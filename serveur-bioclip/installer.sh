@@ -42,6 +42,7 @@ fi
 # s'arrête à la fin de chaque session tant que « linger » (qui demande sudo) n'est pas activé.
 echo "== Démarrage automatique (crontab)"
 cp "$ICI/lancer.sh" "$DOSSIER/" && chmod +x "$DOSSIER/lancer.sh"
+[ -f "$ICI/tunnel.yml" ] && cp "$ICI/tunnel.yml" "$DOSSIER/"
 ( crontab -l 2>/dev/null | grep -v 'biodex-bioclip/lancer.sh'
   echo "@reboot sleep 60 && $DOSSIER/lancer.sh"
   echo "*/5 * * * * $DOSSIER/lancer.sh"
@@ -51,5 +52,4 @@ sleep 15
 curl -s http://127.0.0.1:8192/etat; echo
 
 echo
-echo "== Reste à faire : ouvrir le service à BioDex (pas besoin de sudo si sylvain est opérateur Tailscale)"
-echo "  tailscale funnel --bg --https=10000 http://127.0.0.1:8192"
+echo "== Ouverture à BioDex : tunnel Cloudflare dédié (voir INSTALLATION.md, section 3)"
