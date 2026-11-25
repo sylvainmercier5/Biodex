@@ -764,7 +764,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v2.07";
+const VERSION = "v2.08";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -2314,6 +2314,9 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.08", date: "2026-11", items: [
+    "💎 Réidentifier une observation met aussi la rareté de sa carte à jour : une carte forgée sous un mauvais nom prend la rareté de la bonne espèce (le Prione tanneur devient bien rare).",
+  ] },
   { v: "2.07", date: "2026-11", items: [
     "🔎 Les groupes d'insectes sont mieux reconnus : l'Argiope frelon est enfin une araignée, la Cochenille n'est plus une chenille, le Clairon des abeilles est un coléoptère, et une trentaine d'espèces rangées dans « Autres » (Mélitées, Téléphore, Pisaure, Volucelle, Corée…) rejoignent leur vrai groupe.",
     "📊 Ça se voit dans tes stats, le suivi de la bande, les filtres, les badges par catégorie et le quiz.",
@@ -4530,6 +4533,8 @@ function estEspeceCommune(nom) {
 // Convertit un nombre d'observations (France) en rareté de carte (1-100), sur les MÊMES paliers
 // que le badge : Légendaire ≥ 85, Rare ≥ 65, Peu commun ≥ 40 (palierRarete). Avant la v1.87,
 // une espèce « commune » pouvait recevoir une carte « peu commune » (bandes décalées).
+// v2.08 — l'espèce pour laquelle une rareté de carte a été calculée (nom scientifique, sans casse ni espaces de bord)
+function cleRareteSci(s) { return String(s || "").toLowerCase().trim(); }
 function rareteDepuisCount(count) {
   if (count == null || typeof count !== "number") return null;
   const lc = Math.log10(Math.max(1, count));
@@ -9420,7 +9425,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
       try {
         const count = await chargerRareteInat(obs.nomSci || obs.nom);
         const rData = rareteDepuisCount(count);
-        if (rData != null && c) { c.rarete = rData; c.rareteV = 3; }
+        if (rData != null && c) { c.rarete = rData; c.rareteV = 3; c.rareteSci = cleRareteSci(obs.nomSci); }
       } catch {}
       await onMajCarte(obs.id, c);
       setCarteEtat("");
@@ -15712,23 +15717,28 @@ function BioDex() {
 
   // v1.87 — Rareté recalculée (France, mêmes paliers que le badge) pour les cartes forgées
   // avant : une par une, en arrière-plan, une seule tentative par espèce et par ouverture.
+  // v2.08 — …et pour une carte dont l'espèce a changé (réidentification) : la carte retient
+  // l'espèce de sa rareté (carte.rareteSci) ; si le nom scientifique n'est plus le même, la
+  // rareté est recalculée. Avant, une carte forgée sous un mauvais nom gardait sa rareté.
   const recalculRareteEnCours = useRef(false);
   const recalculRareteTentes = useRef(new Set());
   useEffect(() => {
     if (chargement || recalculRareteEnCours.current) return;
     try { if (navigator.onLine === false) return; } catch {}
-    const cible = observations.find((o) => o.carte && o.carte.rareteV !== 3 && o.nomSci && !recalculRareteTentes.current.has(o.id));
+    const cible = observations.find((o) => o.carte && o.nomSci && (o.carte.rareteV !== 3 || o.carte.rareteSci !== cleRareteSci(o.nomSci))
+      && !recalculRareteTentes.current.has(o.id + "|" + cleRareteSci(o.nomSci)));
     if (!cible) return;
     recalculRareteEnCours.current = true;
-    recalculRareteTentes.current.add(cible.id);
+    recalculRareteTentes.current.add(cible.id + "|" + cleRareteSci(cible.nomSci));
     (async () => {
       try {
+        const sci = cleRareteSci(cible.nomSci);
         const rData = rareteDepuisCount(await chargerRareteInat(cible.nomSci));
         const actuelle = plusFraiche(cible);
-        if (rData != null && actuelle.carte) {
-          const maj = { ...actuelle, carte: { ...actuelle.carte, rarete: rData, rareteV: 3 } };
+        if (rData != null && actuelle.carte && cleRareteSci(actuelle.nomSci) === sci) {
+          const maj = { ...actuelle, carte: { ...actuelle.carte, rarete: rData, rareteV: 3, rareteSci: sci } };
           try { await dbAjouter(maj); } catch {}
-          setObservations((prev) => prev.map((o) => (o.id === maj.id && o.carte ? { ...o, carte: { ...o.carte, rarete: rData, rareteV: 3 } } : o)));
+          setObservations((prev) => prev.map((o) => (o.id === maj.id && o.carte ? { ...o, carte: { ...o.carte, rarete: rData, rareteV: 3, rareteSci: sci } } : o)));
         } else {
           setObservations((prev) => [...prev]); // passe à la suivante
         }
@@ -15784,7 +15794,7 @@ function BioDex() {
         try {
           const count = await chargerRareteInat(aForger.nomSci || aForger.nom);
           const rData = rareteDepuisCount(count);
-          if (rData != null && c) { c.rarete = rData; c.rareteV = 3; }
+          if (rData != null && c) { c.rarete = rData; c.rareteV = 3; c.rareteSci = cleRareteSci(aForger.nomSci); }
         } catch {}
         if (!c) throw new Error("vide");
         const actuelle = plusFraiche(aForger);
