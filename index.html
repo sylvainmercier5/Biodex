@@ -764,7 +764,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v2.06";
+const VERSION = "v2.07";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -2314,6 +2314,10 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.07", date: "2026-11", items: [
+    "🔎 Les groupes d'insectes sont mieux reconnus : l'Argiope frelon est enfin une araignée, la Cochenille n'est plus une chenille, le Clairon des abeilles est un coléoptère, et une trentaine d'espèces rangées dans « Autres » (Mélitées, Téléphore, Pisaure, Volucelle, Corée…) rejoignent leur vrai groupe.",
+    "📊 Ça se voit dans tes stats, le suivi de la bande, les filtres, les badges par catégorie et le quiz.",
+  ] },
   { v: "2.06", date: "2026-11", items: [
     "👥 Suivi des espèces : un tableau de bord « En ce moment » — ce que la bande a vu ces 15 derniers jours, les nouvelles espèces du mois, le calendrier des groupes mois par mois et les spécialistes de chaque groupe.",
     "🎯 « Toi & la bande » : ta liste de chasse (ce que la bande a trouvé et pas encore toi, celles de saison en premier) et les espèces que tu es seul·e à avoir partagées.",
@@ -3649,6 +3653,64 @@ const ORDRES = [
     genres: ["lithobius", "scolopendra", "julus", "glomeris", "scutigera"] },
 ];
 
+// v2.07 — Compléments de déduction, tirés des espèces réellement partagées sur le mur :
+// noms français, genres latins, et familles ou ordres latins (« Noctuidae », « Araneae »…).
+const COMPLEMENTS_ORDRES = {
+  lepidopteres: {
+    mots: ["acidalie", "acronycte", "bucephale", "chape de moine", "cilix", "crambus", "decoupure", "herminie", "lithosie", "mariee", "melitee", "procris", "fadet", "pterophore", "timandre", "boarmie", "eupithecie", "goutte de sang", "paon de nuit", "sylvain", "sylepte", "ennomos", "citronnelle", "cossus", "cul-brun", "psyche", "piéride"],
+    genres: ["idaea", "acronicta", "phalera", "cucullia", "abrostola", "eilema", "catocala", "melitaea", "coenonympha", "emmelina", "timandra", "celastrina", "lymantria", "malacosoma", "iphiclides", "tyria", "thymelicus", "hemaris", "hyles", "agrius", "limenitis", "argynnis", "noctua", "agrotis", "helicoverpa", "operophtera", "menophra", "pyrausta", "cydalima", "ennomos", "opisthograptis", "euplagia", "phragmatobia", "eupithecia", "macrothylacia", "cossus", "euproctis", "paysandisia", "chiasmia", "pyronia", "pyralis"],
+    latins: ["lepidoptera", "noctuidae", "geometridae", "sphingidae", "crambidae", "pyralidae", "pterophoridae", "psychidae", "drepanidae", "erebidae", "herminiinae", "arctiinae", "lycaenidae", "nymphalidae", "pieridae", "papilionidae", "hesperiidae", "tortricidae", "zygaenidae", "lasiocampidae", "saturniidae", "notodontidae", "ennominae", "geometrinae"],
+  },
+  coleopteres: {
+    mots: ["clairon", "balanin", "silphe", "telephore", "nicrophore", "galeruque", "criocere"],
+    genres: ["curculio", "silpha", "rhagonycha", "trichodes", "copris", "halyzia", "chrysolina", "nicrophorus", "ocypus", "staphylinus", "anoplotrupes", "rhynchophorus"],
+    latins: ["coleoptera", "carabidae", "curculionidae", "chrysomelidae", "staphylinidae", "cerambycidae", "coccinellidae", "scarabaeidae", "elateridae", "cantharidae", "silphidae", "lampyridae", "alticini", "alticinae", "halticinae", "cleridae"],
+  },
+  hymenopteres: {
+    mots: ["ammophile", "collete", "pompile", "poliste"],
+    genres: ["ammophila", "colletes", "messor", "ophion", "rhyssa"],
+    latins: ["hymenoptera", "apidae", "vespidae", "formicidae", "ichneumonidae", "pompilidae", "sphecidae", "colletidae", "halictidae", "andrenidae", "megachilidae", "tenthredinidae"],
+  },
+  dipteres: {
+    mots: ["volucelle", "tachinaire", "calliphore"],
+    genres: ["volucella", "calliphora", "sarcophaga", "scathophaga", "hermetia", "ectophasia", "lucilia", "sphaerophoria", "eupeodes", "xanthogramma", "tabanus", "nephrotoma", "clogmia"],
+    latins: ["diptera", "syrphidae", "tipulidae", "culicidae", "tabanidae", "bombyliidae", "calliphoridae", "muscidae", "tachinidae", "stratiomyidae", "sciomyzidae", "psychodidae"],
+  },
+  hemipteres: {
+    mots: ["coree", "gonocere", "membracide", "lygee"],
+    genres: ["coreus", "gonocerus", "heterotoma", "philaenus", "stictocephala", "leptoglossus", "lygaeus", "dolycoris", "eurydema", "rhaphigaster", "eurygaster", "pentatoma", "carpocoris", "cicadella"],
+    latins: ["hemiptera", "heteroptera", "pentatomidae", "miridae", "cicadellidae", "coreidae", "lygaeidae", "membracidae", "aphididae", "pseudococcidae", "reduviidae", "gerridae", "cercopidae", "aphrophoridae"],
+  },
+  orthopteres: {
+    mots: ["pholidoptere", "sautrelle", "leptophye", "conocephale"],
+    genres: ["pholidoptera", "nemobius", "leptophyes", "ephippiger", "anacridium", "pseudochorthippus"],
+    latins: ["orthoptera", "caelifera", "ensifera", "acrididae", "tettigoniidae", "tottigoniidae", "gryllidae", "oedipodinae"],
+  },
+  odonates: {
+    mots: [],
+    genres: ["ischnura"],
+    latins: ["odonata", "libellulidae", "aeshnidae", "coenagrionidae", "calopterygidae"],
+  },
+  arachnides: {
+    mots: ["argiope", "micromate", "philodrome", "pisaure", "tetragnathe", "zoropse", "trombidion", "segestrie", "steatode", "theridion", "pholque", "saltique", "thomise", "clubione"],
+    genres: ["micrommata", "philodromus", "pisaura", "tetragnatha", "zoropsis", "eratigena", "steatoda", "segestria", "nuctenea", "larinioides", "menemerus", "aelurillus", "dermacentor", "clubiona"],
+    latins: ["araneae", "arachnida", "opiliones", "araneidae", "lycosidae", "salticidae", "thomisidae", "theridiidae", "clubionidae", "pisauridae", "tetragnathidae", "trombidiidae", "ixodidae", "acari", "philodromidae", "sparassidae"],
+  },
+  myriapodes: {
+    mots: [],
+    genres: ["polydesmus"],
+    latins: ["chilopoda", "diplopoda", "polydesmida", "myriapoda", "julida", "lithobiomorpha", "scolopendromorpha"],
+  },
+};
+ORDRES.forEach((o) => {
+  const c = COMPLEMENTS_ORDRES[o.id] || {};
+  o.mots = o.mots.concat(c.mots || []);
+  o.genres = o.genres.concat(c.genres || []);
+  o.latins = c.latins || [];
+});
+// Des noms qui ressemblent à un groupe sans en faire partie (fourmilion ≠ fourmi, mouche-scorpion ≠ mouche…).
+const MOTS_HORS_GROUPES = ["mouche-scorpion", "panorpe", "fourmilion", "ascalaphe", "psoque", "chrysope", "ephemere", "perce-oreille", "forficule", "mante", "phasme", "cloporte", "blatte", "lepisme", "escargot", "limace", "orvet"];
+
 // v1.85 — Bestiaire : espèces d'insectes connues dans le Limousin, par groupe, et les plus
 // communes (silhouettes à découvrir). Fabriqué par outils/fabriquer-bestiaire.mjs.
 const BESTIAIRE_LIMOUSIN = {"source":"iNaturalist (Limousin) + BioCLIP 2","date":"2026-11-24","groupes":{"autres":{"total":62,"communes":[{"s":"Mantis religiosa","f":"Mante religieuse"},{"s":"Planuncus tingitanus","f":"Blatte des jardins"},{"s":"Libelloides coccajus","f":"Ascalaphe soufré"},{"s":"Empusa pennata","f":"Empuse commune"},{"s":"Euroleon nostras","f":"Fourmilion parisien"},{"s":"Mantispa styriaca","f":"Mantispe de Styrie"},{"s":"Clonopsis gallica","f":"Phasme gaulois"},{"s":"Panorpa germanica","f":"Panorpe Germanique"}]},"coleopteres":{"total":447,"communes":[{"s":"Lucanus cervus","f":"Lucane cerf-volant"},{"s":"Anoplotrupes stercorosus","f":"Géotrupe des bois"},{"s":"Morimus asper","f":"Morime rugueux"},{"s":"Harmonia axyridis","f":"Coccinelle asiatique"},{"s":"Dorcus parallelipipedus","f":"Petite biche"},{"s":"Coccinella septempunctata","f":"Coccinelle à sept points"},{"s":"Rhagonycha fulva","f":"Téléphore fauve"},{"s":"Cetonia aurata","f":"Cétoine dorée"}]},"dipteres":{"total":185,"communes":[{"s":"Mikiola fagi","f":"Cécidomyie du hêtre"},{"s":"Episyrphus balteatus","f":"Syrphe ceinturé"},{"s":"Volucella zonaria","f":"Volucelle zonée"},{"s":"Eristalis tenax","f":"Éristale gluant"},{"s":"Sphaerophoria scripta","f":"Sphaerophore notée"},{"s":"Milesia crabroniformis","f":"Milésie faux-frelon"},{"s":"Eristalis pertinax","f":"Éristale opiniâtre"},{"s":"Scathophaga stercoraria","f":"Scatophage du fumier"}]},"hemipteres":{"total":252,"communes":[{"s":"Graphosoma italicum","f":"Graphosome d'Italie"},{"s":"Coreus marginatus","f":"Corée marginé"},{"s":"Carpocoris purpureipennis","f":"Carpocore pourpré"},{"s":"Leptoglossus occidentalis","f":"Punaise américaine"},{"s":"Palomena prasina","f":"Punaise verte"},{"s":"Cercopis vulnerata","f":"Cercope sanguin"},{"s":"Pyrrhocoris apterus","f":"Gendarme"},{"s":"Dolycoris baccarum","f":"Punaise des baies"}]},"hymenopteres":{"total":207,"communes":[{"s":"Apis mellifera","f":"Abeille domestique"},{"s":"Vespa crabro","f":"Frelon européen"},{"s":"Vespa velutina","f":"Frelon asiatique"},{"s":"Bombus pascuorum","f":"Bourdon des champs"},{"s":"Diplolepis rosae","f":"Cynips du Rosier"},{"s":"Xylocopa violacea","f":"Xylocope violet"},{"s":"Scolia hirta","f":"Scolie hirsute"},{"s":"Macrophya montana","f":"Macrophie rustique"}]},"lepidopteres":{"total":707,"communes":[{"s":"Argynnis paphia","f":"Tabac d'Espagne"},{"s":"Maniola jurtina","f":"Myrtil"},{"s":"Polyommatus icarus","f":"Azuré commun"},{"s":"Gonepteryx rhamni","f":"Citron"},{"s":"Pyronia tithonus","f":"Amaryllis"},{"s":"Lycaena phlaeas","f":"Cuivré commun"},{"s":"Euplagia quadripunctaria","f":"Écaille chinée"},{"s":"Melitaea cinxia","f":"Mélitée du plantain"}]},"odonates":{"total":52,"communes":[{"s":"Calopteryx virgo","f":"Caloptéryx vierge"},{"s":"Platycnemis pennipes","f":"Pennipatte bleuâtre"},{"s":"Libellula depressa","f":"Libellule déprimée"},{"s":"Sympetrum sanguineum","f":"Sympétrum sanguin"},{"s":"Sympetrum striolatum","f":"Sympétrum strié"},{"s":"Ischnura elegans","f":"Ischnure élégante"},{"s":"Orthetrum cancellatum","f":"Orthétrum réticulé"},{"s":"Orthetrum coerulescens","f":"Orthétrum bleuissant"}]},"orthopteres":{"total":77,"communes":[{"s":"Tettigonia viridissima","f":"Grande sauterelle verte"},{"s":"Pseudochorthippus parallelus","f":"Criquet des pâtures"},{"s":"Gryllus campestris","f":"Grillon champêtre"},{"s":"Stethophyma grossum","f":"Criquet ensanglanté"},{"s":"Oedipoda caerulescens","f":"Œdipode turquoise"},{"s":"Omocestus rufipes","f":"Criquet noir ébène"},{"s":"Leptophyes punctatissima","f":"Leptophye ponctuée"},{"s":"Ruspolia nitidula","f":"Ruspolie à tête de cône"}]}}};
@@ -3668,18 +3730,36 @@ function deduireOrdre(obs) {
   }
   const nom = sansAccents(obs.nom);
   const sci = sansAccents(obs.nomSci);
-  // 2) mots-clés dans le nom français
+  // 2) mots-clés dans le nom français.
+  // v2.07 — Le mot-clé le plus tôt dans le nom l'emporte (en français le nom principal vient
+  // d'abord : « Argiope frelon » est une araignée, « Clairon des abeilles » un coléoptère),
+  // et seulement en début de mot (« cochenille » ne doit plus trouver « chenille »).
+  // À égalité de position, le mot le plus long gagne (« fourmilion » plutôt que « fourmi »).
   if (nom) {
-    for (const o of ORDRES) {
-      if (o.mots.some((m) => nom.includes(sansAccents(m)))) return o.id;
-    }
+    let meilleur = null;
+    const essayer = (mot, id) => {
+      const m = sansAccents(mot);
+      for (let i = nom.indexOf(m); i >= 0; i = nom.indexOf(m, i + 1)) {
+        if (i > 0 && /[a-z]/.test(nom[i - 1])) continue;
+        if (!meilleur || i < meilleur.i || (i === meilleur.i && m.length > meilleur.l)) meilleur = { i, l: m.length, id };
+        break;
+      }
+    };
+    ORDRES.forEach((o) => o.mots.forEach((m) => essayer(m, o.id)));
+    MOTS_HORS_GROUPES.forEach((m) => essayer(m, "autres"));
+    if (meilleur) return meilleur.id;
   }
   // 3) genre latin (premier mot du nom scientifique)
-  const genre = sci.split(/\s+/)[0];
+  const motsSci = sci.split(/[^a-z]+/).filter(Boolean);
+  const genre = motsSci[0];
   if (genre) {
     for (const o of ORDRES) {
       if (o.genres.includes(genre)) return o.id;
     }
+  }
+  // 3 bis) v2.07 — famille ou ordre latin (« Noctuidae », « Araneae », « Crambidae (Crambinae) »…)
+  for (const o of ORDRES) {
+    if ((o.latins || []).some((l) => motsSci.includes(l))) return o.id;
   }
   // 4) mots-clés aussi dans le nom scientifique (familles en -idae parfois parlantes)
   if (sci) {
