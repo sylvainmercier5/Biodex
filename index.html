@@ -621,6 +621,22 @@
   .bd-synth-grille { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(201,162,75,.2); }
   .bd-synth-grille > div { text-align: center; }
   .bd-synth-grille > div + div { border-left: 1px solid rgba(201,162,75,.14); }
+  /* v2.05 — Stats : barre de répartition par groupe, puces, badges avec progression */
+  .bd-pile { display: flex; gap: 2px; height: 18px; border-radius: 9px; overflow: hidden; cursor: pointer; }
+  .bd-pile span { min-width: 7px; transition: opacity .2s ease; }
+  .bd-puce-groupe { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; min-height: 34px; border-radius: 999px; cursor: pointer;
+    font: 400 12.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #D6D1BB; background: #151B11; border: 1px solid #3A4531; }
+  .bd-puce-groupe b { color: #E4C878; }
+  .bd-puce-groupe .pt { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+  .bd-puce-groupe.actif { border-color: #C9A24B; background: rgba(201,162,75,.16); color: #F2EBD3; }
+  .bd-badge { text-align: center; padding: 10px 6px 8px; border-radius: 12px; background: #151B11; border: 1px solid #2C3626; }
+  .bd-calendrier { display: grid; grid-template-columns: 26px repeat(12, 1fr); gap: 3px; align-items: center; }
+  .bd-cal-m { text-align: center; font: 400 10.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #9A967F; }
+  .bd-cal-m.actuel { color: #E4C878; font-weight: 800; }
+  .bd-cal-g { font-size: 15px; text-align: center; }
+  .bd-cal-c { height: 20px; border-radius: 4px; }
+  .bd-cal-c.actuel { outline: 1.5px solid rgba(228,200,120,.7); outline-offset: 1px; }
+  .bd-badge.gagne { background: linear-gradient(#2A2E1C, #1F2416); border-color: #6E8B4E; }
   /* v1.89 — Boutons ronds de l'en-tête */
   .bd-rond { position: relative; width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
     border: 1px solid #3A4531; background: #1C2318; color: #CFC6A8; cursor: pointer; padding: 0; }
@@ -748,7 +764,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v2.04";
+const VERSION = "v2.06";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1910,6 +1926,39 @@ async function enregistrerProfil(prenom, champs) {
   return ligne;
 }
 
+// v2.06 — Toutes les trouvailles du mur (par paquets de 1000), seulement les colonnes du suivi.
+async function chargerMurSuivi() {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Mur non configuré");
+  const tout = [];
+  for (let debut = 0; debut < 20000; debut += 1000) {
+    const { data, error } = await avecDelai(sb.from("posts").select("id, auteur, espece, espece_sci, lieu, created_at, date_obs, owner_id")
+      .order("created_at", { ascending: false }).range(debut, debut + 999), 15000, "chargerMurSuivi");
+    if (error) throw erreurSupabase("chargerMurSuivi", error, "Lecture du mur impossible");
+    tout.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  return tout;
+}
+// v2.06 — Date d'une trouvaille du mur : celle de l'observation si on l'a, sinon la publication.
+function dateTrouvaille(p) {
+  const d = new Date(p && (p.date_obs || p.created_at));
+  return isNaN(d) ? new Date(p && p.created_at) : d;
+}
+// v2.06 — Mini-courbe de saison (12 barres, le mois en cours en doré).
+function MiniSaison({ parMois }) {
+  const max = Math.max(1, ...parMois);
+  const mc = new Date().getMonth();
+  return (
+    <svg viewBox="0 0 48 18" width="48" height="18" aria-hidden="true" style={{ flexShrink: 0, display: "block" }}>
+      {parMois.map((n, i) => {
+        const h = n ? Math.max(3, (n / max) * 18) : 1.5;
+        return <rect key={i} x={i * 4} y={18 - h} width="3" height={h} rx="0.8" fill={n ? (i === mc ? "#E4C878" : "#7FA658") : "#2C3626"} />;
+      })}
+    </svg>
+  );
+}
+
 async function chargerMur(limite = 50) {
   const sb = clientSupabase();
   if (!sb) throw new Error("Mur non configuré");
@@ -2265,6 +2314,18 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.06", date: "2026-11", items: [
+    "👥 Suivi des espèces : un tableau de bord « En ce moment » — ce que la bande a vu ces 15 derniers jours, les nouvelles espèces du mois, le calendrier des groupes mois par mois et les spécialistes de chaque groupe.",
+    "🎯 « Toi & la bande » : ta liste de chasse (ce que la bande a trouvé et pas encore toi, celles de saison en premier) et les espèces que tu es seul·e à avoir partagées.",
+    "📅 Une mini-courbe sur chaque espèce pour voir sa saison d'un coup d'œil, et les dates sont celles de l'observation (plus celles de la publication).",
+    "🔓 Le suivi lit désormais toutes les trouvailles du mur, et plus seulement les 300 dernières.",
+  ] },
+  { v: "2.05", date: "2026-11", items: [
+    "📊 Tes stats en trois onglets — Collection, Habitudes, Badges — au lieu d'un long défilement.",
+    "📈 Nouvelle courbe de collection : tes espèces qui s'accumulent sur 12 mois (mois vides compris), avec les nouvelles du mois.",
+    "🎨 Tes espèces par groupe en une barre colorée : touche un groupe pour voir la liste de ses espèces.",
+    "🏅 Le prochain badge à décrocher est mis en avant, et chaque badge montre où tu en es (7/10…).",
+  ] },
   { v: "2.04", date: "2026-11", items: [
     "🛰️ Lieux : choisis ton fond de carte — Plan, Satellite (photos aériennes IGN, très détaillées en France) ou Relief (courbes de niveau). Ton choix est retenu.",
     "📇 Touche une pastille : une fiche s'ouvre en bas de la carte, avec la photo en grand et « Voir la fiche ».",
@@ -3645,6 +3706,14 @@ function filtrerObservations(liste, f) {
 
 // ---------- Vue : statistiques ----------
 function Stats({ observations, raretes, onFermer }) {
+  // v2.05 — Onglet retenu d'une visite à l'autre, et groupe d'insectes déplié.
+  const [onglet, setOnglet] = useState(() => {
+    try { const o = localStorage.getItem("biodex_stats_onglet"); return ["collection", "habitudes", "badges"].includes(o) ? o : "collection"; }
+    catch { return "collection"; }
+  });
+  const choisirOnglet = (o) => { setOnglet(o); try { localStorage.setItem("biodex_stats_onglet", o); } catch {} };
+  const [groupeSel, setGroupeSel] = useState(null);
+  const basculerGroupe = (id) => { vibrer(); setGroupeSel((g) => (g === id ? null : id)); };
   const total = observations.length;
   const identifies = observations.filter((o) => o.nom || o.nomSci).length;
   const positionnees = observations.filter((o) => o.gps).length;
@@ -3818,7 +3887,7 @@ function Stats({ observations, raretes, onFermer }) {
 
   // Répartition par biotope
   const parBiotope = {};
-  observations.forEach((o) => { parBiotope[o.biotope] = (parBiotope[o.biotope] || 0) + 1; });
+  observations.forEach((o) => { if (o.biotope) parBiotope[o.biotope] = (parBiotope[o.biotope] || 0) + 1; });
   const biotopesTri = Object.entries(parBiotope).sort((a, b) => b[1] - a[1]);
   const maxBio = biotopesTri.length ? biotopesTri[0][1] : 0;
 
@@ -3846,6 +3915,58 @@ function Stats({ observations, raretes, onFermer }) {
     { seuil: 100, emoji: "👑", label: "100 observations", atteint: total >= 100 },
   ];
   const badgesGagnes = badges.filter((b) => b.atteint).length;
+  // v2.05 — Où en est chaque badge, et lequel est le plus proche.
+  const valeursBadges = [total, total, especesUniques, total, biotopesSet.size, notables, nbOrdres, nbOrdres, total, especesUniques, cartesForgees, nbEspecesRares, nbEspecesRares, total];
+  badges.forEach((b, i) => { b.v = Math.min(b.seuil, valeursBadges[i] || 0); });
+  const prochain = badges.filter((b) => !b.atteint).map((b) => ({ ...b, ratio: b.v / b.seuil }))
+    .sort((a, b) => b.ratio - a.ratio || a.seuil - b.seuil)[0] || null;
+
+  // v2.05 — Courbe de collection sur les 12 derniers mois (mois vides compris).
+  const auj = new Date();
+  const mois12 = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(auj.getFullYear(), auj.getMonth() - i, 1);
+    mois12.push(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"));
+  }
+  const premiereVue = {};
+  observations.forEach((o) => {
+    const c = cleEspece(o), m = moisDe(o.date);
+    if (c && m && (!premiereVue[c] || m < premiereVue[c])) premiereVue[c] = m;
+  });
+  const nouvParMois = {};
+  Object.values(premiereVue).forEach((m) => { nouvParMois[m] = (nouvParMois[m] || 0) + 1; });
+  const obsParMois = {};
+  observations.forEach((o) => { const m = moisDe(o.date); if (m) obsParMois[m] = (obsParMois[m] || 0) + 1; });
+  let cumul = Object.values(premiereVue).filter((m) => m < mois12[0]).length;
+  const courbe = mois12.map((m) => { cumul += nouvParMois[m] || 0; return { m, cumul, nouv: nouvParMois[m] || 0, obs: obsParMois[m] || 0 }; });
+  const moisCourant = courbe[courbe.length - 1];
+  const nouv12 = courbe.reduce((t, p) => t + p.nouv, 0);
+  const meilleurMois = courbe.reduce((best, p) => (p.nouv > (best ? best.nouv : 0) ? p : best), null);
+  const MOIS_LONGS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+  const phraseCourbe = nouv12 === 0 ? "Aucune nouvelle espèce ces 12 derniers mois." : (
+    <span>
+      <b style={{ color: C.papier }}>{nouv12}</b> nouvelle{nouv12 > 1 ? "s" : ""} espèce{nouv12 > 1 ? "s" : ""} en 12 mois
+      {meilleurMois && nouv12 > meilleurMois.nouv ? <span>, surtout en <b style={{ color: C.ambreClair }}>{MOIS_LONGS[parseInt(meilleurMois.m.slice(5), 10) - 1]}</b> (+{meilleurMois.nouv})</span> : null}.
+    </span>
+  );
+
+  // v2.05 — Espèces par groupe (barre colorée + liste au toucher).
+  const groupesEsp = {};
+  observations.forEach((o) => {
+    const c = cleEspece(o);
+    if (!c) return;
+    const id = deduireOrdre(o) || "autres";
+    if (!groupesEsp[id]) groupesEsp[id] = {};
+    if (!groupesEsp[id][c]) groupesEsp[id][c] = { cle: c, nom: o.nom || o.nomSci, sci: o.nomSci || "", n: 0 };
+    groupesEsp[id][c].n += 1;
+  });
+  const groupesTri = Object.entries(groupesEsp)
+    .map(([id, m]) => { const info = ordreInfo(id); return { id, court: info.court, emoji: info.emoji, n: Object.keys(m).length }; })
+    .sort((a, b) => ((a.id === "autres") - (b.id === "autres")) || b.n - a.n);
+  const especesDuGroupe = groupeSel && groupesEsp[groupeSel]
+    ? Object.values(groupesEsp[groupeSel]).sort((a, b) => b.n - a.n || String(a.nom).localeCompare(String(b.nom), "fr")) : [];
+
+  const aHabitudes = enseignements.length > 0 || totalMoments > 0 || spotsTri.length > 0 || tempMoy !== null || !!cielTop || biotopesTri.length > 0 || confianceMoy !== null;
 
   const carte = { background: "linear-gradient(#232B1D, #1C2318)", border: `1px solid ${C.bordure}`, borderRadius: 14, padding: "16px", boxShadow: "0 3px 10px rgba(0,0,0,.25)" };
   const titre = { fontFamily: sans, fontSize: 12.5, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", color: C.lichen, marginBottom: 12 };
@@ -3890,93 +4011,80 @@ function Stats({ observations, raretes, onFermer }) {
         )}
       </div>
 
-      {/* Analyses détaillées — repliées : l'essentiel (chiffres clés, badges) reste visible. */}
-      <SectionPliable icone="courbe" titre="Analyses détaillées" resume="Fiabilité, ordres, rythme, spots, corrélations, conditions">
-        {/* Confiance moyenne d'identification */}
-        {confianceMoy !== null && (
+      {/* v2.05 — Trois onglets au lieu d'un long défilement d'encadrés qui se ressemblaient tous. */}
+      <Segments petit options={[["collection", "Collection"], ["habitudes", "Habitudes"], ["badges", "Badges"]]} valeur={onglet} onChange={choisirOnglet} style={{ marginBottom: 14 }} />
+
+      {onglet === "collection" && (
+        <React.Fragment>
           <div style={{ ...carte, marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={titre}>Fiabilité des identifications</span>
-              <span style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: couleurPourcent(confianceMoy) }}>{confianceMoy}%</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+              <span style={titre}>Ta collection</span>
+              {moisCourant.nouv > 0 && <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair, whiteSpace: "nowrap" }}>+{moisCourant.nouv} ce mois-ci</span>}
             </div>
-            <div style={{ height: 10, borderRadius: 6, background: "#0F130C", overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${confianceMoy}%`, borderRadius: 6, background: couleurPourcent(confianceMoy), transition: "width .5s ease" }} />
-            </div>
-            <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 8, lineHeight: 1.4 }}>
-              Confiance moyenne de l'IA sur tes {confiances.length} identification{confiances.length > 1 ? "s" : ""} avec pourcentage.
+            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 6, lineHeight: 1.5 }}>{phraseCourbe}</div>
+            <CourbeCollection points={courbe} />
+            <div style={{ display: "flex", gap: 16, justifyContent: "center", fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 2 }}>
+              <span><span style={{ display: "inline-block", width: 14, height: 3, borderRadius: 2, background: "#E4C878", verticalAlign: "middle", marginRight: 5 }} />espèces cumulées</span>
+              <span><span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 2, background: "#6E8B4E", verticalAlign: "middle", marginRight: 5 }} />trouvailles du mois</span>
             </div>
           </div>
-        )}
 
-        {/* Répartition par ordre taxonomique */}
-        {ordresTri.length > 0 && (
-          <div style={{ ...carte, marginBottom: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-              <span style={titre}>Par ordre d'insecte</span>
-              <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair }}>{nbOrdres} ordre{nbOrdres > 1 ? "s" : ""}</span>
-            </div>
-            {ordresTri.map(([id, n]) => {
-              const info = ordreInfo(id);
-              const pct = Math.round((n / total) * 100);
-              return (
-                <div key={id} style={{ marginBottom: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 12.5, color: C.papier, marginBottom: 4 }}>
-                    <span>{info.emoji} {info.label}</span>
-                    <span style={{ color: C.papierSombre }}>{n} · {pct}%</span>
-                  </div>
-                  <div style={{ height: 8, borderRadius: 4, background: "#0F130C", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${(n / maxOrdre) * 100}%`, borderRadius: 4, background: "linear-gradient(90deg, #6E8B4E, #A6CC82)", transition: "width .5s ease" }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Rythme : moments de la journée */}
-        {totalMoments > 0 && (
-          <div style={{ ...carte, marginBottom: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-              <span style={titre}>Ton rythme d'observation</span>
-            </div>
-            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5 }}>
-              Tu observes surtout <b style={{ color: C.ambreClair }}>{momentsTri[0].emoji} {momentsTri[0].label.toLowerCase()}</b> ({Math.round((momentsTri[0].n / totalMoments) * 100)}% de tes trouvailles).
-            </div>
-            {momentsTri.map((m) => (
-              <div key={m.id} style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 12.5, color: C.papier, marginBottom: 4 }}>
-                  <span>{m.emoji} {m.label}</span>
-                  <span style={{ color: C.papierSombre }}>{m.n} · {Math.round((m.n / totalMoments) * 100)}%</span>
-                </div>
-                <div style={{ height: 8, borderRadius: 4, background: "#0F130C", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${(m.n / maxMoment) * 100}%`, borderRadius: 4, background: "linear-gradient(90deg, #8A6E3A, #E4C878)", transition: "width .5s ease" }} />
-                </div>
+          {groupesTri.length > 0 && (
+            <div style={{ ...carte, marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                <span style={titre}>Tes espèces par groupe</span>
+                <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair }}>{groupesTri.length} groupe{groupesTri.length > 1 ? "s" : ""}</span>
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Spots : lieux d'observation */}
-        {spotsTri.length > 0 && (
-          <div style={{ ...carte, marginBottom: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-              <span style={titre}>Tes lieux d'observation</span>
-              <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair }}>{spotsTri.length} lieu{spotsTri.length > 1 ? "x" : ""}</span>
-            </div>
-            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5 }}>
-              Ton spot le plus riche : <b style={{ color: C.ambreClair }}>📍 {spotsTri[0].nom}</b> ({spotsTri[0].especes} espèce{spotsTri[0].especes > 1 ? "s" : ""}).
-            </div>
-            {spotsTri.slice(0, 6).map((s) => (
-              <div key={s.nom} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 11px", borderRadius: 10, background: C.fond, border: `1px solid ${C.bordure}`, marginBottom: 7 }}>
-                <span style={{ fontFamily: sans, fontSize: 14, color: C.papier }}>📍 {s.nom}</span>
-                <span style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>
-                  <b style={{ color: C.lichen }}>{s.especes}</b> espèce{s.especes > 1 ? "s" : ""} · {s.obs} obs.
-                </span>
+              <div className="bd-pile" role="img" aria-label="Répartition de tes espèces par groupe">
+                {groupesTri.map((g) => (
+                  <span key={g.id} onClick={() => basculerGroupe(g.id)}
+                    style={{ flex: g.n, background: COULEURS_ORDRE[g.id] || COULEURS_ORDRE.autres, opacity: groupeSel && groupeSel !== g.id ? 0.25 : 1 }} />
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+                {groupesTri.map((g) => (
+                  <button key={g.id} className={"bd-puce-groupe" + (groupeSel === g.id ? " actif" : "")} onClick={() => basculerGroupe(g.id)}>
+                    <span className="pt" style={{ background: COULEURS_ORDRE[g.id] || COULEURS_ORDRE.autres }} />
+                    {g.emoji} {g.court} <b>{g.n}</b>
+                  </button>
+                ))}
+              </div>
+              {groupeSel && especesDuGroupe.length > 0 ? (
+                <div style={{ marginTop: 12, borderTop: `1px solid ${C.bordure}`, paddingTop: 6 }}>
+                  {especesDuGroupe.map((e) => (
+                    <div key={e.cle} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, padding: "7px 2px", fontFamily: sans, fontSize: 13.5, color: C.papier, borderBottom: "1px solid rgba(58,69,49,.5)" }}>
+                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {e.nom}{e.sci && sansAccents(e.sci) !== sansAccents(e.nom) ? <i style={{ color: C.papierSombre, fontSize: 12 }}> · {e.sci}</i> : null}
+                      </span>
+                      <span style={{ color: C.papierSombre, fontSize: 12.5, flexShrink: 0 }}>{e.n > 1 ? `×${e.n}` : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 10 }}>Touche un groupe pour voir ses espèces.</div>
+              )}
+            </div>
+          )}
 
+      {/* Espèce star */}
+      {star && star[1] > 1 && (
+        <div style={{ ...carte, marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 30 }}>⭐</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: C.lichen }}>Ton espèce star</div>
+            <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.papier }}>{nomStar.nom || nomStar.nomSci || "—"}</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 600, color: C.ambreClair, lineHeight: 1 }}>{star[1]}</div>
+            <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>fois</div>
+          </div>
+        </div>
+      )}
+        </React.Fragment>
+      )}
+
+      {onglet === "habitudes" && (
+        <React.Fragment>
         {/* Ce que révèlent tes données (corrélations) */}
         {enseignements.length > 0 && (
           <div style={{ ...carte, marginBottom: 16, background: "linear-gradient(135deg, #1A2820, #14201A)", border: "1px solid #2E4A3A" }}>
@@ -4000,7 +4108,48 @@ function Stats({ observations, raretes, onFermer }) {
             </div>
           </div>
         )}
-
+        {/* Rythme : moments de la journée */}
+        {totalMoments > 0 && (
+          <div style={{ ...carte, marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+              <span style={titre}>Ton rythme d'observation</span>
+            </div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5 }}>
+              Tu observes surtout <b style={{ color: C.ambreClair }}>{momentsTri[0].emoji} {momentsTri[0].label.toLowerCase()}</b> ({Math.round((momentsTri[0].n / totalMoments) * 100)}% de tes trouvailles).
+            </div>
+            {momentsTri.map((m) => (
+              <div key={m.id} style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 12.5, color: C.papier, marginBottom: 4 }}>
+                  <span>{m.emoji} {m.label}</span>
+                  <span style={{ color: C.papierSombre }}>{m.n} · {Math.round((m.n / totalMoments) * 100)}%</span>
+                </div>
+                <div style={{ height: 8, borderRadius: 4, background: "#0F130C", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${(m.n / maxMoment) * 100}%`, borderRadius: 4, background: "linear-gradient(90deg, #8A6E3A, #E4C878)", transition: "width .5s ease" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* Spots : lieux d'observation */}
+        {spotsTri.length > 0 && (
+          <div style={{ ...carte, marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+              <span style={titre}>Tes lieux d'observation</span>
+              <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair }}>{spotsTri.length} lieu{spotsTri.length > 1 ? "x" : ""}</span>
+            </div>
+            <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginBottom: 12, lineHeight: 1.5 }}>
+              Ton spot le plus riche : <b style={{ color: C.ambreClair }}>📍 {spotsTri[0].nom}</b> ({spotsTri[0].especes} espèce{spotsTri[0].especes > 1 ? "s" : ""}).
+            </div>
+            {spotsTri.slice(0, 6).map((s) => (
+              <div key={s.nom} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 11px", borderRadius: 10, background: C.fond, border: `1px solid ${C.bordure}`, marginBottom: 7 }}>
+                <span style={{ fontFamily: sans, fontSize: 14, color: C.papier }}>📍 {s.nom}</span>
+                <span style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>
+                  <b style={{ color: C.lichen }}>{s.especes}</b> espèce{s.especes > 1 ? "s" : ""} · {s.obs} obs.
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {/* Conditions fétiches */}
         {(tempMoy !== null || cielTop) && (
           <div style={{ ...carte, marginBottom: 16 }}>
@@ -4023,41 +4172,89 @@ function Stats({ observations, raretes, onFermer }) {
             </div>
           </div>
         )}
-      </SectionPliable>
-
-
-      {/* v1.90 — Le compteur d'espèces rares est maintenant dans le bandeau de synthèse. */}
-
-      {/* Espèce star */}
-      {star && star[1] > 1 && (
-        <div style={{ ...carte, marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 30 }}>⭐</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: sans, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: C.lichen }}>Ton espèce star</div>
-            <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.papier }}>{nomStar.nom || nomStar.nomSci || "—"}</div>
+      {/* Répartition par biotope */}
+      {biotopesTri.length > 0 && (
+        <div style={{ ...carte, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+            <span style={titre}>Par biotope</span>
+            <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair }}>{biotopesSet.size} exploré{biotopesSet.size > 1 ? "s" : ""}</span>
           </div>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontFamily: serif, fontSize: 24, fontWeight: 600, color: C.ambreClair, lineHeight: 1 }}>{star[1]}</div>
-            <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre }}>fois</div>
-          </div>
-        </div>
-      )}
-
-      {/* Badges de découverte */}
-      <div style={{ ...carte, marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-          <span style={titre}>Badges de découverte</span>
-          <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair }}>{badgesGagnes}/{badges.length}</span>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
-          {badges.map((b, i) => (
-            <div key={i} style={{ textAlign: "center", opacity: b.atteint ? 1 : 0.32, filter: b.atteint ? "none" : "grayscale(1)" }} title={b.label}>
-              <div style={{ fontSize: 24, lineHeight: 1.1 }}>{b.emoji}</div>
-              <div style={{ fontFamily: sans, fontSize: 11, color: b.atteint ? C.papier : C.papierSombre, marginTop: 3, lineHeight: 1.2 }}>{b.label}</div>
+          {biotopesTri.map(([id, n]) => (
+            <div key={id} style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 12.5, color: C.papier, marginBottom: 4 }}>
+                <span>{biotopeOf(id).emoji} {biotopeOf(id).label}</span>
+                <span style={{ color: C.papierSombre }}>{n} · {Math.round((n / total) * 100)}%</span>
+              </div>
+              <div style={{ height: 8, borderRadius: 4, background: "#0F130C", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${(n / maxBio) * 100}%`, borderRadius: 4, background: `linear-gradient(90deg, ${C.ambre}, ${C.ambreClair})`, transition: "width .5s ease" }} />
+              </div>
             </div>
           ))}
         </div>
-      </div>
+      )}
+        {/* Confiance moyenne d'identification */}
+        {confianceMoy !== null && (
+          <div style={{ ...carte, marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <span style={titre}>Fiabilité des identifications</span>
+              <span style={{ fontFamily: serif, fontSize: 24, fontWeight: 700, color: couleurPourcent(confianceMoy) }}>{confianceMoy}%</span>
+            </div>
+            <div style={{ height: 10, borderRadius: 6, background: "#0F130C", overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${confianceMoy}%`, borderRadius: 6, background: couleurPourcent(confianceMoy), transition: "width .5s ease" }} />
+            </div>
+            <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 8, lineHeight: 1.4 }}>
+              Confiance moyenne de l'IA sur tes {confiances.length} identification{confiances.length > 1 ? "s" : ""} avec pourcentage.
+            </div>
+          </div>
+        )}
+          {!aHabitudes && (
+            <div style={{ ...carte, textAlign: "center", color: C.papierSombre, fontFamily: sans, fontSize: 13.5, lineHeight: 1.6, padding: "28px 20px" }}>
+              Note le moment, le lieu et la météo de tes trouvailles : tes habitudes d'observation apparaîtront ici.
+            </div>
+          )}
+        </React.Fragment>
+      )}
+
+      {onglet === "badges" && (
+        <React.Fragment>
+          {prochain && (
+            <div style={{ ...carte, marginBottom: 16, display: "flex", alignItems: "center", gap: 14, background: "linear-gradient(135deg, #2A2417, #201B12)", border: "1px solid #6B5A2E" }}>
+              <div style={{ fontSize: 36, lineHeight: 1 }}>{prochain.emoji}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "#E0B341" }}>Prochain badge</div>
+                <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.papier, marginTop: 2 }}>{prochain.label}</div>
+                <div style={{ height: 7, borderRadius: 4, background: "rgba(0,0,0,.35)", overflow: "hidden", marginTop: 8 }}>
+                  <div style={{ height: "100%", width: `${Math.round(prochain.ratio * 100)}%`, background: "linear-gradient(90deg, #C9A24B, #E4C878)", borderRadius: 4 }} />
+                </div>
+                <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 5 }}>{prochain.v}/{prochain.seuil} · plus que <b style={{ color: C.ambreClair }}>{prochain.seuil - prochain.v}</b></div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ ...carte, marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+              <span style={titre}>Badges de découverte</span>
+              <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair }}>{badgesGagnes}/{badges.length}</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+              {badges.map((b, i) => (
+                <div key={i} className={"bd-badge" + (b.atteint ? " gagne" : "")} title={b.label}>
+                  <div style={{ fontSize: 26, lineHeight: 1.1, filter: b.atteint ? "none" : "grayscale(1)", opacity: b.atteint ? 1 : 0.45 }}>{b.emoji}</div>
+                  <div style={{ fontFamily: sans, fontSize: 11.5, color: b.atteint ? C.papier : C.papierSombre, marginTop: 4, lineHeight: 1.25, minHeight: 29 }}>{b.label}</div>
+                  {b.atteint ? (
+                    <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: C.lichen, marginTop: 3 }}>✓ Gagné</div>
+                  ) : (
+                    <div style={{ marginTop: 5 }}>
+                      <div style={{ height: 4, borderRadius: 2, background: "#0F130C", overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${Math.round(Math.min(1, b.v / b.seuil) * 100)}%`, background: "#7FA658" }} />
+                      </div>
+                      <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 3 }}>{b.v}/{b.seuil}</div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
 
       {/* Badges par catégorie (ordres d'arthropodes) */}
       {badgesCategorie.length > 0 && (
@@ -4095,44 +4292,58 @@ function Stats({ observations, raretes, onFermer }) {
           </div>
         </div>
       )}
-
-      {/* Répartition par biotope */}
-      {biotopesTri.length > 0 && (
-        <div style={{ ...carte, marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-            <span style={titre}>Par biotope</span>
-            <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair }}>{biotopesSet.size} exploré{biotopesSet.size > 1 ? "s" : ""}</span>
-          </div>
-          {biotopesTri.map(([id, n]) => (
-            <div key={id} style={{ marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontFamily: sans, fontSize: 12.5, color: C.papier, marginBottom: 4 }}>
-                <span>{biotopeOf(id).emoji} {biotopeOf(id).label}</span>
-                <span style={{ color: C.papierSombre }}>{n} · {Math.round((n / total) * 100)}%</span>
-              </div>
-              <div style={{ height: 8, borderRadius: 4, background: "#0F130C", overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${(n / maxBio) * 100}%`, borderRadius: 4, background: `linear-gradient(90deg, ${C.ambre}, ${C.ambreClair})`, transition: "width .5s ease" }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Activité par mois */}
-      {moisTri.length > 0 && (
-        <div style={{ ...carte, marginBottom: 16 }}>
-          <div style={titre}>Activité récente</div>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 120 }}>
-            {moisTri.map(([m, n]) => (
-              <div key={m} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: C.ambreClair }}>{n}</div>
-                <div style={{ width: "100%", maxWidth: 44, height: `${maxMois ? (n / maxMois) * 84 : 0}px`, minHeight: 4, borderRadius: "5px 5px 0 0", background: `linear-gradient(${C.ambreClair}, ${C.ambre})`, transition: "height .5s ease" }} />
-                <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, textAlign: "center", lineHeight: 1.2 }}>{moisLisible(m)}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+        </React.Fragment>
       )}
     </div>
+  );
+}
+
+// v2.05 — Une couleur par groupe d'insectes (barre de répartition des stats).
+const COULEURS_ORDRE = {
+  lepidopteres: "#E39B4B", coleopteres: "#7FB05A", hymenopteres: "#EBD35A", dipteres: "#5FA8C0",
+  hemipteres: "#C9584A", orthopteres: "#C28FB8", odonates: "#5B7FD9", arachnides: "#A07CC8",
+  myriapodes: "#B88A5E", autres: "#7A7766",
+};
+
+// v2.05 — Courbe de collection : espèces cumulées (ligne dorée) et trouvailles de chaque
+// mois (barres vertes) sur les 12 derniers mois, mois vides compris.
+function CourbeCollection({ points }) {
+  const W = 320, H = 134, bas = 108, haut = 14;
+  const max = Math.max(1, ...points.map((p) => p.cumul));
+  const min = Math.min(...points.map((p) => p.cumul));
+  const plancher = min === max ? 0 : Math.max(0, min - Math.ceil((max - min) * 0.15));
+  const maxObs = Math.max(1, ...points.map((p) => p.obs));
+  const pas = W / points.length;
+  const x = (i) => pas * i + pas / 2;
+  const y = (v) => bas - ((v - plancher) / Math.max(1, max - plancher)) * (bas - haut);
+  const ligne = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.cumul).toFixed(1)}`).join(" ");
+  const aire = `${ligne} L${x(points.length - 1).toFixed(1)},${bas} L${x(0).toFixed(1)},${bas} Z`;
+  const initiales = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+  const dernier = points[points.length - 1];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", overflow: "visible" }} role="img"
+      aria-label={`Espèces cumulées sur 12 mois : ${dernier.cumul} aujourd'hui`}>
+      <defs>
+        <linearGradient id="bdCourbeAire" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#E4C878" stopOpacity=".32" />
+          <stop offset="1" stopColor="#E4C878" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <line x1="0" x2={W} y1={bas} y2={bas} stroke="#3A4531" strokeWidth="1" />
+      {points.map((p, i) => p.obs > 0 && (
+        <rect key={"b" + i} x={x(i) - pas * 0.28} width={pas * 0.56} y={bas - (p.obs / maxObs) * 30} height={(p.obs / maxObs) * 30} rx="2" fill="#6E8B4E" opacity=".6" />
+      ))}
+      <path d={aire} fill="url(#bdCourbeAire)" />
+      <path d={ligne} fill="none" stroke="#E4C878" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
+      {points.map((p, i) => p.nouv > 0 && (
+        <circle key={"c" + i} cx={x(i)} cy={y(p.cumul)} r="3.4" fill="#E4C878" stroke="#1C2318" strokeWidth="1.5" />
+      ))}
+      <text x={x(points.length - 1)} y={y(dernier.cumul) - 9} textAnchor="end" fontSize="13" fontWeight="700" fill="#E4C878" fontFamily={sans}>{dernier.cumul}</text>
+      {points.map((p, i) => (
+        <text key={"t" + i} x={x(i)} y={H - 6} textAnchor="middle" fontSize="10.5" fontWeight={i === points.length - 1 ? 700 : 400}
+          fill={i === points.length - 1 ? "#E4C878" : "#9A967F"} fontFamily={sans}>{initiales[parseInt(p.m.slice(5), 10) - 1]}</text>
+      ))}
+    </svg>
   );
 }
 
@@ -4955,7 +5166,9 @@ function MonProfil({ prenom, onDefinirPrenom, observations, onFermer }) {
 // ---------- Suivi collectif d'espèce (phénologie amateur) ----------
 // Toutes les données viennent du mur : quand la bande voit telle espèce, où, qui.
 // Plus il y a d'observations (et d'années), plus c'est parlant.
-function SuiviEspeces({ onFermer }) {
+function SuiviEspeces({ onFermer, observations }) {
+  const [vueSuivi, setVueSuivi] = useState("moment"); // v2.06 — moment | especes | toi
+  const [toutChasse, setToutChasse] = useState(false);
   const [posts, setPosts] = useState([]);
   const [etat, setEtat] = useState("chargement");
   const [choisie, setChoisie] = useState(null); // clé d'espèce
@@ -4968,7 +5181,7 @@ function SuiviEspeces({ onFermer }) {
     let vivant = true;
     (async () => {
       try {
-        const p = await chargerMur(300);
+        const p = await chargerMurSuivi();
         if (!vivant) return;
         setPosts(p);
         setEtat("ok");
@@ -4993,7 +5206,7 @@ function SuiviEspeces({ onFermer }) {
     const n = c && typeof c.count === "number" ? niveauRarete(c.count) : null;
     return !!(n && n.bonus > 0);
   };
-  const derniereDe = (e) => e.posts.reduce((max, p) => (new Date(p.created_at) > new Date(max.created_at) ? p : max), e.posts[0]);
+  const derniereDe = (e) => e.posts.reduce((max, p) => (dateTrouvaille(p) > dateTrouvaille(max) ? p : max), e.posts[0]);
 
   // Ordres présents (pour les onglets), avec compteur
   const ordresPresents = ORDRES
@@ -5010,7 +5223,7 @@ function SuiviEspeces({ onFermer }) {
   // Tri
   filtrees = [...filtrees].sort((a, b) => {
     if (tri === "alpha") return a.nom.localeCompare(b.nom, "fr");
-    if (tri === "recentes") return new Date(derniereDe(b).created_at) - new Date(derniereDe(a).created_at);
+    if (tri === "recentes") return dateTrouvaille(derniereDe(b)) - dateTrouvaille(derniereDe(a));
     return b.posts.length - a.posts.length; // populaires
   });
 
@@ -5025,7 +5238,7 @@ function SuiviEspeces({ onFermer }) {
 
     // Répartition par mois (toutes années confondues)
     const parMois = new Array(12).fill(0);
-    obs.forEach((p) => { const d = new Date(p.created_at); if (!isNaN(d)) parMois[d.getMonth()] += 1; });
+    obs.forEach((p) => { const d = dateTrouvaille(p); if (!isNaN(d)) parMois[d.getMonth()] += 1; });
     const maxMois = Math.max(...parMois, 0);
     const pic = maxMois > 0 ? parMois.indexOf(maxMois) : -1;
     // Saison : premier et dernier mois où l'espèce apparaît
@@ -5034,10 +5247,10 @@ function SuiviEspeces({ onFermer }) {
     // Première observation de chaque année (donnée phénologique clé !)
     const parAnnee = {};
     obs.forEach((p) => {
-      const d = new Date(p.created_at);
+      const d = dateTrouvaille(p);
       if (isNaN(d)) return;
       const a = d.getFullYear();
-      if (!parAnnee[a] || d < new Date(parAnnee[a].created_at)) parAnnee[a] = p;
+      if (!parAnnee[a] || d < dateTrouvaille(parAnnee[a])) parAnnee[a] = p;
     });
     const premieres = Object.entries(parAnnee).sort((a, b) => b[0] - a[0]);
 
@@ -5109,7 +5322,7 @@ function SuiviEspeces({ onFermer }) {
               <div key={annee} style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 11px", borderRadius: 10, background: "rgba(0,0,0,.25)", border: `1px solid ${C.bordure}`, marginBottom: 7 }}>
                 <span style={{ fontFamily: serif, fontSize: 16, fontWeight: 700, color: C.ambreClair, minWidth: 42 }}>{annee}</span>
                 <div style={{ flex: 1, fontFamily: sans, fontSize: 12.5, color: C.papierClair, lineHeight: 1.4 }}>
-                  <b style={{ color: C.papier }}>{new Date(p.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}</b>
+                  <b style={{ color: C.papier }}>{dateTrouvaille(p).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}</b>
                   {p.auteur ? <span style={{ color: C.papierSombre }}> · par {p.auteur}</span> : null}
                 </div>
               </div>
@@ -5147,12 +5360,60 @@ function SuiviEspeces({ onFermer }) {
     );
   }
 
+  // ── v2.06 — Tableau de bord de la bande
+  const titreS = { fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: C.lichen, marginBottom: 10 };
+  const JOUR = 86400000, maintenant = Date.now();
+  const moisActuel = new Date().getMonth();
+  const anneeCourante = new Date().getFullYear();
+  const auteursTous = new Set(posts.map((p) => (p.auteur || "").trim()).filter(Boolean));
+  const trouvaillesAnnee = posts.filter((p) => dateTrouvaille(p).getFullYear() === anneeCourante).length;
+  const moisDeLEspece = (e) => { const a = new Array(12).fill(0); e.posts.forEach((p) => { const d = dateTrouvaille(p); if (!isNaN(d)) a[d.getMonth()] += 1; }); return a; };
+  const deSaison = (e) => { const a = moisDeLEspece(e); return a[moisActuel] > 0 || a[(moisActuel + 11) % 12] > 0 || a[(moisActuel + 1) % 12] > 0; };
+  const recentes = listeEspeces
+    .map((e) => { const r = e.posts.filter((p) => maintenant - dateTrouvaille(p) <= 15 * JOUR); return r.length ? { e, n: r.length, der: Math.max(...r.map((p) => +dateTrouvaille(p))) } : null; })
+    .filter(Boolean).sort((a, b) => b.der - a.der);
+  const nouvelles = listeEspeces
+    .map((e) => { const p1 = e.posts.reduce((m, p) => (dateTrouvaille(p) < dateTrouvaille(m) ? p : m), e.posts[0]); const prem = +dateTrouvaille(p1); return maintenant - prem <= 30 * JOUR ? { e, prem, par: (p1.auteur || "").trim() } : null; })
+    .filter(Boolean).sort((a, b) => b.prem - a.prem);
+  const cal = {};
+  posts.forEach((p) => {
+    if (!cleEspeceMur(p)) return;
+    const d = dateTrouvaille(p);
+    if (isNaN(d)) return;
+    const id = deduireOrdre({ nom: p.espece, nomSci: p.espece_sci }) || "autres";
+    if (!cal[id]) cal[id] = new Array(12).fill(0);
+    cal[id][d.getMonth()] += 1;
+  });
+  const calLignes = Object.entries(cal).map(([id, arr]) => ({ id, arr, tot: arr.reduce((a, b) => a + b, 0) }))
+    .sort((a, b) => ((a.id === "autres") - (b.id === "autres")) || b.tot - a.tot);
+  const calMax = Math.max(1, ...calLignes.map((l) => Math.max(...l.arr)));
+  const spec = {};
+  listeEspeces.forEach((e) => {
+    const id = deduireOrdre({ nom: e.nom, nomSci: e.sci });
+    if (!id || id === "autres") return;
+    new Set(e.posts.map((p) => (p.auteur || "").trim()).filter(Boolean)).forEach((a) => {
+      if (!spec[id]) spec[id] = {};
+      spec[id][a] = (spec[id][a] || 0) + 1;
+    });
+  });
+  const specialistes = Object.entries(spec)
+    .map(([id, m]) => { const [a, n] = Object.entries(m).sort((x, y) => y[1] - x[1])[0]; return { id, a, n }; })
+    .filter((x) => x.n >= 2).sort((x, y) => y.n - x.n);
+  // Toi & la bande (tes espèces = ta collection sur ce téléphone)
+  const mesCles = new Set((observations || []).map((o) => cleEspeceMur(o)).filter(Boolean));
+  const enCommun = listeEspeces.filter((e) => mesCles.has(e.cle)).length;
+  const aChasser = listeEspeces.filter((e) => !mesCles.has(e.cle))
+    .sort((a, b) => (deSaison(b) - deSaison(a)) || b.posts.length - a.posts.length || a.nom.localeCompare(b.nom, "fr"));
+  const toiSeul = listeEspeces.filter((e) => e.posts.length > 0 && e.posts.every((p) => estAMoi(p)))
+    .sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+  const nonPartagees = [...mesCles].filter((c) => !especes[c]).length;
+
   // ── Liste des espèces suivies
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
       <Retour onClick={onFermer} />
 
-      <TitreEcran icone="courbe" titre="Suivi des espèces" sous="Quand la bande voit-elle telle espèce ? Qui l'a repérée en premier cette année ? De la phénologie amateur, construite par vos observations." />
+      <TitreEcran icone="courbe" titre="Suivi des espèces" sous="Ce que la bande voit en ce moment, quand sort chaque groupe, et ce qu'il te reste à trouver." />
 
       {etat === "chargement" && <Chargement forme="posts" n={2} />}
       {etat === "echec" && <Erreur>Impossible de charger les données. Vérifie ta connexion.</Erreur>}
@@ -5163,7 +5424,161 @@ function SuiviEspeces({ onFermer }) {
         </div>
       )}
 
+      {/* v2.06 — Trois vues : ce qui se passe en ce moment, toutes les espèces, toi face à la bande. */}
       {etat === "ok" && listeEspeces.length > 0 && (
+        <Segments petit options={[["moment", "En ce moment"], ["especes", "Espèces"], ["toi", "Toi & la bande"]]} valeur={vueSuivi} onChange={setVueSuivi} style={{ marginBottom: 14 }} />
+      )}
+
+      {etat === "ok" && listeEspeces.length > 0 && vueSuivi === "moment" && (
+        <React.Fragment>
+          <div className="bd-synth" style={{ padding: "14px 10px" }}>
+            <div className="bd-synth-grille" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
+              {[["Espèces", listeEspeces.length], ["Trouvailles", posts.length], ["Chasseurs", auteursTous.size], ["En " + anneeCourante, trouvaillesAnnee]].map(([lab, val]) => (
+                <div key={lab}>
+                  <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair, lineHeight: 1 }}>{val}</div>
+                  <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: C.papierSombre, marginTop: 5 }}>{lab}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ ...carte, marginBottom: 14 }}>
+            <div style={titreS}>Vu ces 15 derniers jours</div>
+            {recentes.length === 0 ? (
+              <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, lineHeight: 1.5 }}>Rien de partagé ces 15 derniers jours : la saison est calme. 🌙</div>
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {recentes.slice(0, 18).map(({ e, n }) => (
+                  <button key={e.cle} className="bd-puce-groupe" onClick={() => setChoisie(e.cle)}>
+                    {ordreInfo(deduireOrdre({ nom: e.nom, nomSci: e.sci })).emoji} {e.nom}{n > 1 ? <b>×{n}</b> : null}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {nouvelles.length > 0 && (
+            <div style={{ ...carte, marginBottom: 14, background: "linear-gradient(135deg, #2A2417, #201B12)", border: "1px solid #6B5A2E" }}>
+              <div style={{ ...titreS, color: "#E0B341" }}>🥇 Nouvelles pour la bande · 30 jours</div>
+              {nouvelles.slice(0, 8).map(({ e, prem, par }) => (
+                <div key={e.cle} onClick={() => setChoisie(e.cle)} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "8px 2px", cursor: "pointer", borderBottom: "1px solid rgba(107,90,46,.35)" }}>
+                  <span style={{ flex: 1, minWidth: 0, fontFamily: serif, fontSize: 15, fontWeight: 600, color: C.papier, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.nom}</span>
+                  <span style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, flexShrink: 0 }}>
+                    {new Date(prem).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}{par ? ` · ${par}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {calLignes.length > 0 && (
+            <div style={{ ...carte, marginBottom: 14 }}>
+              <div style={titreS}>Le calendrier de la bande</div>
+              <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 10, lineHeight: 1.45 }}>
+                Quels groupes sortent quel mois (toutes années confondues). Plus la case est dorée, plus il y a de trouvailles.
+              </div>
+              <div className="bd-calendrier">
+                <span />
+                {MOIS_C.map((m, i) => <span key={i} className={"bd-cal-m" + (i === moisActuel ? " actuel" : "")}>{m}</span>)}
+                {calLignes.map((l) => (
+                  <React.Fragment key={l.id}>
+                    <span className="bd-cal-g" title={ordreInfo(l.id).label}>{ordreInfo(l.id).emoji}</span>
+                    {l.arr.map((n, i) => (
+                      <span key={i} className={"bd-cal-c" + (i === moisActuel ? " actuel" : "")} title={`${ordreInfo(l.id).court} · ${MOIS_L[i]} : ${n}`}
+                        style={{ background: n ? `rgba(228,200,120,${(0.18 + 0.82 * Math.sqrt(n / calMax)).toFixed(2)})` : "#151B11" }} />
+                    ))}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {specialistes.length > 0 && (
+            <div style={{ ...carte, marginBottom: 14 }}>
+              <div style={titreS}>Les spécialistes</div>
+              {specialistes.map((sp) => (
+                <div key={sp.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 2px", borderBottom: "1px solid rgba(58,69,49,.5)" }}>
+                  <span style={{ fontSize: 18, width: 24, textAlign: "center" }}>{ordreInfo(sp.id).emoji}</span>
+                  <span style={{ flex: 1, fontFamily: sans, fontSize: 13, color: C.papierSombre }}>{ordreInfo(sp.id).court}</span>
+                  <span style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: C.papier }}>{sp.a}</span>
+                  <span style={{ fontFamily: sans, fontSize: 12, color: C.ambreClair, minWidth: 62, textAlign: "right" }}>{sp.n} espèces</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </React.Fragment>
+      )}
+
+      {etat === "ok" && listeEspeces.length > 0 && vueSuivi === "toi" && (
+        <React.Fragment>
+          {mesCles.size === 0 ? (
+            <div style={{ ...carte, textAlign: "center", fontFamily: sans, fontSize: 14, color: C.papierSombre, lineHeight: 1.6 }}>
+              Ajoute tes premières trouvailles : tu verras ici ce que la bande a vu et toi pas encore.
+            </div>
+          ) : (
+            <React.Fragment>
+              <div className="bd-synth" style={{ padding: "14px 10px" }}>
+                <div className="bd-synth-grille" style={{ marginTop: 0, paddingTop: 0, borderTop: "none", gridTemplateColumns: "repeat(3, 1fr)" }}>
+                  {[["En commun", enCommun], ["À chasser", aChasser.length], ["Rien qu'à toi", toiSeul.length]].map(([lab, val]) => (
+                    <div key={lab}>
+                      <div style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: C.ambreClair, lineHeight: 1 }}>{val}</div>
+                      <div style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: C.papierSombre, marginTop: 5 }}>{lab}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {aChasser.length > 0 && (
+                <div style={{ ...carte, marginBottom: 14 }}>
+                  <div style={titreS}>Ta liste de chasse</div>
+                  <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginBottom: 8, lineHeight: 1.45 }}>
+                    Ce que la bande a trouvé et pas encore toi. Celles de saison en premier.
+                  </div>
+                  {aChasser.slice(0, toutChasse ? 200 : 12).map((e) => (
+                    <div key={e.cle} onClick={() => setChoisie(e.cle)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", cursor: "pointer", borderBottom: "1px solid rgba(58,69,49,.5)" }}>
+                      <span style={{ fontSize: 18, width: 24, textAlign: "center", flexShrink: 0 }}>{ordreInfo(deduireOrdre({ nom: e.nom, nomSci: e.sci })).emoji}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: serif, fontSize: 15, fontWeight: 600, color: C.papier, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.nom}</div>
+                        <div style={{ fontFamily: sans, fontSize: 11.5, color: C.papierSombre, marginTop: 1 }}>
+                          {e.posts.length} fois par la bande{deSaison(e) ? <b style={{ color: "#9CCB72" }}> · 🌱 c'est la saison</b> : null}
+                        </div>
+                      </div>
+                      <MiniSaison parMois={moisDeLEspece(e)} />
+                    </div>
+                  ))}
+                  {aChasser.length > 12 && (
+                    <button className="bd-puce-groupe" style={{ marginTop: 10 }} onClick={() => setToutChasse((v) => !v)}>
+                      {toutChasse ? "Réduire" : `Voir les ${aChasser.length}`}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div style={{ ...carte, marginBottom: 14 }}>
+                <div style={titreS}>Rien qu'à toi</div>
+                {toiSeul.length === 0 ? (
+                  <div style={{ fontFamily: sans, fontSize: 13, color: C.papierSombre, lineHeight: 1.5 }}>Aucune espèce du mur n'est encore rien qu'à toi : tout ce que tu as partagé, quelqu'un d'autre l'a aussi trouvé.</div>
+                ) : (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {toiSeul.map((e) => (
+                      <button key={e.cle} className="bd-puce-groupe" onClick={() => setChoisie(e.cle)}>
+                        {ordreInfo(deduireOrdre({ nom: e.nom, nomSci: e.sci })).emoji} {e.nom}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {nonPartagees > 0 && (
+                  <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 10, lineHeight: 1.45 }}>
+                    Et <b style={{ color: C.ambreClair }}>{nonPartagees}</b> espèce{nonPartagees > 1 ? "s" : ""} de ta collection {nonPartagees > 1 ? "ne sont" : "n'est"} pas encore sur le mur.
+                  </div>
+                )}
+              </div>
+            </React.Fragment>
+          )}
+        </React.Fragment>
+      )}
+
+      {etat === "ok" && listeEspeces.length > 0 && vueSuivi === "especes" && (
         <div>
           <input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="🔍 Chercher une espèce…"
             style={{ width: "100%", boxSizing: "border-box", background: C.fond, border: `1px solid ${C.bordure}`, borderRadius: 10, padding: "10px 12px", fontFamily: sans, fontSize: 14, color: C.papier, outline: "none", marginBottom: 12 }} />
@@ -5216,7 +5631,7 @@ function SuiviEspeces({ onFermer }) {
             {filtrees.map((e) => {
               const rar = litCacheRarete(e.cle);
               const niv = rar && typeof rar.count === "number" ? niveauRarete(rar.count) : null;
-              const derniere = e.posts.reduce((max, p) => (new Date(p.created_at) > new Date(max.created_at) ? p : max), e.posts[0]);
+              const derniere = e.posts.reduce((max, p) => (dateTrouvaille(p) > dateTrouvaille(max) ? p : max), e.posts[0]);
               return (
                 <div key={e.cle} onClick={() => setChoisie(e.cle)}
                   style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 10, background: C.panneau, border: `1px solid ${C.bordure}`, cursor: "pointer" }}>
@@ -5227,9 +5642,10 @@ function SuiviEspeces({ onFermer }) {
                       {niv && niv.bonus > 0 && <span style={{ fontSize: 12.5 }}>{niv.emoji}</span>}
                     </div>
                     <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, marginTop: 2 }}>
-                      {e.posts.length} obs. · vue le {new Date(derniere.created_at).toLocaleDateString("fr-FR")}
+                      {e.posts.length} obs. · vue le {dateTrouvaille(derniere).toLocaleDateString("fr-FR")}
                     </div>
                   </div>
+                  <MiniSaison parMois={moisDeLEspece(e)} />
                   <span style={{ color: C.papierSombre, fontSize: 16, flexShrink: 0 }}>›</span>
                 </div>
               );
@@ -9948,7 +10364,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {item("loupe", "Guide d'observation", "Quand, où observer — et réussir ses photos", () => onAller("guide"), 0)}
         {item("feuille", "Jardin refuge", "Accueillir les insectes chez toi, et pourquoi", () => onAller("refuge"), 0)}
         {item("livre", "Le coin des curieux", "Mythes, rôle des insectes, records étonnants", () => onAller("curieux"), 0)}
-        {MUR_ACTIF && item("courbe", "Suivi des espèces", "Quand la bande voit quoi (phénologie)", () => onAller("suivi"), 0)}
+        {MUR_ACTIF && item("courbe", "Suivi des espèces", "En ce moment, calendrier, ta liste de chasse", () => onAller("suivi"), 0)}
 
         {/* La bande */}
         {MUR_ACTIF && titreSection("La bande")}
@@ -15531,7 +15947,7 @@ function BioDex() {
         <JardinRefuge onFermer={() => setVue("accueil")} />
       )}
       {vue === "suivi" && (
-        <SuiviEspeces onFermer={() => setVue("accueil")} />
+        <SuiviEspeces onFermer={() => setVue("accueil")} observations={observations} />
       )}
       {vue === "admin" && estAdmin && (
         <Administration onFermer={() => setVue("accueil")} />
