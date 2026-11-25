@@ -1,12 +1,13 @@
-// BioDex v2.08 — Service Worker
+// BioDex v2.09 — Service Worker
 // © 2026 Sylvain Mercier. Tous droits réservés.
-const CACHE = "biodex-v2-08";
+const CACHE = "biodex-v2-09";
 const SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png",
+  "./badge-96.png",
   "./emblem.png",
   "https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js",
@@ -48,10 +49,14 @@ self.addEventListener("push", (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch { d = { corps: e.data ? e.data.text() : "" }; }
   const titre = d.titre || "BioDex";
+  // v2.09 — Photo de la trouvaille (uniquement une photo publique de notre stockage Supabase),
+  // et petite icône de barre d'état en silhouette blanche (Android n'en garde que la forme).
+  const photo = typeof d.photo === "string" && /^https:\/\/vnoagcaaeqzwnfylmqvn\.supabase\.co\/storage\/v1\/object\/public\//.test(d.photo) ? d.photo : null;
   e.waitUntil(self.registration.showNotification(titre, {
     body: d.corps || "",
-    icon: "./icon-192.png",
-    badge: "./icon-192.png",
+    icon: photo || "./icon-192.png",
+    image: photo && d.grande ? photo : undefined,
+    badge: "./badge-96.png",
     tag: d.tag || undefined,
     renotify: !!d.tag,
     data: { url: d.url || "./" },

@@ -1,4 +1,4 @@
-// BioDex — fonction « notifier » (v1.95) : envoie les notifications push.
+// BioDex — fonction « notifier » (v1.95, photo des trouvailles en v2.09) : envoie les notifications push.
 //
 // Appelée par les déclencheurs de la base (pg_net) avec seulement { table, id }.
 // Elle relit la ligne elle-même avec la clé de service, décide QUI prévenir, puis
@@ -24,7 +24,11 @@ const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
 const json = (o: unknown, status = 200) =>
   new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
 
-type Envoi = { dest: string | null; tous?: boolean; exclure?: string | null; pref: string; titre: string; corps: string; tag: string; url: string };
+type Envoi = { dest: string | null; tous?: boolean; exclure?: string | null; pref: string; titre: string; corps: string; tag: string; url: string; photo?: string | null; grande?: boolean };
+
+// v2.09 — Photo de la trouvaille dans la notification : seulement une adresse publique de notre stockage.
+const PREFIXE_PHOTOS = (Deno.env.get("SUPABASE_URL") ?? "") + "/storage/v1/object/public/";
+const photoSure = (u: unknown) => (typeof u === "string" && PREFIXE_PHOTOS.length > 30 && u.startsWith(PREFIXE_PHOTOS) && u.length < 600 ? u : null);
 
 const recent = (iso?: string | null) => !!iso && Date.now() - new Date(iso).getTime() < FRAICHEUR_MS;
 const court = (s: unknown, n: number) => { const t = String(s ?? "").trim(); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
@@ -44,21 +48,21 @@ async function construire(table: string, id: string): Promise<Envoi | null> {
   if (table === "commentaires") {
     const { data: c } = await sb.from("commentaires").select("id, post_id, auteur, texte, owner_id, created_at").eq("id", id).maybeSingle();
     if (!c || !recent(c.created_at)) return null;
-    const { data: p } = await sb.from("posts").select("id, owner_id, espece").eq("id", c.post_id).maybeSingle();
+    const { data: p } = await sb.from("posts").select("id, owner_id, espece, photo_url").eq("id", c.post_id).maybeSingle();
     if (!p || !p.owner_id || p.owner_id === c.owner_id) return null;
     return { dest: p.owner_id, pref: "commentaires", titre: `💬 ${court(c.auteur || "Quelqu'un", 30)} a commenté`,
-      corps: `Ta ${court(p.espece || "trouvaille", 50)} : « ${court(c.texte, 90)} »`, tag: "com-" + p.id, url: "./?notif=1" };
+      corps: `Ta ${court(p.espece || "trouvaille", 50)} : « ${court(c.texte, 90)} »`, tag: "com-" + p.id, url: "./?notif=1", photo: photoSure(p.photo_url) };
   }
   if (table === "reactions_detail") {
     const { data: r } = await sb.from("reactions_detail").select("id, post_id, type, auteur, owner_id, created_at").eq("id", id).maybeSingle();
     if (!r || !recent(r.created_at)) return null;
-    const { data: p } = await sb.from("posts").select("id, owner_id, espece").eq("id", Number(r.post_id)).maybeSingle();
+    const { data: p } = await sb.from("posts").select("id, owner_id, espece, photo_url").eq("id", Number(r.post_id)).maybeSingle();
     if (!p || !p.owner_id || p.owner_id === r.owner_id) return null;
     // Au plus une notification de réaction par publication et par heure (pas de rafale).
     const heure = new Date().toISOString().slice(0, 13);
     if (!(await marquer(`react:${p.id}:${heure}`))) return null;
     return { dest: p.owner_id, pref: "reactions", titre: `${EMOJIS[r.type] || "❤️"} ${court(r.auteur || "Quelqu'un", 30)} a réagi`,
-      corps: `à ta ${court(p.espece || "trouvaille", 60)}`, tag: "react-" + p.id, url: "./?notif=1" };
+      corps: `à ta ${court(p.espece || "trouvaille", 60)}`, tag: "react-" + p.id, url: "./?notif=1", photo: photoSure(p.photo_url) };
   }
   if (table === "defis_historique") {
     const { data: d } = await sb.from("defis_historique").select("id, defieur, defendeur, carte_nom, defieur_gagne, created_at").eq("id", id).maybeSingle();
@@ -74,10 +78,10 @@ async function construire(table: string, id: string): Promise<Envoi | null> {
       corps: d.defieur_gagne ? "Elle a perdu ce combat… une revanche ?" : "Elle a tenu bon ! 🛡️", tag: "defi-" + d.id, url: "./?notif=1" };
   }
   if (table === "posts") {
-    const { data: p } = await sb.from("posts").select("id, owner_id, auteur, espece, created_at").eq("id", Number(id)).maybeSingle();
+    const { data: p } = await sb.from("posts").select("id, owner_id, auteur, espece, photo_url, created_at").eq("id", Number(id)).maybeSingle();
     if (!p || !recent(p.created_at)) return null;
     return { dest: null, tous: true, exclure: p.owner_id, pref: "mur", titre: `🆕 ${court(p.auteur || "Quelqu'un", 30)} a partagé une trouvaille`,
-      corps: p.espece ? court(p.espece, 80) : "Une bestiole à identifier : tu peux aider !", tag: "mur-" + p.id, url: "./?notif=mur" };
+      corps: p.espece ? court(p.espece, 80) : "Une bestiole à identifier : tu peux aider !", tag: "mur-" + p.id, url: "./?notif=mur", photo: photoSure(p.photo_url), grande: true };
   }
   return null;
 }
@@ -98,7 +102,7 @@ Deno.serve(async (req) => {
   q = e.tous ? q.eq("prefs->>mur", "true") : q.eq("owner_id", e.dest!);
   const { data: abos } = await q.limit(500);
   webpush.setVapidDetails(SUJET, VAPID_PUBLIC, VAPID_PRIVATE);
-  const charge = JSON.stringify({ titre: e.titre, corps: e.corps, tag: e.tag, url: e.url });
+  const charge = JSON.stringify({ titre: e.titre, corps: e.corps, tag: e.tag, url: e.url, photo: e.photo ?? undefined, grande: e.grande || undefined });
   let envoyes = 0;
   for (const a of abos ?? []) {
     if (e.exclure && a.owner_id === e.exclure) continue;

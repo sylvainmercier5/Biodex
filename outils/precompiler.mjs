@@ -46,7 +46,7 @@ fs.mkdirSync(DIST, { recursive: true });
 fs.writeFileSync(path.join(DIST, "index.html"), htmlDist);
 fs.writeFileSync(path.join(DIST, "app.js"), "// BioDex v" + version + " — précompilé depuis index.html (outils/precompiler.mjs). Ne pas éditer.\n" + code);
 fs.writeFileSync(path.join(DIST, "sw.js"), sw);
-for (const f of ["manifest.webmanifest", "icon-192.png", "icon-512.png", "emblem.png"]) fs.copyFileSync(path.join(RACINE, f), path.join(DIST, f));
+for (const f of ["manifest.webmanifest", "icon-192.png", "icon-512.png", "emblem.png", "badge-96.png"]) fs.copyFileSync(path.join(RACINE, f), path.join(DIST, f));
 
 const ko = (n) => Math.round(n / 1024) + " Ko";
 console.log(`BioDex v${version} précompilé en ${Date.now() - t0} ms : index.html ${ko(Buffer.byteLength(htmlDist))}, app.js ${ko(Buffer.byteLength(code))}`);
