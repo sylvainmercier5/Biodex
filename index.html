@@ -764,7 +764,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v2.09";
+const VERSION = "v2.10";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -2314,6 +2314,10 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.10", date: "2026-11", items: [
+    "🐞 BioDex reste fidèle aux insectes : un escargot, un oiseau ou une plante restent dans ton carnet, mais sans carte de collection. Un petit mot te l'explique et t'oriente vers iNaturalist.",
+    "❓ Nouvelle question dans l'aide : « Pourquoi seulement les insectes ? »",
+  ] },
   { v: "2.09", date: "2026-11", items: [
     "🔔 Notifications (Android) : un vrai petit lucane dans la barre d'état, au lieu d'un rond blanc sans forme.",
     "📸 Une réaction, un commentaire ou une nouvelle trouvaille de la bande ? La notification montre la photo de la bestiole (en grand pour les nouvelles trouvailles).",
@@ -3717,6 +3721,47 @@ ORDRES.forEach((o) => {
 });
 // Des noms qui ressemblent à un groupe sans en faire partie (fourmilion ≠ fourmi, mouche-scorpion ≠ mouche…).
 const MOTS_HORS_GROUPES = ["mouche-scorpion", "panorpe", "fourmilion", "ascalaphe", "psoque", "chrysope", "ephemere", "perce-oreille", "forficule", "mante", "phasme", "cloporte", "blatte", "lepisme", "escargot", "limace", "orvet"];
+
+// v2.10 — BioDex se concentre sur les insectes et leurs proches (les arthropodes : araignées,
+// mille-pattes, cloportes…). On reconnaît ce qui n'en est pas (mollusques, vers, vertébrés, plantes,
+// champignons) pour ne pas en forger de carte. Le premier mot du nom compte, en mot entier.
+const NON_ARTHROPODES_MOTS = ["escargot", "limace", "clausilie", "ver de terre", "lombric", "sangsue", "planaire",
+  "orvet", "lezard", "serpent", "couleuvre", "vipere", "grenouille", "crapaud", "rainette", "triton", "salamandre", "tortue",
+  "oiseau", "mesange", "merle", "moineau", "rouge-gorge", "pigeon", "tourterelle", "corneille", "pie", "geai", "pic", "buse", "faucon", "hibou", "chouette", "tao",
+  "herisson", "souris", "mulot", "campagnol", "musaraigne", "taupe", "ecureuil", "chauve-souris", "renard", "chevreuil", "lapin", "lievre", "poisson",
+  "champignon", "lichen", "mousse", "fougere", "fleur", "plante", "arbre"];
+const NON_ARTHROPODES_GENRES = ["cornu", "helix", "cepaea", "arion", "limax", "deroceras", "clausilia", "lumbricus", "anguis", "lacerta", "podarcis",
+  "natrix", "zamenis", "vipera", "bufo", "rana", "hyla", "triturus", "lissotriton", "salamandra", "erinaceus", "tinamus", "parus", "cyanistes",
+  "turdus", "erithacus", "passer", "columba", "pica", "garrulus", "sciurus", "talpa"];
+const NON_ARTHROPODES_LATINS = ["gastropoda", "mollusca", "pulmonata", "stylommatophora", "helicidae", "arionidae", "limacidae", "clausiliidae",
+  "annelida", "oligochaeta", "lumbricidae", "hirudinea", "aves", "mammalia", "reptilia", "squamata", "amphibia", "anura", "caudata",
+  "plantae", "fungi", "tracheophyta", "magnoliopsida"];
+function horsInsectes(o) {
+  if (!o) return false;
+  const nom = sansAccents(o.nom).trim();
+  const motsSci = sansAccents(o.nomSci).split(/[^a-z]+/).filter(Boolean);
+  const parNom = !!nom && NON_ARTHROPODES_MOTS.some((m) => nom.startsWith(m) && !/[a-z]/.test(nom.charAt(m.length)));
+  const parSci = motsSci.length > 0 && (NON_ARTHROPODES_GENRES.includes(motsSci[0]) || motsSci.some((w) => NON_ARTHROPODES_LATINS.includes(w)));
+  // Un nom d'insecte reconnu l'emporte toujours (au cas où).
+  if (parNom || parSci || o.ordre === "hors") return deduireOrdre(o) === "autres";
+  return false;
+}
+// Le petit mot affiché à la place de la carte.
+function EncartHorsInsectes({ obs, style }) {
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "11px 13px", borderRadius: 10, background: "linear-gradient(#1E2420, #181D19)", border: "1px solid #4F6B5A", ...style }}>
+      <span style={{ fontSize: 20, flexShrink: 0, lineHeight: 1.2 }}>🌱</span>
+      <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5 }}>
+        <b>Jolie rencontre ! Mais ce n'est pas un insecte.</b> BioDex se concentre sur les insectes et leurs proches (araignées, mille-pattes…) :
+        pas de carte pour celui-ci, mais ta trouvaille reste dans ton carnet.
+        <a href={lienINaturalist(obs && obs.nomSci, obs && obs.nom)} target="_blank" rel="noopener noreferrer"
+          style={{ display: "block", marginTop: 6, color: C.ambre, fontWeight: 600, textDecoration: "underline" }}>
+          🔗 Pour l'identifier et le partager : iNaturalist
+        </a>
+      </div>
+    </div>
+  );
+}
 
 // v1.85 — Bestiaire : espèces d'insectes connues dans le Limousin, par groupe, et les plus
 // communes (silhouettes à découvrir). Fabriqué par outils/fabriquer-bestiaire.mjs.
@@ -8832,6 +8877,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
                   </div>
                 </div>
               )}
+              {horsInsectes(cloudResultat) && <EncartHorsInsectes obs={cloudResultat} style={{ marginBottom: 10 }} />}
               {/* v1.77 — Ça pique ? */}
               <BadgeContact nom={cloudResultat.nom} nomSci={cloudResultat.nomSci} contact={cloudResultat.contact} contactNote={cloudResultat.contact_note} confiance={cloudResultat.confiance} style={{ marginBottom: 10 }} />
               {cloudResultat.inhabituel && String(cloudResultat.inhabituel).trim().length > 3 && (
@@ -9704,7 +9750,7 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
 
       {/* Carte de collection */}
       <SectionPliable icone="jeu" titre="Carte de collection" ouvertParDefaut={cadrage}
-        resume={obs.carte ? `${palierRarete(obs.carte.rarete).nom} · touche pour la voir` : (identifie ? "Dans ton album (onglet Collection)" : "Identifie d'abord ce spécimen")}>
+        resume={obs.carte ? `${palierRarete(obs.carte.rarete).nom} · touche pour la voir` : (identifie ? (horsInsectes(obs) ? "Pas de carte : ce n'est pas un insecte" : "Dans ton album (onglet Collection)") : "Identifie d'abord ce spécimen")}>
       <div>
         {obs.carte ? (
           <div>
@@ -9748,6 +9794,8 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
               </div>
             )}
           </div>
+        ) : identifie && horsInsectes(obs) ? (
+          <EncartHorsInsectes obs={obs} />
         ) : identifie && (observations || []).some((o) => o.id !== obs.id && o.carte && cleEspeceMur(o) === cleEspeceMur(obs)) ? (
           // v1.85 — Bestiaire : une carte par espèce. Celle-ci existe déjà ailleurs.
           <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, lineHeight: 1.5 }}>
@@ -11711,6 +11759,10 @@ function Aide({ onFermer, onImportTermine, ouvrirSauvegarde }) {
       <TitreEcran icone="aide" titre="Le guide BioDex" sous="Ton carnet de terrain, mode d'emploi. Touche une question pour lire la réponse." />
 
       <SectionPliable titre="Observer et identifier" ouvertParDefaut>
+        <QR q="Pourquoi seulement les insectes ?">
+        <p style={{ ...p, marginBottom: 0 }}>
+          Parce que c'est la raison d'être de BioDex : faire découvrir et aimer les insectes, souvent mal aimés alors qu'ils sont essentiels — ils pollinisent, recyclent, nourrissent les oiseaux… et disparaissent vite. Le jeu (cartes, combats, défis) est là pour donner envie de les regarder de plus près. Leurs proches cousins, araignées, mille-pattes et cloportes, sont aussi les bienvenus. Un escargot, un oiseau ou une plante ? Ta trouvaille reste dans ton carnet, mais sans carte. Pour eux, d'autres applis font ça très bien : <b>Pl@ntNet</b> pour les plantes, <b>Merlin</b> pour les oiseaux, et <b>iNaturalist</b> pour tout le vivant.
+        </p></QR>
         <QR q="Comment ajouter un insecte ?">
         <p style={{ ...p, marginBottom: 0 }}>
           Appuie sur « Nouvelle observation », utilise « Appareil photo » pour capturer le spécimen sans quitter l'appli, ou « Galerie » pour reprendre un cliché existant. Astuce : pour les macros de haute qualité (zoom, mise au point fine), photographie d'abord avec ton appli photo native puis récupère le cliché via « Galerie ». La position GPS est capturée automatiquement si tu l'autorises, et la météo (ciel + température) est récupérée toute seule à partir de ta position — tu peux la corriger à la main si besoin. Seule la photo est obligatoire.
@@ -15788,7 +15840,7 @@ function BioDex() {
     // 2) Nouvelle espèce : on forge sa carte.
     if (forgesAutoSession.current >= 8) return;
     try { if (navigator.onLine === false) return; } catch {}
-    const aForger = collection.find((o) => { const k = cleEspeceMur(o); return k && !o.carte && !carteDe[k] && !forgesAutoRatees.current.has(o.id); });
+    const aForger = collection.find((o) => { const k = cleEspeceMur(o); return k && !o.carte && !carteDe[k] && !forgesAutoRatees.current.has(o.id) && !horsInsectes(o); });
     if (!aForger) return;
     forgeAutoEnCours.current = true;
     forgesAutoSession.current += 1;
