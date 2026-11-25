@@ -424,12 +424,12 @@
   /* v1.99 — Mur : membres, trouvaille de la semaine, à identifier, double-touche */
   .bd-membres { display: flex; gap: 10px; overflow-x: auto; margin: 0 -16px 10px; padding: 2px 16px 4px; scrollbar-width: none; }
   .bd-membres::-webkit-scrollbar { display: none; }
-  .bd-membre { flex-shrink: 0; width: 60px; display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; padding: 0; cursor: pointer; }
+  .bd-membre { flex-shrink: 0; width: 68px; display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; padding: 0; cursor: pointer; }
   .bd-membre-rond { width: 56px; height: 56px; border-radius: 50%; padding: 2px; background: #3A4531; display: flex; align-items: center; justify-content: center; }
   .bd-membre-rond.neuf { background: conic-gradient(#E4C878, #A6CC82, #E4C878); }
   .bd-membre-rond img, .bd-membre-rond > span { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid #0F130C; display: flex; align-items: center; justify-content: center; font-size: 22px; background: #1C2318; }
   .bd-membre.actif .bd-membre-rond { background: #C9A24B; box-shadow: 0 0 0 2px rgba(201,162,75,.35); }
-  .bd-membre-nom { max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #A8A48F; }
+  .bd-membre-nom { max-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: -.1px; color: #A8A48F; }
   .bd-membre.actif .bd-membre-nom { color: #E4C878; }
   .bd-semaine { position: relative; display: block; width: 100%; height: 160px; padding: 0; border-radius: 18px; overflow: hidden; cursor: pointer; border: 1px solid rgba(201,162,75,.55); box-shadow: 0 0 18px rgba(201,162,75,.18); }
   .bd-semaine img { width: 100%; height: 100%; object-fit: cover; display: block; }
