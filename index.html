@@ -211,8 +211,10 @@
   .bd-cc-pied { display: flex; align-items: center; justify-content: space-between; gap: .3em; padding: .42em .5em .45em; }
   .bd-cc-pastille { font-weight: 800; font-size: .72em; letter-spacing: .06em; text-transform: uppercase; padding: .22em .6em; border-radius: 1em;
     background: rgba(30,26,14,.88); white-space: nowrap; }
-  /* Commun : papier mat */
-  .bd-cc-commun { background: linear-gradient(160deg, #D6D1BB 0%, #A8A48F 55%, #8F8B76 100%); }
+  /* Commun : papier mat (v2.03 : grain de papier) */
+  .bd-cc-commun { background:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .1  0 0 0 0 .08  0 0 0 0 .04  0 0 0 .22 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"),
+      linear-gradient(160deg, #D6D1BB 0%, #A8A48F 55%, #8F8B76 100%); }
   /* Peu commun : métal vert gravé */
   .bd-cc-peucommun { background:
       repeating-linear-gradient(45deg, rgba(255,255,255,.07) 0 2px, transparent 2px 6px),
@@ -236,6 +238,50 @@
     background: linear-gradient(150deg, #F3E2A8 0%, #D9B860 40%, #F7EAC0 55%, #B8913A 100%); }
   .bd-cc-leg .bd-cc-holo { mix-blend-mode: soft-light; opacity: .8;
     background: linear-gradient(115deg, transparent 25%, rgba(255,255,255,.8) 45%, rgba(255,230,160,.6) 52%, transparent 70%); background-size: 260% 260%; animation-duration: 3.6s; }
+  /* v2.03 — Brillants par rareté.
+     Peu commun : liseré métallisé (seul le cadre brille). */
+  .bd-cc-lisere { position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit; padding: .42em; box-sizing: border-box;
+    background: linear-gradient(115deg, transparent 32%, rgba(255,255,255,.95) 46%, rgba(225,245,200,.7) 52%, transparent 66%);
+    background-size: 260% 260%; background-position: var(--hx, 0%) var(--hy, 0%); mix-blend-mode: overlay;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); animation: bdHolo 6s ease-in-out infinite; }
+  /* Rare : motif lié à l'élément, révélé là où tombe la lumière */
+  .bd-cc-motif { position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit; mix-blend-mode: color-dodge; opacity: .42;
+    -webkit-mask-image: radial-gradient(circle at var(--px, 35%) var(--py, 25%), #000 0%, rgba(0,0,0,.35) 38%, transparent 70%);
+    mask-image: radial-gradient(circle at var(--px, 35%) var(--py, 25%), #000 0%, rgba(0,0,0,.35) 38%, transparent 70%); }
+  /* Légendaire : paillettes d'or qui scintillent selon l'angle */
+  .bd-cc-paillettes { position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit; mix-blend-mode: color-dodge; opacity: .9;
+    background:
+      radial-gradient(circle, rgba(255,246,200,.95) .06em, transparent .12em) 0 0 / 1.3em 1.3em,
+      radial-gradient(circle, rgba(255,230,150,.85) .05em, transparent .1em) .6em .9em / 1.9em 1.7em,
+      radial-gradient(circle, rgba(255,255,255,.9) .04em, transparent .09em) .3em .4em / 2.3em 2.1em;
+    -webkit-mask-image: radial-gradient(circle at var(--px, 60%) var(--py, 40%), #000 0%, transparent 55%);
+    mask-image: radial-gradient(circle at var(--px, 60%) var(--py, 40%), #000 0%, transparent 55%); }
+  .bd-cc:not(.bd-cc-vivante) .bd-cc-paillettes { animation: bdPaillettes 4s ease-in-out infinite; }
+  @keyframes bdPaillettes { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+  /* Carte « vivante » (en grand) : la lumière suit l'inclinaison, le relief bouge */
+  .bd-cc-vivante .bd-cc-holo, .bd-cc-vivante .bd-cc-lisere { animation: none; }
+  .bd-cc-reflet { position: absolute; inset: 0; z-index: 4; pointer-events: none; border-radius: inherit; mix-blend-mode: soft-light;
+    background: radial-gradient(circle at var(--px, 50%) var(--py, 30%), rgba(255,255,255,.85), rgba(255,255,255,.15) 30%, transparent 58%); }
+  .bd-cc-commun .bd-cc-reflet { opacity: .45; }
+  .bd-cc-vivante .bd-cc-photo > * { transform: scale(1.12) translate(var(--dx, 0%), var(--dy, 0%)); will-change: transform; }
+  .bd-cc-vivante .bd-cc-titre, .bd-cc-vivante .bd-cc-pied { transform: translate(calc(var(--dx, 0%) * -.5), calc(var(--dy, 0%) * -.5)); }
+  .bd-manip { position: relative; perspective: 1100px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+  .bd-manip:active { cursor: grabbing; }
+  .bd-manip-in { position: relative; transform-style: preserve-3d; will-change: transform; }
+  .bd-manip-ombre { position: absolute; left: 12%; right: 12%; bottom: -22px; height: 26px; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,.6), transparent 70%); filter: blur(4px);
+    transform: translateX(var(--sx, 0px)) scaleX(var(--sw, 1)); }
+  @keyframes bdGlisseG { from { opacity: 0; transform: translateX(-38%) rotate(-4deg); } to { opacity: 1; transform: none; } }
+  @keyframes bdGlisseD { from { opacity: 0; transform: translateX(38%) rotate(4deg); } to { opacity: 1; transform: none; } }
+  .bd-glisse-g { animation: bdGlisseG .34s cubic-bezier(.2,.9,.3,1) both; }
+  .bd-glisse-d { animation: bdGlisseD .34s cubic-bezier(.2,.9,.3,1) both; }
+  .bd-nav-carte { display: flex; align-items: center; gap: 14px; }
+  .bd-nav-carte button { width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(201,162,75,.6); background: rgba(30,26,14,.6);
+    color: #E4C878; font-size: 22px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .bd-nav-carte button:disabled { opacity: .3; cursor: default; }
+  .bd-gyro { margin-top: 26px; font: 700 12.5px sans-serif; color: #E4C878; background: rgba(30,26,14,.7); border: 1px solid rgba(201,162,75,.5);
+    border-radius: 20px; padding: 8px 14px; cursor: pointer; }
   /* Silhouette « à découvrir » : même format, en creux */
   .bd-cc-vide { cursor: default; background: linear-gradient(#161B12, #0F130C); border: 1.5px dashed #3A4531; box-shadow: none; }
   .bd-cc-vide:active { transform: none; }
@@ -679,7 +725,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v2.02";
+const VERSION = "v2.03";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -2196,6 +2242,12 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.03", date: "2026-11", items: [
+    "🃏 Les cartes prennent vie : en grand, fais-les tourner du doigt (avec de l'élan), touche-les pour les retourner, et penche ton téléphone pour voir la lumière glisser dessus.",
+    "🌈 Un brillant par rareté : grain de papier pour les communes, liseré métallisé pour les peu communes, motif holographique lié à l'élément pour les rares, paillettes d'or pour les légendaires.",
+    "🔭 Effet de relief : l'insecte semble flotter au-dessus du cadre quand la carte s'incline.",
+    "📖 Album à feuilleter : depuis une carte en grand, passe à la suivante avec les flèches ou en glissant sur le fond.",
+  ] },
   { v: "2.02", date: "2026-11", items: [
     "📲 Récupération de compte (menu › Mon compte) : téléphone cassé, perdu ou changé ? Tes trouvailles partagées sur le mur reviennent dans ta collection, avec leurs photos, leur date et leur lieu. Reconnecte-toi avec ton email et/ou indique le prénom que tu utilisais sur le mur.",
     "🔁 Rien n'est récupéré en double : ce qui est déjà dans ta collection n'est pas reproposé.",
@@ -12432,7 +12484,25 @@ function usePauseHorsEcran(ref) {
   }, []);
 }
 
-function CarteCollection({ obs, grand = false, suivreDoigt = false, vues = 0, onClick }) {
+// v2.03 — Motif holographique des cartes rares, selon l'élément de l'insecte.
+const MOTIFS_ELEMENT = {
+  volant: "radial-gradient(circle at 50% 0, transparent 55%, rgba(255,255,255,.95) 58%, transparent 66%) 0 0 / 1.1em .8em",
+  cuirasse: "repeating-linear-gradient(60deg, rgba(255,255,255,.9) 0 .06em, transparent .06em .8em), repeating-linear-gradient(-60deg, rgba(255,255,255,.9) 0 .06em, transparent .06em .8em), repeating-linear-gradient(0deg, rgba(255,255,255,.9) 0 .06em, transparent .06em .69em)",
+  rampant: "repeating-linear-gradient(0deg, rgba(255,255,255,.85) 0 .12em, transparent .12em .7em)",
+  bondissant: "linear-gradient(135deg, rgba(255,255,255,.9) 25%, transparent 25%) -.4em 0 / .8em .8em, linear-gradient(225deg, rgba(255,255,255,.9) 25%, transparent 25%) -.4em 0 / .8em .8em",
+  venimeux: "repeating-radial-gradient(circle at 50% 45%, rgba(255,255,255,.85) 0 .06em, transparent .06em .9em), repeating-conic-gradient(from 0deg at 50% 45%, rgba(255,255,255,.85) 0 1deg, transparent 1deg 30deg)",
+  aquatique: "repeating-radial-gradient(circle at 30% 115%, rgba(255,255,255,.9) 0 .1em, transparent .1em .8em)",
+  social: "radial-gradient(circle, rgba(255,255,255,.95) .12em, transparent .16em) 0 0 / .8em .7em, radial-gradient(circle, rgba(255,255,255,.95) .12em, transparent .16em) .4em .35em / .8em .7em",
+  nocturne: "radial-gradient(circle, #fff .07em, transparent .12em) 0 0 / 1.3em 1.3em, radial-gradient(circle, rgba(255,255,255,.75) .05em, transparent .1em) .6em .85em / 1.8em 1.8em",
+  predateur: "repeating-linear-gradient(35deg, rgba(255,255,255,.9) 0 .1em, transparent .1em .5em, rgba(255,255,255,.5) .5em .56em, transparent .56em 1.1em)",
+  butineur: "radial-gradient(circle, rgba(255,255,255,.95) .1em, transparent .14em) 0 0 / .9em .9em",
+};
+function motifElement(e) {
+  const k = String(e || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return MOTIFS_ELEMENT[k] || "radial-gradient(circle, rgba(255,255,255,.9) .08em, transparent .13em) 0 0 / .9em .9em";
+}
+
+function CarteCollection({ obs, grand = false, suivreDoigt = false, vivante = false, vues = 0, onClick }) {
   const c = obs.carte;
   const ref = useRef(null);
   usePauseHorsEcran(ref);
@@ -12462,7 +12532,7 @@ function CarteCollection({ obs, grand = false, suivreDoigt = false, vues = 0, on
     n.querySelectorAll(".bd-cc-holo").forEach((h) => h.classList.remove("bd-suit"));
   };
   return (
-    <div ref={ref} className={`bd-cc bd-cc-${r}`} onClick={onClick}
+    <div ref={ref} className={`bd-cc bd-cc-${r}` + (vivante ? " bd-cc-vivante" : "")} onClick={onClick}
       onPointerMove={suivreDoigt ? bouger : undefined} onPointerLeave={suivreDoigt ? lacher : undefined} onPointerUp={suivreDoigt ? lacher : undefined}
       style={{ fontSize: grand ? 19 : 12, fontFamily: sans, touchAction: suivreDoigt ? "none" : undefined, transition: suivreDoigt ? "transform .12s ease-out" : undefined }}>
       <div className="bd-cc-in">
@@ -12486,8 +12556,12 @@ function CarteCollection({ obs, grand = false, suivreDoigt = false, vues = 0, on
           </span>
         </div>
       </div>
+      {r === "peucommun" && <div className="bd-cc-lisere" />}
       {(r === "rare" || r === "leg") && <div className="bd-cc-holo" />}
+      {r === "rare" && <div className="bd-cc-motif" style={{ background: motifElement(c.element) }} />}
+      {r === "leg" && <div className="bd-cc-paillettes" />}
       {suivreDoigt && (r === "rare" || r === "leg") && <div className="bd-cc-eclat" />}
+      {vivante && <div className="bd-cc-reflet" />}
       {r === "leg" && (
         <React.Fragment>
           <span className="bd-etoile" style={{ zIndex: 4, top: "9%", left: "12%", fontSize: "1em" }}>✦</span>
@@ -12566,11 +12640,160 @@ const REVELATION = {
   leg:       { eclair: "radial-gradient(circle, rgba(255,240,180,.95), rgba(228,200,120,.5) 40%, transparent 75%)", rayons: "repeating-conic-gradient(rgba(240,210,120,.3) 0 5deg, transparent 5deg 12deg)", son: "legendaire" },
 };
 
+// v2.03 — Carte « manipulable » : on la fait tourner du doigt (avec de l'élan), un
+// toucher la retourne, et elle s'incline quand on penche le téléphone (gyroscope).
+// Tout est piloté hors React (une boucle d'animation écrit directement le style).
+const bornerC = (v, a, b) => Math.min(b, Math.max(a, v));
+function CarteManipulable({ obs, vues, entree }) {
+  const sceneRef = useRef(null);
+  const inRef = useRef(null);
+  const st = useRef({ ry: 0, rx: 0, vy: 0, cible: 0, drag: null, gx: 0, gy: 0, gxT: 0, gyT: 0, base: null, face: 0 });
+  const [gyroIos, setGyroIos] = useState(false);
+  const reduit = (() => { try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { return false; } })();
+
+  // Gyroscope : l'inclinaison est relative à la position de départ, et le « neutre »
+  // suit doucement la main (tenir le téléphone penché ne garde pas la carte penchée).
+  useEffect(() => {
+    if (reduit) return;
+    const D = window.DeviceOrientationEvent;
+    if (!D) return;
+    const onOri = (e) => {
+      if (e.beta == null || e.gamma == null) return;
+      const s = st.current;
+      if (!s.base) s.base = { b: e.beta, g: e.gamma };
+      s.base.b += (e.beta - s.base.b) * 0.008;
+      s.base.g += (e.gamma - s.base.g) * 0.008;
+      s.gxT = bornerC(e.gamma - s.base.g, -24, 24);
+      s.gyT = bornerC(e.beta - s.base.b, -24, 24);
+    };
+    let branche = false;
+    const brancher = () => { if (!branche) { branche = true; window.addEventListener("deviceorientation", onOri); } };
+    if (typeof D.requestPermission === "function") {
+      // iPhone : il faut une autorisation, demandée sur un geste.
+      let ok = false;
+      try { ok = localStorage.getItem("biodex_gyro") === "ok"; } catch {}
+      if (ok) {
+        const n = sceneRef.current;
+        const demander = () => { D.requestPermission().then((r) => { if (r === "granted") brancher(); }).catch(() => {}); };
+        n && n.addEventListener("pointerdown", demander, { once: true });
+      } else if (navigator.maxTouchPoints > 0) setGyroIos(true);
+      st.current.brancher = brancher;
+    } else brancher();
+    return () => window.removeEventListener("deviceorientation", onOri);
+  }, []);
+
+  const activerGyroIos = () => {
+    const D = window.DeviceOrientationEvent;
+    D.requestPermission().then((r) => {
+      if (r === "granted") { try { localStorage.setItem("biodex_gyro", "ok"); } catch {} st.current.brancher && st.current.brancher(); }
+      setGyroIos(false);
+    }).catch(() => setGyroIos(false));
+  };
+
+  // Boucle d'animation
+  useEffect(() => {
+    let raf = 0, avant = performance.now();
+    // Physique indépendante de la cadence d'affichage (k = nombre d'images « à 60 i/s »).
+    const lisse = (f, k) => 1 - Math.pow(1 - f, k);
+    const tour = (t) => {
+      const s = st.current, n = inRef.current, sc = sceneRef.current;
+      const k = Math.min(4, Math.max(0.25, ((t || performance.now()) - avant) / 16.67));
+      avant = t || performance.now();
+      if (n && sc) {
+        if (!s.drag) {
+          if (Math.abs(s.vy) > 0.5) { s.ry += s.vy * k; s.vy *= Math.pow(0.94, k); s.cible = Math.round(s.ry / 180) * 180; }
+          else { s.vy = 0; s.ry += (s.cible - s.ry) * lisse(0.14, k); }
+          s.rx += (0 - s.rx) * lisse(0.12, k);
+          const face = ((Math.round(s.cible / 180) % 2) + 2) % 2;
+          if (face !== s.face && Math.abs(s.cible - s.ry) < 4) { s.face = face; vibrer(10); }
+        }
+        s.gx += (s.gxT - s.gx) * lisse(0.15, k);
+        s.gy += (s.gyT - s.gy) * lisse(0.15, k);
+        const ry = s.ry + s.gx * 0.9, rx = s.rx - s.gy * 0.7;
+        n.style.transform = "rotateX(" + rx.toFixed(2) + "deg) rotateY(" + ry.toFixed(2) + "deg)";
+        // Inclinaison « locale » de la face visible (-90..90), pour placer la lumière.
+        let loc = ((ry % 360) + 540) % 360 - 180;
+        if (loc > 90) loc -= 180; else if (loc < -90) loc += 180;
+        const hx = bornerC(50 + loc * 1.6, 0, 100), hy = bornerC(50 - rx * 2.2, 0, 100);
+        n.style.setProperty("--hx", hx + "%"); n.style.setProperty("--hy", hy + "%");
+        n.style.setProperty("--px", bornerC(50 + loc * 1.3, -10, 110) + "%"); n.style.setProperty("--py", bornerC(35 - rx * 1.8, -10, 110) + "%");
+        n.style.setProperty("--dx", bornerC(-loc * 0.14, -4.5, 4.5).toFixed(2) + "%");
+        n.style.setProperty("--dy", bornerC(rx * 0.14, -4.5, 4.5).toFixed(2) + "%");
+        sc.style.setProperty("--sx", (-loc * 0.5).toFixed(1) + "px");
+        sc.style.setProperty("--sw", Math.max(0.2, Math.abs(Math.cos((ry * Math.PI) / 180))).toFixed(2));
+      }
+      raf = requestAnimationFrame(tour);
+    };
+    raf = requestAnimationFrame(tour);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const bas = (e) => {
+    const s = st.current;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    s.drag = { x: e.clientX, y: e.clientY, ry0: s.ry, t: Date.now(), lx: e.clientX, lt: performance.now(), v: 0, bouge: false };
+    s.vy = 0;
+  };
+  const bouge = (e) => {
+    const s = st.current, d = s.drag;
+    if (!d) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (Math.abs(dx) + Math.abs(dy) > 8) d.bouge = true;
+    s.ry = d.ry0 + dx * 0.55;
+    s.rx = bornerC(-dy * 0.22, -22, 22);
+    const t = performance.now(), dt = Math.max(1, t - d.lt);
+    d.v = d.v * 0.5 + (((e.clientX - d.lx) * 0.55) / dt) * 16 * 0.5; // degrés par image
+    d.lx = e.clientX; d.lt = t;
+  };
+  const haut = () => {
+    const s = st.current, d = s.drag;
+    if (!d) return;
+    s.drag = null;
+    if (!d.bouge && Date.now() - d.t < 400) {
+      // Simple toucher : on retourne la carte.
+      s.cible = Math.round(s.ry / 180) * 180 + 180;
+      return;
+    }
+    s.vy = reduit ? 0 : bornerC(d.v, -38, 38);
+    s.cible = Math.round(s.ry / 180) * 180;
+  };
+
+  return (
+    <div className={entree ? "bd-glisse-" + entree : undefined} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <div ref={sceneRef} className="bd-manip" style={{ width: "100%" }}
+        onPointerDown={bas} onPointerMove={bouge} onPointerUp={haut} onPointerCancel={haut}>
+        <div ref={inRef} className="bd-manip-in">
+          <div className="bd-face"><CarteCollection obs={obs} grand vivante vues={vues} /></div>
+          <div className="bd-face bd-face-arr"><VersoCarte obs={obs} vues={vues} /></div>
+        </div>
+        <div className="bd-manip-ombre" />
+      </div>
+      {gyroIos && <button className="bd-gyro" onClick={activerGyroIos}>📱 Incliner avec le téléphone</button>}
+    </div>
+  );
+}
+
 // Carte en grand. Révélation : dos → (toucher) tremblement → retournement + éclair.
 // Ensuite : toucher la carte la retourne (recto ↔ verso).
-function CarteZoom({ obs, vues, revelation = false, onFermer, onVoirObs, onRevelee }) {
+function CarteZoom({ obs: obsDepart, vues: vuesDepart, liste, vuesDe, revelation = false, onFermer, onVoirObs, onRevelee }) {
   const [etape, setEtape] = useState(revelation ? "dos" : "revelee"); // dos | ouverture | eclair | revelee
-  const [verso, setVerso] = useState(false);
+  // v2.03 — Album à feuilleter : avec une liste, on passe d'une carte à l'autre sans fermer.
+  const avecListe = !revelation && Array.isArray(liste) && liste.length > 1;
+  const [nav, setNav] = useState(() => ({ i: avecListe ? Math.max(0, liste.findIndex((o) => o.id === obsDepart.id)) : 0, sens: null }));
+  const obs = avecListe ? liste[nav.i] || obsDepart : obsDepart;
+  const vues = avecListe && vuesDe ? vuesDe(obs) : vuesDepart;
+  const aller = (d) => {
+    if (!avecListe) return;
+    setNav((n) => { const i = n.i + d; return i < 0 || i >= liste.length ? n : { i, sens: d > 0 ? "d" : "g" }; });
+    vibrer(6);
+  };
+  useEffect(() => {
+    const k = (e) => { if (e.key === "ArrowLeft") aller(-1); else if (e.key === "ArrowRight") aller(1); else if (e.key === "Escape") onFermer(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  });
+  const glisseFond = useRef(null);
+  const dernierGlisse = useRef(0);
   const r = classeRarete(obs.carte && obs.carte.rarete);
   const fx = REVELATION[r];
   const minuteurs = useRef([]);
@@ -12589,10 +12812,16 @@ function CarteZoom({ obs, vues, revelation = false, onFermer, onVoirObs, onRevel
   const enRevelation = etape === "dos" || etape === "ouverture" || etape === "eclair";
   const largeur = "min(78vw, 330px, 58vh)";
   return (
-    <div className="bd-zoom-fond" onClick={(e) => { if (e.target === e.currentTarget && etape !== "ouverture") onFermer(); }}>
+    <div className="bd-zoom-fond"
+      onPointerDown={(e) => { glisseFond.current = e.target === e.currentTarget ? { x: e.clientX, y: e.clientY } : null; }}
+      onPointerUp={(e) => {
+        const g = glisseFond.current; glisseFond.current = null;
+        if (g && avecListe && Math.abs(e.clientX - g.x) > 60 && Math.abs(e.clientX - g.x) > Math.abs(e.clientY - g.y)) { dernierGlisse.current = Date.now(); aller(e.clientX < g.x ? 1 : -1); }
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget && etape !== "ouverture" && Date.now() - dernierGlisse.current > 300) onFermer(); }}>
       {etape === "eclair" && fx.rayons && <div className="bd-rayons" style={{ background: fx.rayons, borderRadius: "50%" }} />}
       {etape === "eclair" && <div className="bd-eclair" style={{ background: fx.eclair }} />}
-      <div className="bd-flip" style={{ width: largeur, position: "relative", zIndex: 1 }}>
+      <div className={enRevelation ? "bd-flip" : undefined} style={{ width: largeur, position: "relative", zIndex: 1 }}>
         {enRevelation ? (
           <div key="rev" className={"bd-flip-in" + (etape === "eclair" ? " bd-verso" : "")}>
             <div className={"bd-face" + (etape === "ouverture" ? " bd-trembler" : "")}><DosCarte grand appel={etape === "dos"} onClick={ouvrir} /></div>
@@ -12601,22 +12830,22 @@ function CarteZoom({ obs, vues, revelation = false, onFermer, onVoirObs, onRevel
             </div>
           </div>
         ) : (
-          <div key="std" className={"bd-flip-in" + (verso ? " bd-verso" : "")}>
-            <div className="bd-face" style={{ perspective: 900 }}>
-              <CarteCollection obs={obs} grand suivreDoigt vues={vues} onClick={() => setVerso(true)} />
-            </div>
-            <div className="bd-face bd-face-arr" onClick={() => setVerso(false)}>
-              <VersoCarte obs={obs} vues={vues} />
-            </div>
-          </div>
+          <CarteManipulable key={obs.id} obs={obs} vues={vues} entree={nav.sens} />
         )}
       </div>
       <div style={{ position: "relative", zIndex: 1, marginTop: 18, textAlign: "center", fontFamily: sans, color: C.papierSombre, fontSize: 12.5 }}>
         {etape === "dos" ? "Touche la carte pour la révéler"
           : etape === "ouverture" ? "…"
           : etape === "eclair" ? <span style={{ fontFamily: serif, fontSize: 22, fontWeight: 700, color: palierRarete(obs.carte.rarete).couleur }}>{palierRarete(obs.carte.rarete).nom} !</span>
-          : "Touche la carte pour la retourner"}
+          : "Fais-la tourner du doigt · touche-la pour la retourner"}
       </div>
+      {avecListe && etape === "revelee" && (
+        <div className="bd-nav-carte" style={{ position: "relative", zIndex: 1, marginTop: 12, fontFamily: sans, color: C.papierSombre, fontSize: 13, fontWeight: 700 }}>
+          <button aria-label="Carte précédente" disabled={nav.i === 0} onClick={() => aller(-1)}>‹</button>
+          <span style={{ minWidth: 64, textAlign: "center" }}>{nav.i + 1} / {liste.length}</span>
+          <button aria-label="Carte suivante" disabled={nav.i >= liste.length - 1} onClick={() => aller(1)}>›</button>
+        </div>
+      )}
       {(etape === "revelee" || etape === "eclair") && (
         <div style={{ position: "relative", zIndex: 1, display: "flex", gap: 10, marginTop: 14 }}>
           {onVoirObs && <button className="bd-press" onClick={() => onVoirObs(obs.id)} style={{ fontFamily: sans, fontSize: 14, fontWeight: 700, padding: "10px 16px", borderRadius: 10, cursor: "pointer", border: `1px solid ${C.ambre}`, background: "transparent", color: C.ambreClair }}>Voir l'observation</button>}
@@ -12728,6 +12957,7 @@ function Bestiaire({ cartesAffichees: toutes, nbEspeces, vuesParEspece, filtreGr
 
       {obsZoom && obsZoom.carte && (
         <CarteZoom key={obsZoom.id} obs={obsZoom} vues={vuesParEspece[cleEspeceMur(obsZoom)] || 0} revelation={zoom.revelation}
+          liste={groupes.flatMap((g) => g.cartesG)} vuesDe={(o) => vuesParEspece[cleEspeceMur(o)] || 0}
           onRevelee={onRevelee} onFermer={() => setZoom(null)} onVoirObs={(id) => { setZoom(null); onOuvrir(id); }} />
       )}
     </div>
@@ -12814,7 +13044,7 @@ function Vitrine({ cartes, observations, onOuvrir, onRevelee, onMontrer }) {
 
       {zoom && (() => {
         const o = especes.find((x) => x.id === zoom);
-        return o && o.carte ? <CarteZoom key={o.id} obs={o} vues={vues(o)} onFermer={() => setZoom(null)} onVoirObs={(id) => { setZoom(null); onOuvrir(id); }} /> : null;
+        return o && o.carte ? <CarteZoom key={o.id} obs={o} vues={vues(o)} liste={tresors} vuesDe={vues} onFermer={() => setZoom(null)} onVoirObs={(id) => { setZoom(null); onOuvrir(id); }} /> : null;
       })()}
     </div>
   );
