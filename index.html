@@ -115,7 +115,30 @@
   .bd-pastille { background: none !important; border: none !important; box-shadow: none !important; display: flex !important; align-items: center; justify-content: center; }
   .bd-pastille span { border-radius: 50% !important; }
   /* v2.03 — Carte au fond sombre (les tuiles claires juraient avec le thème) et bulles assorties */
-  .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.82) contrast(.92) saturate(.55); }
+  .leaflet-container:not(.bd-fond-photo) .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.82) contrast(.92) saturate(.55); }
+  .bd-fond-photo .leaflet-tile-pane { filter: brightness(.9) saturate(.9); }
+  /* v2.04 — Carte des observations : fonds, « autour de moi », fiche en bas, frise */
+  .bd-carte-fonds { position: absolute; top: 10px; right: 10px; z-index: 1000; display: flex; padding: 3px; gap: 2px; border-radius: 12px;
+    background: rgba(22,27,18,.92); border: 1px solid rgba(201,162,75,.35); box-shadow: 0 3px 12px rgba(0,0,0,.5); }
+  .bd-carte-fonds button { font: 700 12px sans-serif; padding: 7px 10px; border-radius: 9px; border: none; cursor: pointer; background: transparent; color: #A8A48F; }
+  .bd-carte-fonds button.actif { background: #C9A24B; color: #1E1A0E; }
+  .bd-carte-moi { position: absolute; left: 10px; bottom: 14px; z-index: 1000; width: 46px; height: 46px; border-radius: 50%; cursor: pointer;
+    background: rgba(22,27,18,.94); border: 1px solid rgba(201,162,75,.5); color: #E4C878; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 3px 12px rgba(0,0,0,.55); }
+  .bd-carte-moi.cherche svg { animation: bdSpin 1.2s linear infinite; }
+  @keyframes bdFicheMonte { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .bd-carte-fiche { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 1001; display: flex; gap: 12px; padding: 10px; border-radius: 16px;
+    background: rgba(22,27,18,.97); border: 1px solid rgba(201,162,75,.45); box-shadow: 0 8px 26px rgba(0,0,0,.65); animation: bdFicheMonte .25s ease both; }
+  .bd-carte-fiche-photo { width: 104px; height: 104px; flex-shrink: 0; border-radius: 12px; overflow: hidden; background: #2C3623; }
+  .bd-carte-fiche-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .bd-puces { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 10px; padding-bottom: 2px; scrollbar-width: none; }
+  .bd-puces::-webkit-scrollbar { display: none; }
+  .bd-puces button { flex-shrink: 0; font: 700 12.5px sans-serif; padding: 7px 12px; border-radius: 18px; cursor: pointer; white-space: nowrap;
+    background: #1C2318; color: #CFC7B0; border: 1px solid #3A4531; }
+  .bd-puces button.actif { background: #C9A24B; color: #1E1A0E; border-color: #C9A24B; }
+  .bd-frise { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 8px 10px; border-radius: 12px; background: #1C2318; border: 1px solid #3A4531; }
+  .bd-frise button { width: 38px; height: 38px; flex-shrink: 0; border-radius: 50%; border: none; cursor: pointer; background: #C9A24B; color: #1E1A0E; font-size: 15px; font-weight: 800; }
+  .bd-frise input[type=range] { flex: 1; accent-color: #C9A24B; min-width: 0; }
   .leaflet-container { background: #0E120B !important; }
   .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1F2719 !important; color: #ECE4D0 !important; box-shadow: 0 6px 20px rgba(0,0,0,.6) !important; }
   .leaflet-popup-content-wrapper { border: 1px solid rgba(201,162,75,.4); border-radius: 14px !important; }
@@ -725,7 +748,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v2.03";
+const VERSION = "v2.04";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -2242,6 +2265,12 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.04", date: "2026-11", items: [
+    "🛰️ Lieux : choisis ton fond de carte — Plan, Satellite (photos aériennes IGN, très détaillées en France) ou Relief (courbes de niveau). Ton choix est retenu.",
+    "📇 Touche une pastille : une fiche s'ouvre en bas de la carte, avec la photo en grand et « Voir la fiche ».",
+    "🦋 Filtre par groupe d'insectes, et frise du temps : fais glisser pour remonter la saison, ou ▶ pour voir tes trouvailles apparaître dans l'ordre.",
+    "📍 Bouton « Autour de moi » : recentre la carte sur toi et compte les trouvailles à moins d'1 km.",
+  ] },
   { v: "2.03", date: "2026-11", items: [
     "🃏 Les cartes prennent vie : en grand, fais-les tourner du doigt (avec de l'élan), touche-les pour les retourner, et penche ton téléphone pour voir la lumière glisser dessus.",
     "🌈 Un brillant par rareté : grain de papier pour les communes, liseré métallisé pour les peu communes, motif holographique lié à l'élément pour les rares, paillettes d'or pour les légendaires.",
@@ -10567,11 +10596,30 @@ function Missions({ observations, prenom, onDefinirPrenom, onFermer }) {
 }
 
 // ---------- Vue : carte ----------
+// v2.04 — Fonds de carte. Satellite : photos aériennes IGN (Géoplateforme, libre, sans clé,
+// France entière). Relief : OpenTopoMap (courbes de niveau, ombrage).
+const FONDS_CARTE = {
+  plan: { nom: "Plan", url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", natif: 19, attrib: "© OpenStreetMap" },
+  satellite: { nom: "Satellite", url: "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image/jpeg&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}", natif: 19, attrib: "© IGN Géoplateforme" },
+  relief: { nom: "Relief", url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", natif: 17, attrib: "© OpenTopoMap (CC-BY-SA) · © OpenStreetMap" },
+};
+function kmEntre(la1, lo1, la2, lo2) {
+  const r = Math.PI / 180, dLa = (la2 - la1) * r, dLo = (lo2 - lo1) * r;
+  const a = Math.sin(dLa / 2) ** 2 + Math.cos(la1 * r) * Math.cos(la2 * r) * Math.sin(dLo / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(a));
+}
 function Carte({ observations, onOuvrirFiche }) {
   const divRef = useRef(null);
   const [mode, setMode] = useState("moi"); // "moi" | "bande"
   const [postsBande, setPostsBande] = useState([]);
   const [etatBande, setEtatBande] = useState("idle"); // idle | chargement | ok | echec
+  const [fond, setFond] = useState(() => { try { return FONDS_CARTE[localStorage.getItem("biodex_fond_carte")] ? localStorage.getItem("biodex_fond_carte") : "plan"; } catch { return "plan"; } });
+  const [groupe, setGroupe] = useState("");       // filtre par groupe d'insectes ("" = tous)
+  const [jusqua, setJusqua] = useState(null);     // frise : nombre de points affichés (null = tous)
+  const [rejeu, setRejeu] = useState(false);      // « rejouer la saison » en cours
+  const [sel, setSel] = useState(null);           // point touché (fiche en bas de la carte)
+  const [chercheMoi, setChercheMoi] = useState(false);
+  const carteRef = useRef(null);
 
   const avecGps = observations.filter((o) => o.gps);
   const sansGps = observations.length - avecGps.length;
@@ -10627,99 +10675,127 @@ function Carte({ observations, onOuvrirFiche }) {
     }
   }, [mode]);
 
+  // v2.04 — Points affichés : selon le mode, le groupe d'insectes et la frise du temps.
+  const pointsTous = mode === "moi"
+    ? avecGps.map((o) => ({ id: o.id, lat: o.gps.lat, lon: o.gps.lon, date: o.date, groupe: deduireOrdre(o), obs: o }))
+    : postsAvecPos.map((p) => ({ id: "p" + p.id, lat: p.lat, lon: p.lon, date: p.date_obs || p.created_at, groupe: deduireOrdre({ nom: p.espece, nomSci: p.espece_sci }), post: p }));
+  const groupesPresents = ORDRES.map((o) => o.id).concat("autres")
+    .map((id) => ({ id, n: pointsTous.filter((x) => x.groupe === id).length })).filter((g) => g.n > 0);
+  const pointsGroupe = pointsTous.filter((x) => !groupe || x.groupe === groupe)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  const nbVisibles = jusqua == null ? pointsGroupe.length : Math.min(jusqua, pointsGroupe.length);
+  const pointsVisibles = pointsGroupe.slice(0, nbVisibles);
+  const dateLimite = nbVisibles > 0 ? new Date(pointsGroupe[nbVisibles - 1].date) : null;
+
+  // Changer de carte (moi / bande) remet les filtres à zéro.
+  useEffect(() => { setGroupe(""); setJusqua(null); setRejeu(false); setSel(null); }, [mode]);
+
+  // « Rejouer la saison » : les trouvailles apparaissent dans l'ordre, en ~6 secondes.
+  useEffect(() => {
+    if (!rejeu) return;
+    const n = pointsGroupe.length;
+    if (n < 2) { setRejeu(false); return; }
+    const pas = Math.max(1, Math.round(n / 70));
+    let i = 1;
+    setSel(null);
+    setJusqua(1);
+    const id = setInterval(() => {
+      i += pas;
+      if (i >= n) { clearInterval(id); setJusqua(null); setRejeu(false); } else setJusqua(i);
+    }, Math.min(600, Math.max(90, Math.round(6000 / n))));
+    return () => clearInterval(id);
+  }, [rejeu]);
+
+  // La carte Leaflet est créée UNE fois ; fonds et points sont mis à jour à part
+  // (avant : tout était recréé à chaque changement, et la vue sautait).
   useEffect(() => {
     if (!divRef.current || typeof L === "undefined") return;
-    const carte = L.map(divRef.current, { zoomControl: true });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(carte);
-
-    const urls = [];
-    const points = [];
-    // Groupe de clustering : regroupe les points proches en bulles avec compteur,
-    // et se dégroupe automatiquement au zoom. S'applique aux deux cartes.
-    const clusterDispo = typeof L.markerClusterGroup === "function";
-    const cluster = clusterDispo
+    const carte = L.map(divRef.current, { zoomControl: true, maxZoom: 19 });
+    carte.setView([46.6, 2.4], 5);
+    // Groupe de clustering : regroupe les points proches en bulles avec compteur.
+    const cluster = typeof L.markerClusterGroup === "function"
       ? L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false, spiderfyOnMaxZoom: true, chunkedLoading: true })
-      : null;
-    // Cercles de zone (approximatifs) : dans un layer à part, affiché seulement quand
-    // on est assez zoomé (sinon ils s'empilent sous les bulles et brouillent la carte).
-    const cerclesZone = L.layerGroup();
-    const infosCercles = []; // { lat, lon }
-    function ajouterMarqueur(m) { if (cluster) cluster.addLayer(m); else m.addTo(carte); }
-
-    if (mode === "moi") {
-      // Mes observations (position précise, photo locale)
-      avecGps.forEach((o) => {
-        const pt = [o.gps.lat, o.gps.lon];
-        points.push(pt);
-        // Marqueur UNIQUE : une pastille de 44 px (cible tactile recommandée) dont
-        // seul le disque central de 18 px est visible. Une seule couche = pas de
-        // dédoublement dans le clustering.
-        let urlPhoto = null;
-        if (o.photo) { urlPhoto = URL.createObjectURL(o.photo); urls.push(urlPhoto); }
-        const m = L.marker(pt, { icon: pastillePhoto(urlPhoto, "#E4C878") });
-        const conteneur = document.createElement("div");
-        conteneur.style.width = "150px";
-        conteneur.innerHTML =
-          (urlPhoto ? '<img src="' + urlPhoto + '" alt="Photo de l\'observation" style="width:100%;border-radius:6px;display:block;margin-bottom:6px;" />' : "") +
-          '<div style="font-weight:700;font-size:12.5px;color:#ECE4D0;">' + (o.nom ? o.nom.replace(/</g, "&lt;") : "Spécimen non identifié") + "</div>" +
-          '<div style="font-size:11px;color:#A8A48F;margin-bottom:6px;">' +
-          biotopeOf(o.biotope).emoji + " " + biotopeOf(o.biotope).label + " · " + new Date(o.date).toLocaleDateString("fr-FR") + "</div>";
-        const btn = document.createElement("button");
-        btn.textContent = "Voir la fiche";
-        btn.style.cssText = "width:100%;padding:6px;border-radius:6px;border:none;background:#C9A24B;color:#2A2417;font-weight:700;font-size:12.5px;cursor:pointer;";
-        btn.addEventListener("click", () => onOuvrirFiche(o.id));
-        conteneur.appendChild(btn);
-        m.bindPopup(conteneur);
-        ajouterMarqueur(m);
-      });
-    } else {
-      // Carte de la bande (photo distante). Chaque point respecte le niveau de précision choisi par son auteur.
-      postsAvecPos.forEach((p) => {
-        const pt = [p.lat, p.lon];
-        points.push(pt);
-        const exacte = p.precision === "exacte";
-        // Cercle de zone (approximatif) : géré à part, affiché selon le zoom.
-        if (!exacte) infosCercles.push({ lat: p.lat, lon: p.lon });
-        const m = L.marker(pt, { icon: pastillePhoto(p.photo_url, exacte ? "#E4C878" : "#8AAE6B") });
-        const conteneur = document.createElement("div");
-        conteneur.style.width = "150px";
-        // v1.76 — Construit avec le DOM plutôt qu'innerHTML : photo_url et les textes
-        // viennent de la base partagée, on ne les insère plus dans du HTML brut.
-        const el = (tag, style, texte) => { const e = document.createElement(tag); if (style) e.style.cssText = style; if (texte != null) e.textContent = texte; return e; };
-        if (p.photo_url) { const im = el("img", "width:100%;border-radius:6px;display:block;margin-bottom:6px;"); im.alt = "Photo partagée"; im.src = String(p.photo_url); conteneur.appendChild(im); }
-        conteneur.appendChild(el("div", "font-weight:700;font-size:12.5px;color:#ECE4D0;", p.espece ? String(p.espece) : "Spécimen non identifié"));
-        conteneur.appendChild(el("div", "font-size:11px;color:#A8A48F;", "🐛 " + (p.auteur ? String(p.auteur) : "Anonyme") + (p.lieu ? " · " + String(p.lieu) : "")));
-        conteneur.appendChild(el("div", "font-size:11px;color:#8F8B76;margin-top:4px;", exacte ? "📍 Position exacte" : "🌫️ Zone approximative"));
-        m.bindPopup(conteneur);
-        ajouterMarqueur(m);
-      });
-    }
-
-    if (cluster) carte.addLayer(cluster);
-    cerclesZone.addTo(carte);
-    // Affiche les cercles de zone seulement quand on est assez zoomé (points dégroupés).
-    function majCercles() {
+      : L.layerGroup();
+    cluster.addTo(carte);
+    // Cercles de zone (positions approximatives) : seulement quand on est assez zoomé.
+    const cerclesZone = L.layerGroup().addTo(carte);
+    const moi = L.layerGroup().addTo(carte);
+    const etat = { carte, cluster, cerclesZone, moi, infosCercles: [], urls: [], fond: null, cle: null };
+    etat.majCercles = () => {
       cerclesZone.clearLayers();
-      if (carte.getZoom() >= 12 && infosCercles.length) {
-        infosCercles.forEach((c) => {
-          L.circle([c.lat, c.lon], { radius: 900, color: "#8AAE6B", weight: 1, fillColor: "#8AAE6B", fillOpacity: 0.08 }).addTo(cerclesZone);
-        });
-      }
-    }
-    carte.on("zoomend", majCercles);
-    majCercles();
-
-    if (points.length > 0) {
-      carte.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: mode === "bande" ? 12 : 15 });
-    } else {
-      carte.setView([46.6, 2.4], 5);
-    }
-
-    return () => {
-      carte.remove();
-      urls.forEach((u) => URL.revokeObjectURL(u));
+      if (carte.getZoom() >= 12) etat.infosCercles.forEach((c) => {
+        L.circle([c.lat, c.lon], { radius: 900, color: "#8AAE6B", weight: 1, fillColor: "#8AAE6B", fillOpacity: 0.08 }).addTo(cerclesZone);
+      });
     };
-  }, [observations, mode, postsBande]);
+    carte.on("zoomend", etat.majCercles);
+    carte.on("click", () => setSel(null));
+    carteRef.current = etat;
+    return () => { carte.remove(); etat.urls.forEach((u) => URL.revokeObjectURL(u)); carteRef.current = null; };
+  }, []);
+
+  // Fond de carte
+  useEffect(() => {
+    const e = carteRef.current;
+    if (!e) return;
+    if (e.fond) e.carte.removeLayer(e.fond);
+    const f = FONDS_CARTE[fond] || FONDS_CARTE.plan;
+    e.fond = L.tileLayer(f.url, { maxZoom: 19, maxNativeZoom: f.natif, attribution: f.attrib }).addTo(e.carte);
+    e.fond.bringToBack();
+    divRef.current && divRef.current.classList.toggle("bd-fond-photo", fond !== "plan");
+    try { localStorage.setItem("biodex_fond_carte", fond); } catch {}
+  }, [fond]);
+
+  // Points (pastilles photo). Toucher une pastille ouvre la fiche en bas de la carte.
+  useEffect(() => {
+    const e = carteRef.current;
+    if (!e) return;
+    e.cluster.clearLayers();
+    e.urls.forEach((u) => URL.revokeObjectURL(u));
+    e.urls = [];
+    e.infosCercles = [];
+    pointsVisibles.forEach((x) => {
+      let icone;
+      if (x.obs) {
+        let u = null;
+        if (x.obs.photo) { u = URL.createObjectURL(x.obs.photo); e.urls.push(u); }
+        icone = pastillePhoto(u, "#E4C878");
+      } else {
+        const exacte = x.post.precision === "exacte";
+        if (!exacte) e.infosCercles.push({ lat: x.lat, lon: x.lon });
+        icone = pastillePhoto(x.post.photo_url, exacte ? "#E4C878" : "#8AAE6B");
+      }
+      const m = L.marker([x.lat, x.lon], { icon: icone });
+      m.on("click", () => { setSel(x); vibrer(6); });
+      e.cluster.addLayer(m);
+    });
+    e.majCercles();
+    // On recadre quand la sélection change (mode, groupe, nouvelles données), pas pendant la frise.
+    const cle = mode + "|" + groupe + "|" + pointsGroupe.length;
+    if (!rejeu && cle !== e.cle) {
+      e.cle = cle;
+      if (pointsVisibles.length) e.carte.fitBounds(L.latLngBounds(pointsVisibles.map((x) => [x.lat, x.lon])), { padding: [40, 40], maxZoom: mode === "bande" ? 12 : 15 });
+    }
+  }, [mode, groupe, nbVisibles, observations, postsBande]);
+
+  // « Autour de moi » : recentre sur ma position, avec un cercle d'1 km.
+  const autourDeMoi = () => {
+    if (!navigator.geolocation) { montrerToast("Position indisponible sur cet appareil."); return; }
+    setChercheMoi(true);
+    navigator.geolocation.getCurrentPosition((p) => {
+      setChercheMoi(false);
+      const e = carteRef.current;
+      if (!e) return;
+      const lat = p.coords.latitude, lon = p.coords.longitude;
+      e.moi.clearLayers();
+      L.circle([lat, lon], { radius: 1000, color: "#7FB0E0", weight: 1.5, dashArray: "5 5", fillColor: "#7FB0E0", fillOpacity: 0.07, interactive: false }).addTo(e.moi);
+      L.circleMarker([lat, lon], { radius: 8, color: "#fff", weight: 2.5, fillColor: "#3D8BE0", fillOpacity: 1, interactive: false }).addTo(e.moi);
+      e.carte.setView([lat, lon], 14);
+      const n = pointsVisibles.filter((x) => kmEntre(lat, lon, x.lat, x.lon) <= 1).length;
+      montrerToast(n ? n + " trouvaille" + (n > 1 ? "s" : "") + " à moins d'1 km de toi" : "Aucune trouvaille à moins d'1 km : un coin tout neuf à explorer !");
+    }, () => { setChercheMoi(false); montrerToast("Impossible d'obtenir ta position (localisation refusée ou désactivée)."); },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+  };
+  const dateCourte = (d) => d ? new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "";
 
   return (
     <div style={{ padding: 16, maxWidth: 560, margin: "0 auto" }}>
@@ -10780,9 +10856,69 @@ function Carte({ observations, onOuvrirFiche }) {
           Aucune trouvaille localisée sur le mur pour l'instant. Les positions n'apparaissent que pour les partages faits à partir de la v0.45.
         </div>
       )}
-      {/* Hauteur calculée : 62vh laissait ~196 px de vide sous la carte. On occupe
-          l'espace restant entre l'en-tête et la barre de navigation. */}
-      <div ref={divRef} style={{ width: "100%", height: "calc(100vh - 250px)", minHeight: 320, borderRadius: 10, border: `1px solid ${C.bordure}`, overflow: "hidden" }} />
+      {/* v2.04 — Filtre par groupe d'insectes */}
+      {groupesPresents.length > 1 && (
+        <div className="bd-puces">
+          <button className={!groupe ? "actif" : ""} onClick={() => { setGroupe(""); setJusqua(null); setSel(null); }}>Tous · {pointsTous.length}</button>
+          {groupesPresents.map((g) => {
+            const info = ordreInfo(g.id);
+            return <button key={g.id} className={groupe === g.id ? "actif" : ""} onClick={() => { setGroupe(groupe === g.id ? "" : g.id); setJusqua(null); setSel(null); }}>{info.emoji} {info.court || info.label} · {g.n}</button>;
+          })}
+        </div>
+      )}
+      {/* Hauteur calculée : on occupe l'espace restant entre l'en-tête et la barre de navigation. */}
+      <div style={{ position: "relative" }}>
+        <div ref={divRef} style={{ width: "100%", height: groupesPresents.length > 1 ? "calc(100vh - 340px)" : "calc(100vh - 300px)", minHeight: 320, borderRadius: 10, border: `1px solid ${C.bordure}`, overflow: "hidden" }} />
+        <div className="bd-carte-fonds" role="group" aria-label="Fond de carte">
+          {Object.entries(FONDS_CARTE).map(([id, f]) => (
+            <button key={id} className={fond === id ? "actif" : ""} aria-pressed={fond === id} onClick={() => setFond(id)}>{f.nom}</button>
+          ))}
+        </div>
+        {!sel && (
+          <button className={"bd-carte-moi" + (chercheMoi ? " cherche" : "")} onClick={autourDeMoi} aria-label="Autour de moi" title="Autour de moi">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2.5" fill="currentColor" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></svg>
+          </button>
+        )}
+        {sel && (
+          <div className="bd-carte-fiche" key={sel.id}>
+            <div className="bd-carte-fiche-photo">
+              {sel.obs ? (sel.obs.photo ? <PhotoBlob blob={sel.obs.photo} alt={sel.obs.nom || "Photo"} /> : null)
+                : sel.post.photo_url ? <img src={String(sel.post.photo_url)} alt="Photo partagée" /> : null}
+            </div>
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", fontFamily: sans }}>
+              <div style={{ fontFamily: serif, fontSize: 16, fontWeight: 700, color: C.papier, lineHeight: 1.2, paddingRight: 26 }}>
+                {(sel.obs ? sel.obs.nom : sel.post.espece) || "Spécimen non identifié"}
+              </div>
+              {(sel.obs ? sel.obs.nomSci : sel.post.espece_sci) && (
+                <div style={{ fontFamily: serif, fontStyle: "italic", fontSize: 12.5, color: C.papierSombre }}>{sel.obs ? sel.obs.nomSci : sel.post.espece_sci}</div>
+              )}
+              <div style={{ fontSize: 12.5, color: C.papierSombre, marginTop: 4, lineHeight: 1.4 }}>
+                {sel.obs
+                  ? <span>{dateCourte(sel.obs.date)}{sel.obs.biotope ? " · " + biotopeOf(sel.obs.biotope).emoji + " " + biotopeOf(sel.obs.biotope).label : ""}</span>
+                  : <span>{sel.post.auteur || "Anonyme"} · {dateCourte(sel.date)}{sel.post.precision === "exacte" ? "" : " · zone approximative"}</span>}
+              </div>
+              {sel.obs && (
+                <button className="bd-press" onClick={() => onOuvrirFiche(sel.obs.id)}
+                  style={{ marginTop: "auto", alignSelf: "flex-start", padding: "8px 14px", borderRadius: 10, border: "none", background: C.ambre, color: C.encre, fontFamily: sans, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                  Voir la fiche ›
+                </button>
+              )}
+            </div>
+            <button onClick={() => setSel(null)} aria-label="Fermer" style={{ position: "absolute", top: 6, right: 6, width: 30, height: 30, borderRadius: "50%", border: "none", background: "transparent", color: C.papierSombre, fontSize: 18, cursor: "pointer" }}>×</button>
+          </div>
+        )}
+      </div>
+      {/* v2.04 — Frise du temps : glisser pour remonter le temps, ou rejouer la saison */}
+      {pointsGroupe.length > 1 && (
+        <div className="bd-frise">
+          <button onClick={() => { if (rejeu) { setRejeu(false); setJusqua(null); } else setRejeu(true); }} aria-label={rejeu ? "Arrêter" : "Rejouer la saison"} title={rejeu ? "Arrêter" : "Rejouer la saison"}>{rejeu ? "■" : "▶"}</button>
+          <input type="range" min={1} max={pointsGroupe.length} value={nbVisibles} aria-label="Frise du temps"
+            onChange={(e) => { setRejeu(false); const v = Number(e.target.value); setJusqua(v >= pointsGroupe.length ? null : v); }} />
+          <div style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, textAlign: "right", minWidth: 86, lineHeight: 1.3 }}>
+            <b style={{ color: C.ambreClair }}>{nbVisibles}</b> / {pointsGroupe.length}<br />{jusqua == null && !rejeu ? "tout" : "au " + dateCourte(dateLimite)}
+          </div>
+        </div>
+      )}
 
       {/* Analyse du territoire (mode bande) */}
       {mode === "bande" && etatBande === "ok" && postsAvecPos.length > 0 && (
