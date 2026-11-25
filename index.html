@@ -89,6 +89,22 @@
   .bd-qr.ouvert > button svg { transform: rotate(90deg); color: var(--ambre-clair); }
   .bd-qr.ouvert > button { color: var(--ambre-clair); }
   .bd-qr-r { padding: 0 2px 14px; animation: bdFondu .2s ease; }
+  .bd-recup-etape { display: flex; gap: 12px; padding: 14px; margin-bottom: 10px; border-radius: 14px; background: #1C2318; border: 1px solid #3A4531; }
+  .bd-recup-etape b { display: block; font: 700 15px var(--sans); color: var(--papier); }
+  .bd-recup-etape p { margin: 3px 0 0; font: 13.5px/1.45 var(--sans); color: var(--papier-sombre); }
+  .bd-recup-n { width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font: 800 13px var(--sans);
+    background: #C9A24B; color: #1B1A12; }
+  .bd-recup-n.ok { background: #7FA35F; color: #12160F; }
+  .bd-recup-grille { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .bd-recup-vig { position: relative; aspect-ratio: 1; padding: 0; border: none; border-radius: 10px; overflow: hidden; cursor: pointer; background: #1C2318; }
+  .bd-recup-vig img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .bd-recup-vig[aria-pressed="false"] img { opacity: .35; filter: grayscale(.8); }
+  .bd-recup-vig > span { display: flex; height: 100%; align-items: center; justify-content: center; font-size: 26px; }
+  .bd-recup-vig i { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #ECE4D0; background: rgba(0,0,0,.4);
+    display: flex; align-items: center; justify-content: center; color: #1B1A12; }
+  .bd-recup-vig i.on { background: #C9A24B; border-color: #C9A24B; }
+  .bd-recup-vig b { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 6px 5px; text-align: left; font: 700 11px var(--sans); color: #F2ECDA;
+    background: linear-gradient(transparent, rgba(8,10,6,.85)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bd-menu-item { width: 100%; display: flex; align-items: center; gap: 13px; padding: 11px 14px 11px 16px; min-height: 60px; background: none; border: none;
     border-bottom: 1px solid #2A3322; cursor: pointer; text-align: left; }
   .bd-menu-item:active { background: rgba(255,255,255,.04); }
@@ -663,7 +679,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v2.01";
+const VERSION = "v2.02";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -2180,6 +2196,10 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.02", date: "2026-11", items: [
+    "📲 Récupération de compte (menu › Mon compte) : téléphone cassé, perdu ou changé ? Tes trouvailles partagées sur le mur reviennent dans ta collection, avec leurs photos, leur date et leur lieu. Reconnecte-toi avec ton email et/ou indique le prénom que tu utilisais sur le mur.",
+    "🔁 Rien n'est récupéré en double : ce qui est déjà dans ta collection n'est pas reproposé.",
+  ] },
   { v: "2.01", date: "2026-11", items: [
     "✨ Grand coup de finition : une seule échelle de tailles de texte, d'arrondis et de couleurs dans toute l'appli (avant : 42 tailles et 34 arrondis différents). Les petits textes sont plus lisibles en plein soleil.",
     "🖋️ Des icônes dessinées, au même trait, remplacent les emojis dans le menu, les titres d'écran, les sections et les boutons. Les emojis restent pour le contenu (badges, groupes d'insectes…).",
@@ -9858,6 +9878,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         {/* Compte — v1.94 : la sauvegarde y a sa place (avant, rangée au fond de l'Aide). */}
         {titreSection("Mon compte")}
         {item("sauvegarde", "Sauvegarde de ma boîte", "Exporter ou restaurer ta collection", () => onAller("sauvegarde"), 0)}
+        {MUR_ACTIF && item("importer", "Récupération de compte", "Nouveau téléphone ? Récupère tes trouvailles", () => onAller("recuperation"), 0)}
         {MUR_ACTIF && item("cloche", "Notifications du téléphone", "Être prévenu même appli fermée", () => onAller("notifs"), 0)}
         {MUR_ACTIF && item("personne", "Mon profil", "Emblème, titre, couleur, insecte fétiche", () => onAller("monprofil"), 0)}
         {MUR_ACTIF && item(utilisateur ? "globe" : "personne", utilisateur ? "Ma collection publique" : "Se connecter", utilisateur ? "Tes espèces sur ton profil" : "Connexion facultative par email", () => onAller("connexion"), 0)}
@@ -11132,6 +11153,195 @@ function Aide({ onFermer, onImportTermine, ouvrirSauvegarde }) {
 
 // ---------- Application ----------
 // ---------- Écran de connexion (lien magique) ----------
+// ---------- v2.02 — Récupération de compte (téléphone perdu, cassé, changé) ----------
+// Une collection BioDex vit dans le téléphone. Ce qui a été partagé sur le mur, en revanche,
+// est sur le serveur : on le rapatrie (photo comprise) pour reconstruire la collection.
+const COLONNES_RECUP = "id, auteur, espece, espece_sci, confiance, lieu, lat, lon, precision, photo_url, note, created_at, date_obs, owner_id";
+async function chargerPostsRecuperables(prenom, avecCompte) {
+  const sb = clientSupabase();
+  if (!sb) throw new Error("Service en ligne non configuré");
+  await identitePrete();
+  const moi = monId();
+  const parCompte = [], parPrenom = [];
+  if (avecCompte && moi) {
+    const { data, error } = await avecDelai(sb.from("posts").select(COLONNES_RECUP).eq("owner_id", moi).order("created_at", { ascending: true }).limit(1000), 20000, "recupCompte");
+    if (error) throw erreurSupabase("recupCompte", error, "Lecture de tes trouvailles impossible");
+    parCompte.push(...(data || []));
+  }
+  const p = (prenom || "").trim();
+  if (p) {
+    // Prénom exact (sans tenir compte des majuscules) ; % et _ neutralisés.
+    const motif = p.replace(/[\\%_]/g, (c) => "\\" + c);
+    const { data, error } = await avecDelai(sb.from("posts").select(COLONNES_RECUP).ilike("auteur", motif).order("created_at", { ascending: true }).limit(1000), 20000, "recupPrenom");
+    if (error) throw erreurSupabase("recupPrenom", error, "Recherche par prénom impossible");
+    const dejaVus = new Set(parCompte.map((x) => x.id));
+    parPrenom.push(...(data || []).filter((x) => !dejaVus.has(x.id) && !(moi && x.owner_id === moi)));
+  }
+  return { parCompte, parPrenom };
+}
+// Une trouvaille du mur est-elle déjà dans la collection ? (récupérée avant, ou jamais perdue)
+function dejaDansCollection(post, observations) {
+  const d = String(post.date_obs || "").slice(0, 16);
+  return observations.some((o) => o.idMur === post.id ||
+    (d && String(o.date || "").slice(0, 16) === d && (o.nomSci || o.nom || "") === (post.espece_sci || post.espece || "")));
+}
+async function postVersObservation(p) {
+  let photo = null;
+  if (p.photo_url && /^https:\/\//.test(p.photo_url)) {
+    try { const r = await fetch(p.photo_url); if (r.ok) photo = await r.blob(); } catch {}
+  }
+  const date = p.date_obs || p.created_at || new Date().toISOString();
+  const okPos = typeof p.lat === "number" && typeof p.lon === "number" && !(Math.abs(p.lat) < 0.01 && Math.abs(p.lon) < 0.01);
+  const bio = BIOTOPES.find((b) => b.label === p.lieu);
+  return {
+    id: "mur-" + p.id,
+    idMur: p.id,
+    recupere: true,
+    nom: p.espece || "", nomSci: p.espece_sci || "",
+    biotope: bio ? bio.id : "",
+    notes: p.note || "",
+    confiance: p.confiance === null || p.confiance === undefined ? "" : p.confiance,
+    gps: okPos ? { lat: p.lat, lon: p.lon } : null,
+    gpsSur: okPos && p.precision === "exacte",
+    date: new Date(date).toISOString(),
+    moment: momentDepuisDate(new Date(date)),
+    ciel: "", temp: "",
+    photo,
+  };
+}
+
+function RecuperationCompte({ utilisateur, prenom, observations, onAllerConnexion, onFermer, onAjoutees }) {
+  const avecCompte = !!(utilisateur && !estAnonyme(utilisateur));
+  const [saisie, setSaisie] = useState(prenom || "");
+  const [etat, setEtat] = useState("idle"); // idle | recherche | pret | import | fini | echec
+  const [trouves, setTrouves] = useState({ parCompte: [], parPrenom: [] });
+  const [choisis, setChoisis] = useState({});
+  const [progres, setProgres] = useState({ n: 0, total: 0, sansPhoto: 0 });
+  const [erreur, setErreur] = useState("");
+
+  async function chercher() {
+    setEtat("recherche"); setErreur("");
+    try {
+      const r = await chargerPostsRecuperables(saisie, avecCompte);
+      const neufs = (l) => l.filter((p) => !dejaDansCollection(p, observations));
+      const t = { parCompte: neufs(r.parCompte), parPrenom: neufs(r.parPrenom), dejaLa: r.parCompte.length + r.parPrenom.length - neufs(r.parCompte).length - neufs(r.parPrenom).length };
+      setTrouves(t);
+      const c = {}; [...t.parCompte, ...t.parPrenom].forEach((p) => { c[p.id] = true; });
+      setChoisis(c);
+      setEtat("pret");
+    } catch (e) { setErreur((e && e.message) || "Recherche impossible"); setEtat("echec"); }
+  }
+  useEffect(() => { if (avecCompte || (prenom || "").trim()) chercher(); }, []);
+
+  async function recuperer() {
+    const liste = [...trouves.parCompte, ...trouves.parPrenom].filter((p) => choisis[p.id]);
+    if (!liste.length) return;
+    setEtat("import"); setProgres({ n: 0, total: liste.length, sansPhoto: 0 });
+    const ajoutees = []; let sansPhoto = 0;
+    for (let i = 0; i < liste.length; i++) {
+      try {
+        const o = await postVersObservation(liste[i]);
+        if (!o.photo) sansPhoto++;
+        await dbAjouter(o);
+        ajoutees.push(o);
+      } catch {}
+      setProgres({ n: i + 1, total: liste.length, sansPhoto });
+    }
+    onAjoutees(ajoutees);
+    setProgres({ n: ajoutees.length, total: liste.length, sansPhoto });
+    setEtat("fini");
+  }
+
+  const vignette = (p) => (
+    <button key={p.id} className="bd-recup-vig" onClick={() => setChoisis((c) => ({ ...c, [p.id]: !c[p.id] }))} aria-pressed={!!choisis[p.id]} title={p.espece || ""}>
+      {p.photo_url ? <img src={p.photo_url} alt={p.espece || ""} loading="lazy" /> : <span>🐞</span>}
+      <i className={choisis[p.id] ? "on" : ""}>{choisis[p.id] && <Icone nom="valider" taille={14} />}</i>
+      <b>{p.espece || "À identifier"}</b>
+    </button>
+  );
+  const nbChoisis = Object.values(choisis).filter(Boolean).length;
+
+  return (
+    <div style={{ padding: 16, paddingBottom: etat === "pret" ? 110 : 16, maxWidth: 560, margin: "0 auto" }}>
+      <Retour onClick={onFermer} />
+      <TitreEcran icone="importer" titre="Récupération de compte" sous="Nouveau téléphone ? Tes trouvailles partagées sur le mur peuvent revenir dans ta collection, avec leurs photos." />
+
+      <div className="bd-notif-info" style={{ fontSize: 13.5 }}>
+        <b style={{ color: C.ambreClair }}>Ce qu'on peut récupérer :</b> tout ce que tu as partagé sur le mur (photo, espèce, date, lieu, note).<br />
+        <b style={{ color: C.ambreClair }}>Ce qui ne revient pas :</b> les observations jamais partagées, restées seulement dans l'ancien téléphone (sauf si tu as un fichier de sauvegarde : menu › Sauvegarde de ma boîte › Importer).
+      </div>
+
+      {/* Étape 1 : le compte email */}
+      <div className="bd-recup-etape">
+        <span className={"bd-recup-n" + (avecCompte ? " ok" : "")}>{avecCompte ? <Icone nom="valider" taille={15} /> : "1"}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <b>Ton compte</b>
+          {avecCompte
+            ? <p>Connecté avec <span style={{ color: C.ambreClair, wordBreak: "break-all" }}>{utilisateur.email}</span>.</p>
+            : <p>Si tu t'étais connecté avec ton email, reconnecte-toi avec le même : tes trouvailles y sont rattachées.</p>}
+          {!avecCompte && <Bouton variante="secondaire" onClick={onAllerConnexion} style={{ marginTop: 8 }}><Icone nom="personne" taille={18} />Me reconnecter avec mon email</Bouton>}
+        </div>
+      </div>
+
+      {/* Étape 2 : le prénom utilisé sur le mur */}
+      <div className="bd-recup-etape">
+        <span className="bd-recup-n">2</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <b>Le prénom que tu utilisais sur le mur</b>
+          <p>Pour retrouver aussi ce que tu as publié sans être connecté.</p>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <input value={saisie} onChange={(e) => setSaisie(e.target.value)} placeholder="ex : Aurore" maxLength={40}
+              onKeyDown={(e) => { if (e.key === "Enter") chercher(); }}
+              style={{ flex: 1, minWidth: 0, boxSizing: "border-box", background: C.fond, color: C.papier, border: `1px solid ${C.bordure}`, borderRadius: 10, padding: "10px 12px", fontFamily: sans, fontSize: 16, outline: "none" }} />
+            <Bouton onClick={chercher} disabled={etat === "recherche" || etat === "import" || (!avecCompte && !saisie.trim())}><Icone nom="loupe" taille={18} />Chercher</Bouton>
+          </div>
+        </div>
+      </div>
+
+      {etat === "recherche" && <Chargement forme="grille" n={2} />}
+      {etat === "echec" && <Erreur onReessayer={chercher}>{erreur}</Erreur>}
+
+      {etat === "pret" && (trouves.parCompte.length + trouves.parPrenom.length === 0) && (
+        <EtatVide icone="loupe" titre="Rien de nouveau à récupérer"
+          texte={trouves.dejaLa > 0 ? `Tes ${trouves.dejaLa} trouvaille${trouves.dejaLa > 1 ? "s" : ""} du mur ${trouves.dejaLa > 1 ? "sont" : "est"} déjà dans ta collection.` : "Aucune trouvaille du mur avec ce compte ou ce prénom. Vérifie l'orthographe du prénom, ou reconnecte-toi avec ton email."} />
+      )}
+
+      {etat === "pret" && trouves.parCompte.length > 0 && (
+        <React.Fragment>
+          <div className="bd-titre-sec"><b>Rattachées à ton compte</b><span style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>{trouves.parCompte.length}</span></div>
+          <div className="bd-recup-grille">{trouves.parCompte.map(vignette)}</div>
+        </React.Fragment>
+      )}
+      {etat === "pret" && trouves.parPrenom.length > 0 && (
+        <React.Fragment>
+          <div className="bd-titre-sec"><b>Publiées sous « {saisie.trim()} »</b><span style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>{trouves.parPrenom.length}</span></div>
+          <p style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre, margin: "-4px 0 10px", lineHeight: 1.45 }}>Touche une photo pour la décocher si ce n'est pas la tienne (quelqu'un d'autre peut porter le même prénom).</p>
+          <div className="bd-recup-grille">{trouves.parPrenom.map(vignette)}</div>
+        </React.Fragment>
+      )}
+      {etat === "pret" && nbChoisis > 0 && (
+        <div className="bd-barre-action"><div className="bd-barre-action-in">
+          <Bouton variante="primaire" onClick={recuperer} style={{ flex: 1 }}><Icone nom="importer" taille={18} />Récupérer {nbChoisis} trouvaille{nbChoisis > 1 ? "s" : ""}</Bouton>
+        </div></div>
+      )}
+
+      {etat === "import" && (
+        <div className="bd-vide" style={{ marginTop: 14 }}>
+          <div className="bd-vide-ico"><span className="bd-spin-ico" style={{ display: "flex" }}><Icone nom="rafraichir" taille={30} /></span></div>
+          <b>Récupération… {progres.n}/{progres.total}</b>
+          <p>Les photos se téléchargent une à une. Garde l'appli ouverte.</p>
+          <div className="bd-jauge"><i style={{ width: (progres.total ? Math.round(100 * progres.n / progres.total) : 0) + "%" }} /></div>
+        </div>
+      )}
+      {etat === "fini" && (
+        <EtatVide icone="valider" titre={`${progres.n} trouvaille${progres.n > 1 ? "s" : ""} de retour !`}
+          texte={(progres.sansPhoto ? `${progres.sansPhoto} sans photo (téléchargement impossible). ` : "") + "Elles sont dans ta collection, avec leur date et leur lieu. Pense à faire une sauvegarde de temps en temps."}
+          action={<Bouton variante="primaire" onClick={onFermer}>Voir ma collection</Bouton>} style={{ marginTop: 14 }} />
+      )}
+    </div>
+  );
+}
+
 function Connexion({ onFermer, utilisateur, onDeconnexion }) {
   const [email, setEmail] = useState("");
   const [etat, setEtat] = useState(""); // "" | envoi | envoye | echec
@@ -12771,6 +12981,7 @@ function Accueil({ prenom, observations, aTrier, notifs, carrousel, onNouvelle, 
   const tuiles = [];
   if (sugg.length) tuiles.push({ cle: "sugg", or: true, ico: "bulle", titre: "Une idée du relecteur", detail: "Sur ta " + (sugg[0].annonce || "trouvaille"), action: () => onOuvrirSuggestion(sugg[0]) });
   if (aReveler) tuiles.push({ cle: "rev", ico: "etoile", titre: `${aReveler} carte${aReveler > 1 ? "s" : ""} à révéler`, detail: "Dans ta collection", action: onCollection });
+  if (MUR_ACTIF && (observations || []).length === 0) tuiles.push({ cle: "recup", ico: "importer", titre: "Nouveau téléphone ?", detail: "Récupère tes trouvailles du mur", action: () => onAller("recuperation") });
   if (!quizDuJourDejaFait()) tuiles.push({ cle: "quiz", ico: "bulleQ", titre: "Quiz du jour", detail: "5 questions · pas encore fait", action: onQuiz });
   if (aTrier && aTrier.length) tuiles.push({ cle: "tri", ico: "trier", titre: `${aTrier.length} photo${aTrier.length > 1 ? "s" : ""} à trier`, detail: "Identifie-les quand tu veux", action: () => onAller("atrier") });
   if (notifs && notifs.murNouveaux > 0) tuiles.push({ cle: "mur", ico: "mur", titre: `${notifs.murNouveaux} nouveauté${notifs.murNouveaux > 1 ? "s" : ""} au mur`, detail: "Ce que la bande a trouvé", action: () => onAller("mur") });
@@ -15058,6 +15269,11 @@ function BioDex() {
       {vue === "aide" && <Aide onFermer={() => setVue("accueil")} onImportTermine={chargerObservations} />}
       {vue === "sauvegarde" && <Aide ouvrirSauvegarde onFermer={() => setVue("accueil")} onImportTermine={chargerObservations} />}
       {vue === "notifs" && <ReglagesNotifs onFermer={() => setVue("accueil")} />}
+      {vue === "recuperation" && (
+        <RecuperationCompte utilisateur={utilisateur} prenom={prenom} observations={observations}
+          onAllerConnexion={() => setVue("connexion")} onFermer={() => { setOngletCollection("carnet"); setVue("collection"); }}
+          onAjoutees={(l) => { if (l.length) setObservations((prev) => [...l, ...prev].sort((a, b) => (a.date < b.date ? 1 : -1))); }} />
+      )}
       {vue === "connexion" && <Connexion onFermer={() => setVue("accueil")} utilisateur={utilisateur} onDeconnexion={deconnexion} />}
       {vue === "nouvelle" && <NouvelleObservation observations={observations} onSauver={sauverObservation} onAnnuler={() => setVue("collection")} onMettreDeCote={mettreDeCote} />}
       {vue === "edition" && selection && (
