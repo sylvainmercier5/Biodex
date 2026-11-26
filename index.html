@@ -809,7 +809,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v2.14";
+const VERSION = "v2.15";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -2404,6 +2404,11 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.15", date: "2026-11", items: [
+    "⚡ Bêta du Duel BioDex, le nouveau jeu de cartes : onglet Jeu › Duel β. Un deck de 20 cartes tiré de ta collection, de l'énergie qui monte à chaque tour, et tu choisis qui attaque et qui bloque.",
+    "🪶 Chaque insecte a un pouvoir tiré de sa biologie : Vol, Carapace, Venin, Essaim, Camouflage, Mue, Bond, Plongée. Les chenilles se métamorphosent en pleine partie !",
+    "🏡 Le terrain du duel change à chaque partie : tes insectes trouvés dans ce milieu y sont plus forts.",
+  ] },
   { v: "2.14", date: "2026-11", items: [
     "❄️ Pack hiver : les insectes ne disparaissent pas, ils se cachent ! Œufs, chenilles, chrysalides, cocons… et leurs traces (galles, mines dans les feuilles, nids, exuvies, toiles) comptent maintenant comme de vraies trouvailles.",
     "🔍 À l'enregistrement, indique ce que montre ta photo : adulte, œufs, larve, chrysalide ou trace. L'IA le propose toute seule, et la carte affiche le stade.",
@@ -14321,6 +14326,812 @@ function Accueil({ prenom, observations, aTrier, notifs, carrousel, onNouvelle, 
   );
 }
 
+// ═══════════════ DUEL BIODEX (v2.15 bêta) ═══════════════
+// Nouveau jeu de cartes façon « Magic » : deck de 20 cartes tiré de la collection,
+// énergie automatique (+1 par tour, max 8), plateau de 5 places, attaque / blocage.
+// Règles validées le 2026-11-26 (page « Duel BioDex ») : 15 PV, blessures qui restent,
+// énergie automatique, bonus de terrain (+1 Force aux créatures trouvées dans ce milieu).
+// Le moteur est fait de fonctions pures qui MODIFIENT l'état passé : l'interface
+// travaille toujours sur une copie (duelCopie).
+const DUEL_PV = 15, DUEL_ENERGIE_MAX = 8, DUEL_PLATEAU = 5, DUEL_MAIN_MAX = 8, DUEL_DECK = 20;
+const MOTS_DUEL = {
+  vol:        { label: "Vol",        emoji: "🪶", desc: "Ne peut être bloquée que par une créature qui a Vol." },
+  carapace:   { label: "Carapace",   emoji: "🛡️", desc: "Subit 1 dégât de moins à chaque fois qu'elle est blessée." },
+  mue:        { label: "Mue",        emoji: "♻️", desc: "La première fois qu'elle devrait mourir, elle survit avec 1 d'Endurance." },
+  bond:       { label: "Bond",       emoji: "💨", desc: "Peut attaquer dès le tour où elle arrive." },
+  venin:      { label: "Venin",      emoji: "☠️", desc: "Toute créature qu'elle blesse meurt." },
+  plongee:    { label: "Plongée",    emoji: "🌊", desc: "Quand elle bloque, elle frappe en premier." },
+  essaim:     { label: "Essaim",     emoji: "🐜", desc: "+1 Force pour chaque autre créature Essaim de ton côté." },
+  camouflage: { label: "Camouflage", emoji: "🍂", desc: "L'adversaire ne peut pas la viser avec un Phénomène ou une capacité." },
+};
+const MOT_PAR_TYPE = { volant: "vol", cuirasse: "carapace", rampant: "mue", bondissant: "bond", venimeux: "venin", aquatique: "plongee", social: "essaim", nocturne: "camouflage" };
+const CAPA_DUEL = {
+  predateur: { label: "Prédateur", cible: true, desc: (v) => `À son arrivée, inflige ${v} dégât${v > 1 ? "s" : ""} à une créature adverse.` },
+  paralysie: { label: "Paralysie", cible: true, desc: () => "À son arrivée, une créature adverse ne peut ni attaquer ni bloquer jusqu'à la fin de son prochain tour." },
+  butin:     { label: "Butin",     desc: (v) => `À son arrivée, l'adversaire aura ${v} énergie de moins à son prochain tour.` },
+  soin:      { label: "Soin",      desc: (v) => `À son arrivée, tu regagnes ${v} PV.` },
+};
+const FAMILLE_VERS_CAPA = { frappe: "predateur", sonne: "paralysie", drain: "butin", regen: "soin" };
+const PHENOS_DUEL = {
+  rosee:     { nom: "Rosée du matin", emoji: "💧", cout: 1, desc: "Tu regagnes 3 PV." },
+  floraison: { nom: "Floraison",      emoji: "🌸", cout: 2, desc: "Tes créatures ont +1 Force jusqu'à la fin du tour." },
+  toile:     { nom: "Toile tendue",   emoji: "🕸️", cout: 2, cible: true, desc: "Une créature adverse ne peut ni attaquer ni bloquer jusqu'à la fin de son prochain tour." },
+  piege:     { nom: "Piège lumineux", emoji: "🔦", cout: 3, desc: "Pioche 2 cartes." },
+  ponte:     { nom: "Ponte",          emoji: "🥚", cout: 2, desc: "Pose deux larves 1/1 de l'espèce. Elles se métamorphosent au bout de 2 tours." },
+  indice:    { nom: "Indice",         emoji: "🔍", cout: 1, desc: "Va chercher dans ton deck l'insecte qui a laissé cette trace. S'il n'y est pas, pioche une carte." },
+};
+const PALIERS_DUEL = ["Commune", "Peu commune", "Rare", "Légendaire"];
+
+// Transforme une observation (ou une espèce du bestiaire) en modèle de carte de duel.
+function carteDuel(o, renfort) {
+  const c = o.carte || {};
+  const att = Number(c.attaque) || 50, def = Number(c.defense) || 50, vit = Number(c.vitesse) || 50;
+  const rar = Number(c.rarete) || 30;
+  const palier = rar >= 85 ? 3 : rar >= 65 ? 2 : rar >= 40 ? 1 : 0;
+  const type = deduireType(o);
+  const emoji = o.emoji || ordreInfo(deduireOrdre(o)).emoji || typeInfo(type).emoji;
+  const stade = renfort ? "" : stadeDe(o);
+  const base = { espece: cleEspeceMur(o) || o.nom || "?", nom: o.nom || "Spécimen", emoji, obsId: renfort ? null : (o.id || null), type, palier, renfort: !!renfort, biotope: o.biotope || "", stade };
+  if (stade === "trace") return { ...base, kind: "pheno", phenoId: "indice", cout: 1, mots: [] };
+  if (stade === "oeuf") return { ...base, kind: "pheno", phenoId: "ponte", cout: 2, mots: [], motLarve: MOT_PAR_TYPE[type] || "mue" };
+  const cout = [1, 2, 3, 5][palier] + (att + def + vit >= 150 ? 1 : 0);
+  const budget = cout * 2;
+  let force = Math.max(1, Math.min(budget - 1, Math.round(budget * att / (att + def))));
+  let end = budget - force;
+  const niveau = niveauDeXp(c.xp);
+  if (niveau >= 3) end++;
+  if (niveau >= 5) force++;
+  const mots = [MOT_PAR_TYPE[type] || "mue"];
+  if (vit >= 65 && !mots.includes("bond")) mots.push("bond");
+  let cap = null;
+  if (palier >= 1) {
+    const id = FAMILLE_VERS_CAPA[deduireFamille(c.capacite)] || "predateur";
+    cap = { id, nom: (c.capacite && c.capacite.nom) || CAPA_DUEL[id].label, val: id === "soin" ? (palier >= 2 ? 4 : 2) : (palier >= 2 ? 2 : 1) };
+  }
+  let metamorph = 0;
+  if (stade === "larve") { force = Math.max(1, force - 1); end = Math.max(1, end - 1); metamorph = 2; }
+  if (stade === "nymphe") { force = 0; end += 2; metamorph = 1; }
+  return { ...base, kind: "creature", cout, force, end, mots, cap, metamorph, niveau };
+}
+function obsBestiaire(b, rarete) {
+  return { id: null, nom: b.nom, nomSci: b.sci, emoji: b.emoji, biotope: "",
+    carte: { attaque: b.attaque, defense: b.defense, vitesse: b.vitesse, rarete: rarete != null ? rarete : 20 + b.palier * 14, element: b.type, capacite: b.capacite } };
+}
+function phenoDuel(id) { const p = PHENOS_DUEL[id]; return { kind: "pheno", phenoId: id, nom: p.nom, emoji: p.emoji, cout: p.cout, mots: [], palier: 0 }; }
+
+// Deck conseillé : une carte par espèce (la plus expérimentée), une courbe de coûts
+// équilibrée, au plus 2 Légendaires, complété par des Renforts si la collection est petite.
+function deckAutoDuel(cartes) {
+  const par = {};
+  (cartes || []).forEach((o) => {
+    if (!o || !o.carte) return;
+    const k = cleEspeceMur(o) || o.id;
+    if (!par[k] || (Number(o.carte.xp) || 0) > (Number(par[k].carte.xp) || 0)) par[k] = o;
+  });
+  const cand = Object.values(par).map((o) => carteDuel(o));
+  const score = (c) => c.kind === "creature" ? c.force + c.end + (c.cap ? 1.5 : 0) + c.mots.length * 0.5 + c.niveau * 0.3 - c.cout * 1.6 : 0.5;
+  cand.sort((a, b) => score(b) - score(a));
+  const cibles = { 1: 3, 2: 4, 3: 4, 4: 3, 5: 1, 6: 1 };
+  const pris = []; let leg = 0;
+  const ok = (c) => !(c.palier === 3 && leg >= 2) && !pris.includes(c);
+  const prendre = (c) => { pris.push(c); if (c.palier === 3) leg++; };
+  cand.forEach((c) => { const k = Math.min(6, c.cout); if (pris.filter((x) => Math.min(6, x.cout) === k).length < (cibles[k] || 0) && ok(c)) prendre(c); });
+  cand.forEach((c) => { if (pris.length < DUEL_DECK - 4 && ok(c)) prendre(c); });
+  // Renforts : les espèces faciles à moyennes du bestiaire, au même niveau que la nature.
+  const renforts = duelMelange(BESTIAIRE_ARENE.filter((b) => b.palier <= 3)).map((b) => carteDuel(obsBestiaire(b), true));
+  for (let i = 0; pris.length < DUEL_DECK - 4 && renforts.length; i++) pris.push(renforts[i % renforts.length]);
+  return [...pris, ...["rosee", "floraison", "toile", "piege"].map(phenoDuel)];
+}
+// Deck de la nature (adversaire IA) : 16 espèces du bestiaire + 4 Phénomènes.
+function deckNatureDuel() {
+  const tous = duelMelange(BESTIAIRE_ARENE.slice()).slice(0, DUEL_DECK - 4);
+  return [...tous.map((b) => carteDuel(obsBestiaire(b), true)), ...["rosee", "floraison", "toile", "piege"].map(phenoDuel)];
+}
+
+function duelMelange(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function duelCopie(s) { return JSON.parse(JSON.stringify(s)); }
+function duelLog(s, txt, camp) { s.journal.push({ t: txt, camp: camp == null ? -1 : camp, n: s.journal.length }); if (s.journal.length > 60) s.journal.shift(); }
+
+function nouveauDuel(deckA, deckB, nomA, nomB, terrainImpose) {
+  let uid = 0;
+  const instance = (t) => ({ ...t, uid: ++uid, endMax: t.end || 0, posedTour: -1, mueUsee: false, paralyseJusqua: -1, aAttaque: false });
+  const joueurs = [deckA, deckB].map((d, i) => ({ nom: i ? nomB : nomA, pv: DUEL_PV, energie: 0, energieMax: 0, malus: 0, buff: 0,
+    deck: duelMelange(d.map(instance)), main: [], plateau: [] }));
+  const terrains = BIOTOPES.filter((b) => b.id !== "autre");
+  const s = { tour: 0, actif: Math.random() < 0.5 ? 0 : 1, joueurs, terrain: terrainImpose || terrains[Math.floor(Math.random() * terrains.length)].id,
+    journal: [], fini: null, uidMax: uid, aAttaqueCeTour: false };
+  duelPiocher(s, s.actif, 4);
+  duelPiocher(s, 1 - s.actif, 5);
+  duelLog(s, (s.actif === 0 ? "Tu commences" : nomB + " commence") + " · terrain : " + biotopeOf(s.terrain).emoji + " " + biotopeOf(s.terrain).label);
+  duelDebutTour(s, true);
+  return s;
+}
+function duelPiocher(s, p, n) {
+  const J = s.joueurs[p];
+  for (let i = 0; i < n; i++) {
+    if (!J.deck.length) { J.pv -= 1; duelLog(s, (p ? J.nom : "Tu") + (p ? " n'a" : " n'as") + " plus de cartes : −1 PV", p); continue; }
+    const c = J.deck.shift();
+    if (J.main.length >= DUEL_MAIN_MAX) { duelLog(s, "Main pleine : " + c.nom + " est défaussée", p); continue; }
+    J.main.push(c);
+  }
+  duelVerifierFin(s);
+}
+function duelDebutTour(s, premier) {
+  const p = s.actif, J = s.joueurs[p];
+  s.tour++;
+  s.aAttaqueCeTour = false;
+  J.energieMax = Math.min(DUEL_ENERGIE_MAX, J.energieMax + 1);
+  J.energie = Math.max(0, J.energieMax - J.malus);
+  if (J.malus) duelLog(s, (p ? J.nom + " a" : "Tu as") + " " + J.malus + " énergie de moins (Butin)", p);
+  J.malus = 0; J.buff = 0;
+  duelLog(s, "— " + (p ? "Tour de " + J.nom : "À toi de jouer") + " · ⚡ " + J.energie + " —", p);
+  J.plateau.forEach((c) => {
+    c.aAttaque = false;
+    if (c.metamorph > 0) {
+      c.metamorph--;
+      if (c.metamorph === 0) {
+        c.force += 2; c.end += 2; c.endMax += 2; c.stade = "adulte"; c.metamorphosee = true;
+        if (!c.mots.includes("vol")) c.mots.push("vol");
+        duelLog(s, "🦋 " + c.nom + " se métamorphose : +2/+2 et Vol", p);
+      }
+    }
+  });
+  if (!premier) duelPiocher(s, p, 1);
+}
+function duelFinTour(s) {
+  if (s.fini != null) return;
+  s.joueurs[s.actif].buff = 0;
+  s.actif = 1 - s.actif;
+  duelDebutTour(s, false);
+}
+function duelVerifierFin(s) {
+  if (s.fini != null) return;
+  const [a, b] = s.joueurs;
+  if (a.pv <= 0 || b.pv <= 0) s.fini = a.pv <= 0 && b.pv <= 0 ? 1 - s.actif : a.pv <= 0 ? 1 : 0;
+}
+function duelChezSoi(s, c) { return !!(c.biotope && c.biotope === s.terrain); }
+function duelForce(s, p, c) {
+  if (!c || c.kind !== "creature") return 0;
+  if (c.metamorph > 0 && c.stade === "nymphe") return 0;
+  let f = c.force + (duelChezSoi(s, c) ? 1 : 0) + (s.joueurs[p].buff || 0);
+  if (c.mots.includes("essaim")) f += s.joueurs[p].plateau.filter((x) => x.uid !== c.uid && x.mots.includes("essaim")).length;
+  return Math.max(0, f);
+}
+function duelParalyse(s, c) { return s.tour <= c.paralyseJusqua; }
+function duelPeutAttaquer(s, p, c) {
+  return s.actif === p && s.fini == null && !c.aAttaque && !duelParalyse(s, c) && duelForce(s, p, c) > 0
+    && (c.posedTour < s.tour || c.mots.includes("bond"));
+}
+function duelPeutBloquer(s, b, a) {
+  return !duelParalyse(s, b) && (!a.mots.includes("vol") || b.mots.includes("vol"));
+}
+// Créatures adverses visables par un effet du camp p (le Camouflage protège).
+function duelCibles(s, p) { return s.joueurs[1 - p].plateau.filter((c) => !c.mots.includes("camouflage")); }
+function duelBesoinCible(c) {
+  if (c.kind === "pheno") return !!(PHENOS_DUEL[c.phenoId] && PHENOS_DUEL[c.phenoId].cible);
+  return !!(c.cap && CAPA_DUEL[c.cap.id].cible);
+}
+function duelPeutJouer(s, p, c) {
+  const J = s.joueurs[p];
+  if (s.actif !== p || s.fini != null || s.attaque) return false;
+  if (c.cout > J.energie) return false;
+  if (c.kind === "creature" && J.plateau.length >= DUEL_PLATEAU) return false;
+  if (c.kind === "pheno" && c.phenoId === "ponte" && J.plateau.length >= DUEL_PLATEAU) return false;
+  return true;
+}
+function duelBlesser(s, p, c, d, venin) {
+  if (!c) return;
+  const reel = d - (c.mots.includes("carapace") ? 1 : 0);
+  if (reel <= 0) return;
+  c.end -= reel;
+  if (venin) c.end = Math.min(c.end, 0);
+  if (c.end <= 0) {
+    if (c.mots.includes("mue") && !c.mueUsee) { c.end = 1; c.mueUsee = true; duelLog(s, "♻️ " + c.nom + " mue et survit", p); }
+    else { s.joueurs[p].plateau = s.joueurs[p].plateau.filter((x) => x.uid !== c.uid); duelLog(s, "✖ " + c.nom + " meurt", p); }
+  }
+}
+function duelEffet(s, p, id, val, cibleUid, src) {
+  const J = s.joueurs[p], A = s.joueurs[1 - p];
+  const cible = cibleUid != null ? duelCibles(s, p).find((x) => x.uid === cibleUid) : null;
+  if ((id === "predateur" || id === "paralysie" || id === "toile") && !cible) { duelLog(s, "Pas de cible : l'effet est perdu", p); return; }
+  if (id === "predateur") { duelLog(s, "🎯 " + src.nom + " inflige " + val + " à " + cible.nom, p); duelBlesser(s, 1 - p, cible, val, false); }
+  else if (id === "paralysie" || id === "toile") { cible.paralyseJusqua = s.tour + 1; duelLog(s, "💤 " + cible.nom + " est paralysée", p); }
+  else if (id === "butin") { A.malus += val; duelLog(s, "🩸 Butin : " + val + " énergie de moins au prochain tour adverse", p); }
+  else if (id === "soin" || id === "rosee") { const v = id === "rosee" ? 3 : val; J.pv = Math.min(DUEL_PV, J.pv + v); duelLog(s, "💚 +" + v + " PV", p); }
+  else if (id === "floraison") { J.buff += 1; duelLog(s, "🌸 Floraison : +1 Force ce tour", p); }
+  else if (id === "piege") { duelPiocher(s, p, 2); duelLog(s, "🔦 Pioche 2 cartes", p); }
+  else if (id === "ponte") {
+    for (let i = 0; i < 2 && J.plateau.length < DUEL_PLATEAU; i++) {
+      J.plateau.push({ kind: "creature", uid: ++s.uidMax, nom: "Larve · " + src.nom, emoji: "🐛", espece: src.espece, obsId: src.obsId, type: src.type,
+        palier: 0, renfort: src.renfort, biotope: src.biotope, stade: "larve", cout: 1, force: 1, end: 1, endMax: 1, mots: [src.motLarve || "mue"], cap: null,
+        metamorph: 2, niveau: 0, posedTour: s.tour, mueUsee: false, paralyseJusqua: -1, aAttaque: false });
+    }
+    duelLog(s, "🥚 Éclosion : deux larves arrivent", p);
+  }
+  else if (id === "indice") {
+    const i = J.deck.findIndex((x) => x.kind === "creature" && x.espece === src.espece);
+    if (i >= 0 && J.main.length < DUEL_MAIN_MAX) { const [t] = J.deck.splice(i, 1); J.main.push(t); duelLog(s, "🔍 L'indice mène à " + t.nom, p); }
+    else duelPiocher(s, p, 1);
+  }
+  duelVerifierFin(s);
+}
+function duelJouer(s, uid, cibleUid) {
+  const p = s.actif, J = s.joueurs[p];
+  const c = J.main.find((x) => x.uid === uid);
+  if (!c || !duelPeutJouer(s, p, c)) return false;
+  J.energie -= c.cout;
+  J.main = J.main.filter((x) => x.uid !== uid);
+  if (c.kind === "creature") {
+    c.posedTour = s.tour;
+    J.plateau.push(c);
+    duelLog(s, (p ? J.nom + " pose " : "Tu poses ") + c.nom, p);
+    if (c.cap) duelEffet(s, p, c.cap.id, c.cap.val, cibleUid, c);
+  } else {
+    duelLog(s, (p ? J.nom + " joue " : "Tu joues ") + c.nom, p);
+    duelEffet(s, p, c.phenoId, 0, cibleUid, c);
+  }
+  return true;
+}
+// Issue prévisible d'un blocage (sans rien modifier) — sert à l'IA.
+function duelIssue(s, pa, a, b) {
+  const pb = 1 - pa, fa = duelForce(s, pa, a), fb = duelForce(s, pb, b);
+  const dmg = (src, f, cible) => { const d = f - (cible.mots.includes("carapace") ? 1 : 0); return d <= 0 ? 0 : src.mots.includes("venin") ? 999 : d; };
+  const meurt = (c, d) => d > 0 && d >= c.end && !(c.mots.includes("mue") && !c.mueUsee);
+  if (b.mots.includes("plongee")) { const aM = meurt(a, dmg(b, fb, a)); return { aMeurt: aM, bMeurt: aM ? false : meurt(b, dmg(a, fa, b)) }; }
+  return { aMeurt: meurt(a, dmg(b, fb, a)), bMeurt: meurt(b, dmg(a, fa, b)) };
+}
+// Résout une attaque : attaquants = uids du camp actif, blocages = { uidAttaquant: uidBloqueur }.
+function duelResoudre(s, attaquants, blocages) {
+  const p = s.actif, J = s.joueurs[p], A = s.joueurs[1 - p];
+  s.aAttaqueCeTour = true;
+  const utilises = new Set();
+  attaquants.forEach((uid) => {
+    if (s.fini != null) return;
+    const a = J.plateau.find((x) => x.uid === uid);
+    if (!a || !duelPeutAttaquer(s, p, a)) return;
+    a.aAttaque = true;
+    const bu = blocages && blocages[uid];
+    const b = bu != null && !utilises.has(bu) ? A.plateau.find((x) => x.uid === bu) : null;
+    const fa = duelForce(s, p, a);
+    if (b && duelPeutBloquer(s, b, a)) {
+      utilises.add(bu);
+      const fb = duelForce(s, 1 - p, b);
+      duelLog(s, "⚔️ " + a.nom + " (" + fa + ") ↔ " + b.nom + " (" + fb + ")", p);
+      if (b.mots.includes("plongee")) {
+        duelBlesser(s, p, a, fb, b.mots.includes("venin"));
+        if (J.plateau.some((x) => x.uid === a.uid)) duelBlesser(s, 1 - p, b, fa, a.mots.includes("venin"));
+      } else {
+        duelBlesser(s, p, a, fb, b.mots.includes("venin"));
+        duelBlesser(s, 1 - p, b, fa, a.mots.includes("venin"));
+      }
+    } else {
+      A.pv -= fa;
+      duelLog(s, "💥 " + a.nom + (p ? " te touche" : " touche " + A.nom) + " : −" + fa + " PV", p);
+      duelVerifierFin(s);
+    }
+  });
+  duelVerifierFin(s);
+}
+
+// ───── IA « la nature » ─────
+function duelIaMeilleureCible(s, p, mode, val) {
+  const cibles = duelCibles(s, p);
+  if (!cibles.length) return null;
+  if (mode === "predateur") {
+    const tuables = cibles.filter((c) => val - (c.mots.includes("carapace") ? 1 : 0) >= c.end && !(c.mots.includes("mue") && !c.mueUsee));
+    if (tuables.length) return tuables.sort((a, b) => b.cout - a.cout)[0].uid;
+  }
+  return cibles.sort((a, b) => duelForce(s, 1 - p, b) - duelForce(s, 1 - p, a))[0].uid;
+}
+function duelIaPoser(s) {
+  const p = s.actif;
+  for (let garde = 0; garde < 12 && s.fini == null; garde++) {
+    const J = s.joueurs[p], A = s.joueurs[1 - p];
+    const jouables = J.main.filter((c) => duelPeutJouer(s, p, c));
+    let choix = null;
+    const ph = (id) => jouables.find((c) => c.phenoId === id);
+    if (ph("rosee") && J.pv <= 9) choix = ph("rosee");
+    else if (ph("piege") && J.main.length <= 2) choix = ph("piege");
+    else if (ph("toile") && duelCibles(s, p).some((c) => duelForce(s, 1 - p, c) >= 4)) choix = ph("toile");
+    else {
+      const cr = jouables.filter((c) => c.kind === "creature" || c.phenoId === "ponte" || c.phenoId === "indice")
+        .sort((a, b) => b.cout - a.cout || (b.force + b.end) - (a.force + a.end));
+      choix = cr[0] || null;
+    }
+    if (!choix) break;
+    let cible = null;
+    if (choix.kind === "creature" && choix.cap && CAPA_DUEL[choix.cap.id].cible) cible = duelIaMeilleureCible(s, p, choix.cap.id, choix.cap.val);
+    if (choix.phenoId === "toile") cible = duelIaMeilleureCible(s, p, "toile", 0);
+    duelJouer(s, choix.uid, cible);
+  }
+}
+function duelIaAttaquants(s) {
+  const p = s.actif, J = s.joueurs[p], A = s.joueurs[1 - p];
+  const dispo = J.plateau.filter((c) => duelPeutAttaquer(s, p, c));
+  if (!dispo.length) return [];
+  const bloqueurs = A.plateau.filter((b) => !duelParalyse(s, b));
+  const total = dispo.reduce((t, c) => t + duelForce(s, p, c), 0);
+  // Tout le monde y va si ça peut suffire même en perdant les meilleurs blocages.
+  const parade = bloqueurs.length ? dispo.map((c) => duelForce(s, p, c)).sort((a, b) => b - a).slice(0, bloqueurs.length).reduce((t, v) => t + v, 0) : 0;
+  if (total - parade >= A.pv) return dispo.map((c) => c.uid);
+  return dispo.filter((a) => !bloqueurs.some((b) => {
+    if (!duelPeutBloquer(s, b, a)) return false;
+    const r = duelIssue(s, p, a, b);
+    return r.aMeurt && !r.bMeurt;
+  })).map((c) => c.uid);
+}
+function duelIaFloraison(s, attaquants) {
+  const p = s.actif, J = s.joueurs[p];
+  const f = J.main.find((c) => c.phenoId === "floraison");
+  if (f && attaquants.length >= 2 && duelPeutJouer(s, p, f)) duelJouer(s, f.uid, null);
+}
+function duelIaBloquer(s, attaquants) {
+  const pa = s.actif, pd = 1 - pa, D = s.joueurs[pd], J = s.joueurs[pa];
+  const blocs = {}, pris = new Set();
+  const atts = attaquants.map((u) => J.plateau.find((x) => x.uid === u)).filter(Boolean)
+    .sort((a, b) => duelForce(s, pa, b) - duelForce(s, pa, a));
+  let entrant = atts.reduce((t, a) => t + duelForce(s, pa, a), 0);
+  atts.forEach((a) => {
+    const cands = D.plateau.filter((b) => !pris.has(b.uid) && duelPeutBloquer(s, b, a));
+    if (!cands.length) return;
+    const avec = cands.map((b) => ({ b, r: duelIssue(s, pa, a, b) }));
+    const parCout = (x, y) => x.b.cout - y.b.cout;
+    let choix = avec.filter((x) => x.r.aMeurt && !x.r.bMeurt).sort(parCout)[0]
+      || avec.filter((x) => !x.r.bMeurt).sort(parCout)[0]
+      || avec.filter((x) => x.r.aMeurt && a.cout >= x.b.cout).sort(parCout)[0]
+      || (entrant >= D.pv || D.pv - entrant <= 3 ? avec.sort(parCout)[0] : null);
+    if (choix) { blocs[a.uid] = choix.b.uid; pris.add(choix.b.uid); entrant -= duelForce(s, pa, a); }
+  });
+  return blocs;
+}
+// Partie entièrement automatique (tests / équilibrage) : renvoie le vainqueur.
+function duelSimuler(deckA, deckB, maxTours) {
+  const s = nouveauDuel(deckA, deckB, "A", "B");
+  for (let i = 0; i < (maxTours || 80) && s.fini == null; i++) {
+    duelIaPoser(s);
+    if (s.fini != null) break;
+    const att = duelIaAttaquants(s);
+    if (att.length) { duelIaFloraison(s, att); duelResoudre(s, att, duelIaBloquer(s, att)); }
+    duelFinTour(s);
+  }
+  return { gagnant: s.fini, tours: s.tour, pv: s.joueurs.map((j) => j.pv) };
+}
+
+
+// ───── Interface du Duel ─────
+const CSS_DUEL = `
+.dl-ecran { position: fixed; inset: 0; z-index: 1300; background: #0F130C; color: #EDE6D2; display: flex; flex-direction: column;
+  padding: calc(8px + env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; user-select: none; -webkit-user-select: none; }
+.dl-ecran * { box-sizing: border-box; }
+.dl-barre { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 12px; font-size: 13px; }
+.dl-barre.adv { background: #2A2116; }
+.dl-barre.moi { background: #1D2B19; }
+.dl-pv { font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; }
+.dl-pv.bas { color: #E07A5F; }
+.dl-energie { display: flex; gap: 3px; align-items: center; }
+.dl-energie i { width: 9px; height: 9px; border-radius: 50%; background: #3A4531; display: block; }
+.dl-energie i.on { background: #E4C878; box-shadow: 0 0 6px rgba(228,200,120,.6); }
+.dl-rang { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; padding: 6px 0; min-height: 96px; }
+.dl-vide { border: 1.5px dashed #2C3623; border-radius: 9px; aspect-ratio: 63/88; }
+.dl-mini { position: relative; border: 0; padding: 0; border-radius: 9px; overflow: hidden; aspect-ratio: 63/88; background: #241f14; color: #EDE6D2;
+  box-shadow: 0 0 0 1.5px #3A4531; cursor: pointer; transition: transform .15s, box-shadow .15s; font-family: inherit; width: 100%; }
+.dl-mini.leg { box-shadow: 0 0 0 1.5px #E4C878; }
+.dl-mini.peut { box-shadow: 0 0 0 2px #94A97B; }
+.dl-mini.choisi { box-shadow: 0 0 0 3px #E4C878; transform: translateY(-5px); }
+.dl-mini.attaque { box-shadow: 0 0 0 3px #E07A5F; }
+.dl-mini.cible { box-shadow: 0 0 0 3px #E07A5F; animation: dl-pulse 1s infinite; }
+.dl-mini.terne { filter: grayscale(.7) brightness(.6); }
+@keyframes dl-pulse { 50% { box-shadow: 0 0 0 3px rgba(224,122,95,.35); } }
+.dl-cout { position: absolute; top: 3px; left: 3px; width: 19px; height: 19px; border-radius: 50%; background: #2F5A33; color: #fff; font-size: 11px; font-weight: 800; display: grid; place-items: center; }
+.dl-cout.pheno { background: #B7802A; }
+.dl-mots { position: absolute; top: 2px; right: 3px; font-size: 11px; line-height: 1.1; display: flex; flex-direction: column; gap: 1px; text-shadow: 0 1px 2px #000; }
+.dl-fe { position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%); background: rgba(15,19,12,.88); border-radius: 6px; padding: 1px 6px; font-size: 12px; font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dl-badge { position: absolute; left: 3px; bottom: 22px; font-size: 12px; text-shadow: 0 1px 2px #000; }
+.dl-bloc { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); background: rgba(15,19,12,.85); border: 1.5px solid #E4C878; border-radius: 999px; padding: 1px 6px; font-size: 13px; }
+.dl-terrain { text-align: center; font-size: 11.5px; color: #A8A48F; padding: 3px 0; border-block: 1px dashed #2C3623; }
+.dl-journal { flex: 1; min-height: 44px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: 1px; font-size: 12px; color: #D6D1BB; padding: 4px 2px; }
+.dl-journal div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .55; }
+.dl-journal div.recent { opacity: 1; }
+.dl-journal div.c1 { color: #E8B98A; }
+.dl-main { display: flex; gap: 6px; overflow-x: auto; padding: 8px 2px 4px; scrollbar-width: none; }
+.dl-main::-webkit-scrollbar { display: none; }
+.dl-main .dl-mini { flex: 0 0 64px; }
+.dl-nom { position: absolute; left: 0; right: 0; bottom: 21px; font-size: 9px; text-align: center; padding: 0 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000; font-weight: 700; }
+.dl-actions { display: flex; gap: 8px; padding-top: 6px; }
+.dl-btn { flex: 1; border: 0; border-radius: 12px; padding: 12px 10px; font-size: 14.5px; font-weight: 800; cursor: pointer; font-family: inherit; }
+.dl-btn.prim { background: #E4C878; color: #2A2417; }
+.dl-btn.sec { background: #2C3623; color: #EDE6D2; }
+.dl-btn.rouge { background: #C06A42; color: #fff; }
+.dl-btn:disabled { opacity: .4; cursor: default; }
+.dl-bandeau { background: #3A2E18; color: #F3E2A8; border-radius: 10px; padding: 7px 10px; font-size: 12.5px; line-height: 1.35; text-align: center; }
+.dl-voile { position: fixed; inset: 0; z-index: 1350; background: rgba(5,7,4,.72); display: flex; align-items: flex-end; justify-content: center; }
+.dl-fiche { width: 100%; max-width: 420px; background: #1C2318; border-radius: 18px 18px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; max-height: 92vh; overflow-y: auto; }
+.dl-grande { display: grid; grid-template-columns: 112px 1fr; gap: 12px; align-items: start; }
+.dl-grande .ph { aspect-ratio: 63/88; border-radius: 10px; overflow: hidden; position: relative; }
+.dl-ligne { font-size: 13.5px; line-height: 1.4; color: #D6D1BB; }
+.dl-ligne b { color: #EDE6D2; }
+.dl-fin { position: fixed; inset: 0; z-index: 1360; background: rgba(5,7,4,.85); display: grid; place-items: center; padding: 24px; text-align: center; }
+.dl-acc-grille { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+`;
+
+function PhotoDuel({ blob, emoji, taille }) {
+  const url = useBlobUrl(blob || null);
+  if (url) return <div style={{ position: "absolute", inset: 0, backgroundImage: `url(${url})`, backgroundSize: "cover", backgroundPosition: "center" }} />;
+  return <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontSize: taille || 26, background: "radial-gradient(circle at 40% 35%, #5d5236, #241f14 75%)" }}>{emoji || "🐞"}</div>;
+}
+
+function MiniDuel({ c, s, camp, photos, classe, onClick, badge, avecNom }) {
+  const f = s ? duelForce(s, camp, c) : c.force;
+  const para = s && c.kind === "creature" && duelParalyse(s, c);
+  return (
+    <button className={"dl-mini " + (c.palier === 3 ? "leg " : "") + (classe || "")} onClick={onClick}>
+      <PhotoDuel blob={photos[c.obsId]} emoji={c.kind === "pheno" && !c.obsId ? c.emoji : c.emoji} taille={c.kind === "pheno" ? 28 : 24} />
+      <span className={"dl-cout" + (c.kind === "pheno" ? " pheno" : "")}>{c.cout}</span>
+      {c.kind === "creature" && <span className="dl-mots">{c.mots.map((m) => <span key={m}>{MOTS_DUEL[m].emoji}</span>)}{c.cap && <span>✨</span>}</span>}
+      {c.kind === "pheno" && c.obsId && <span className="dl-mots"><span>{c.emoji}</span></span>}
+      {avecNom && <span className="dl-nom">{c.kind === "pheno" ? (PHENOS_DUEL[c.phenoId] || {}).nom || c.nom : c.nom}</span>}
+      {c.kind === "creature" && (
+        <span className="dl-fe">
+          <span style={{ color: f > c.force ? "#A8D08D" : undefined }}>{f}</span>/<span style={{ color: c.end < c.endMax ? "#E07A5F" : undefined }}>{c.end}</span>
+        </span>
+      )}
+      {c.kind === "pheno" && <span className="dl-fe" style={{ fontSize: 10 }}>{c.obsId ? (PHENOS_DUEL[c.phenoId] || {}).nom : "Phénomène"}</span>}
+      {(para || c.metamorph > 0 || duelChezSoiAff(s, c)) && (
+        <span className="dl-badge">{para ? "💤" : ""}{c.metamorph > 0 ? "🦋" + c.metamorph : ""}{duelChezSoiAff(s, c) ? "🏡" : ""}</span>
+      )}
+      {badge && <span className="dl-bloc">{badge}</span>}
+    </button>
+  );
+}
+function duelChezSoiAff(s, c) { return !!(s && c.kind === "creature" && duelChezSoi(s, c)); }
+
+function FicheDuel({ c, s, camp, photos, onFermer, children }) {
+  const f = s && camp != null ? duelForce(s, camp, c) : c.force;
+  const ph = c.kind === "pheno" ? PHENOS_DUEL[c.phenoId] : null;
+  const stade = c.stade ? stadeInfo(c.stade) : null;
+  return (
+    <div className="dl-voile" onClick={onFermer}>
+      <div className="dl-fiche" onClick={(e) => e.stopPropagation()}>
+        <div className="dl-grande">
+          <div className="ph"><PhotoDuel blob={photos[c.obsId]} emoji={c.emoji} taille={44} /></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+            <div style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, lineHeight: 1.2 }}>{ph && c.obsId ? ph.nom + " · " : ""}{c.nom}</div>
+            <div className="dl-ligne">
+              {c.kind === "creature" ? <>Créature · {typeInfo(c.type).emoji} {typeInfo(c.type).label}</> : <>Phénomène {ph ? ph.emoji : ""}</>}
+              {" · "}<b style={{ color: c.palier === 3 ? "#E4C878" : undefined }}>{c.renfort ? "Renfort" : PALIERS_DUEL[c.palier]}</b>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ background: c.kind === "pheno" ? "#B7802A" : "#2F5A33", borderRadius: 999, padding: "3px 10px", fontWeight: 800, fontSize: 13 }}>⚡ {c.cout}</span>
+              {c.kind === "creature" && <span style={{ fontWeight: 800, fontSize: 16 }}>{f} / <span style={{ color: c.end < c.endMax ? "#E07A5F" : undefined }}>{c.end}</span>{c.end < c.endMax ? <span style={{ fontSize: 12, color: "#A8A48F" }}> (sur {c.endMax})</span> : null}</span>}
+            </div>
+            {c.kind === "creature" && <div style={{ fontSize: 11.5, color: "#A8A48F" }}>Force / Endurance</div>}
+          </div>
+        </div>
+        {ph && <div className="dl-ligne">{ph.desc}</div>}
+        {c.kind === "creature" && c.mots.map((m) => (
+          <div key={m} className="dl-ligne">{MOTS_DUEL[m].emoji} <b>{MOTS_DUEL[m].label}</b> — {MOTS_DUEL[m].desc}</div>
+        ))}
+        {c.cap && <div className="dl-ligne">✨ <b>{c.cap.nom}</b> ({CAPA_DUEL[c.cap.id].label}) — {CAPA_DUEL[c.cap.id].desc(c.cap.val)}</div>}
+        {c.metamorph > 0 && <div className="dl-ligne">🦋 <b>Métamorphose</b> — devient adulte dans {c.metamorph} tour{c.metamorph > 1 ? "s" : ""} : +2/+2 et Vol.</div>}
+        {stade && c.stade !== "adulte" && c.kind === "creature" && <div className="dl-ligne">{stade.emoji} Photo d'une forme cachée : {stade.label.toLowerCase()}.</div>}
+        {s && duelChezSoiAff(s, c) && <div className="dl-ligne">🏡 <b>Chez elle</b> — trouvée en {biotopeOf(c.biotope).label.toLowerCase()}, le terrain du duel : +1 Force.</div>}
+        {s && c.kind === "creature" && duelParalyse(s, c) && <div className="dl-ligne">💤 Paralysée : ne peut ni attaquer ni bloquer pour l'instant.</div>}
+        {c.renfort && <div className="dl-ligne" style={{ color: "#A8A48F" }}>Renfort : une espèce commune prêtée pour compléter le deck. Elle disparaîtra quand ta collection suffira.</div>}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ReglesDuel() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13.5, lineHeight: 1.5, color: C.papierClair }}>
+      <div>• Chaque joueur a <b>15 PV</b>. Le premier à 0 a perdu.</div>
+      <div>• L'<b>énergie ⚡</b> monte toute seule : 1 au premier tour, +1 à chaque tour (max 8). Elle sert à poser tes cartes.</div>
+      <div>• À ton tour : <b>pose</b> des cartes, puis <b>attaque</b> avec les créatures posées avant ce tour. L'adversaire choisit qui bloque. Une attaque non bloquée touche ses PV.</div>
+      <div>• Un combat : les deux créatures se blessent de leur Force. Les <b>blessures restent</b> : l'Endurance en rouge a baissé.</div>
+      <div>• 🏡 Le <b>terrain du duel</b> est tiré au hasard : les créatures trouvées dans ce milieu ont +1 Force.</div>
+      <div>• ✨ Certaines cartes ont une capacité qui se déclenche quand on les pose.</div>
+      <div style={{ marginTop: 4, fontWeight: 700, color: C.papier }}>Les mots-clés</div>
+      {Object.entries(MOTS_DUEL).map(([id, m]) => <div key={id}>{m.emoji} <b>{m.label}</b> — {m.desc}</div>)}
+      <div>🦋 <b>Métamorphose</b> — les larves et chrysalides deviennent adultes en cours de partie (+2/+2 et Vol).</div>
+    </div>
+  );
+}
+
+function DuelBeta({ cartes, prenom }) {
+  const photos = {};
+  (cartes || []).forEach((o) => { if (o && o.id && o.photo) photos[o.id] = o.photo; });
+  const [deck, setDeck] = useState(() => deckAutoDuel(cartes));
+  const [s, setS] = useState(null);
+  const [fiche, setFiche] = useState(null);          // { c, camp, action }
+  const [mode, setMode] = useState(null);            // null | "cible" | "attaque" | "blocage"
+  const [enAttente, setEnAttente] = useState(null);  // uid de la carte à jouer (mode cible)
+  const [choisis, setChoisis] = useState([]);        // attaquants choisis
+  const [blocs, setBlocs] = useState({});            // { uidAttaquant: uidBloqueur }
+  const [selB, setSelB] = useState(null);
+  const [occupe, setOccupe] = useState(false);
+  const [regles, setRegles] = useState(false);
+  const [blocagePret, setBlocagePret] = useState(true); // évite de valider par un double appui sur « Fin du tour »
+  const vivant = useRef(true);
+  useEffect(() => () => { vivant.current = false; }, []);
+  useEffect(() => { setDeck(deckAutoDuel(cartes)); }, [(cartes || []).length]);
+  const nomIA = "La nature";
+
+  const tourIA = (s0) => {
+    const st = duelCopie(s0);
+    setOccupe(true);
+    setTimeout(() => {
+      if (!vivant.current) return;
+      duelIaPoser(st);
+      setS(duelCopie(st));
+      if (st.fini != null) { setOccupe(false); return; }
+      setTimeout(() => {
+        if (!vivant.current) return;
+        const att = duelIaAttaquants(st);
+        if (!att.length) {
+          duelLog(st, "La nature n'attaque pas", 1);
+          duelFinTour(st);
+          setS(duelCopie(st)); setOccupe(false); vibrer && vibrer(15);
+          return;
+        }
+        duelIaFloraison(st, att);
+        st.attaque = { attaquants: att };
+        setS(duelCopie(st)); setBlocs({}); setSelB(null); setMode("blocage"); setOccupe(false);
+        setBlocagePret(false); setTimeout(() => { if (vivant.current) setBlocagePret(true); }, 900);
+        vibrer && vibrer([20, 40, 20]);
+      }, 900);
+    }, 650);
+  };
+  const lancer = () => {
+    const st = nouveauDuel(deckAutoDuel(cartes), deckNatureDuel(), prenom || "Toi", nomIA);
+    setS(st); setMode(null); setChoisis([]); setBlocs({}); setFiche(null);
+    if (st.actif === 1) tourIA(st);
+  };
+  const quitter = () => { setS(null); setMode(null); setFiche(null); };
+
+  const jouer = (uid, cible) => {
+    const st = duelCopie(s);
+    duelJouer(st, uid, cible);
+    setS(st); setMode(null); setEnAttente(null); setFiche(null);
+  };
+  const demanderJouer = (c) => {
+    if (duelBesoinCible(c) && duelCibles(s, 0).length) { setEnAttente(c.uid); setMode("cible"); setFiche(null); }
+    else jouer(c.uid, null);
+  };
+  const lancerAttaque = () => {
+    const st = duelCopie(s);
+    const bl = duelIaBloquer(st, choisis);
+    duelResoudre(st, choisis, bl);
+    setS(st); setMode(null); setChoisis([]);
+  };
+  const finTour = () => {
+    const st = duelCopie(s);
+    duelFinTour(st);
+    setS(st); setMode(null); setChoisis([]);
+    if (st.fini == null) tourIA(st);
+  };
+  const validerBlocages = () => {
+    const st = duelCopie(s);
+    const att = st.attaque.attaquants;
+    st.attaque = null;
+    duelResoudre(st, att, blocs);
+    if (st.fini == null) duelFinTour(st);
+    setS(st); setMode(null); setBlocs({}); setSelB(null);
+  };
+
+  // ── Écran d'accueil ──
+  if (!s) {
+    const creatures = deck.filter((c) => c.kind === "creature");
+    const renforts = deck.filter((c) => c.renfort).length;
+    const courbe = [1, 2, 3, 4, 5, 6, 7].map((k) => deck.filter((c) => (k === 7 ? c.cout >= 7 : c.cout === k)).length);
+    const maxC = Math.max(1, ...courbe);
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <style>{CSS_DUEL}</style>
+        <div style={{ background: "linear-gradient(160deg, #2A2116, #1C2318)", border: `1px solid ${C.bordure}`, borderRadius: 16, padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontFamily: serif, fontSize: 22, fontWeight: 600, color: C.papier }}>Duel BioDex</span>
+            <span style={{ fontSize: 11, fontWeight: 800, background: C.ambre, color: C.encre, borderRadius: 999, padding: "2px 8px" }}>BÊTA</span>
+          </div>
+          <div style={{ fontSize: 13.5, color: C.papierClair, lineHeight: 1.5 }}>
+            Le nouveau jeu de cartes. Ton deck de 20 cartes vient de tes trouvailles, chaque insecte a un pouvoir tiré de sa biologie. Affronte la nature dans une partie de quelques minutes.
+          </div>
+          <button className="dl-btn prim" style={{ marginTop: 4 }} onClick={lancer}>⚔️ Lancer un duel contre la nature</button>
+          <button className="dl-btn sec" onClick={() => setRegles((v) => !v)}>{regles ? "Masquer les règles" : "📖 Comment on joue"}</button>
+          {regles && <div style={{ marginTop: 4 }}><ReglesDuel /></div>}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <span style={{ fontFamily: serif, fontSize: 17, color: C.papier }}>Ton deck conseillé</span>
+            <span style={{ fontSize: 12, color: C.papierSombre }}>{creatures.length} créatures · {deck.length - creatures.length} autres</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 54 }}>
+            {courbe.map((n, i) => (
+              <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                <span style={{ fontSize: 10.5, color: C.papierSombre }}>{n || ""}</span>
+                <div style={{ width: "100%", height: Math.max(3, (n / maxC) * 30), background: n ? C.lichen : C.bordure, borderRadius: 3 }} />
+                <span style={{ fontSize: 10.5, color: C.papierSombre }}>⚡{i === 6 ? "7+" : i + 1}</span>
+              </div>
+            ))}
+          </div>
+          {renforts > 0 && (
+            <div style={{ fontSize: 12.5, color: C.ambreClair, lineHeight: 1.45 }}>
+              {renforts} Renfort{renforts > 1 ? "s" : ""} (espèces prêtées) complète{renforts > 1 ? "nt" : ""} ton deck. Chaque nouvelle espèce trouvée en remplace un.
+            </div>
+          )}
+          <div className="dl-acc-grille">
+            {deck.slice().sort((a, b) => a.cout - b.cout).map((c, i) => (
+              <MiniDuel key={i} c={c} s={null} camp={0} photos={photos} avecNom onClick={() => setFiche({ c })} />
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: C.papierSombre, lineHeight: 1.5 }}>
+            Bêta : le deck est choisi automatiquement et il n'y a pas encore de récompenses. L'Arène et la Ligue restent disponibles en attendant.
+          </div>
+        </div>
+        {fiche && <FicheDuel c={fiche.c} s={null} photos={photos} onFermer={() => setFiche(null)} />}
+      </div>
+    );
+  }
+
+  // ── Partie ──
+  const moi = s.joueurs[0], adv = s.joueurs[1];
+  const monTour = s.actif === 0 && s.fini == null && !occupe;
+  const terrain = biotopeOf(s.terrain);
+  const peutAttaquerQqn = monTour && !s.attaque && moi.plateau.some((c) => duelPeutAttaquer(s, 0, c));
+  const attaquantsAdv = s.attaque ? s.attaque.attaquants : [];
+  const pips = (J) => (
+    <span className="dl-energie">{Array.from({ length: J.energieMax }).map((_, i) => <i key={i} className={i < J.energie ? "on" : ""} />)}</span>
+  );
+  const vides = (n) => Array.from({ length: Math.max(0, DUEL_PLATEAU - n) }).map((_, i) => <div key={"v" + i} className="dl-vide" />);
+
+  const clicAdv = (c) => {
+    if (mode === "cible") {
+      if (duelCibles(s, 0).some((x) => x.uid === c.uid)) jouer(enAttente, c.uid);
+      return;
+    }
+    if (mode === "blocage" && attaquantsAdv.includes(c.uid)) {
+      if (selB == null) return;
+      const b = moi.plateau.find((x) => x.uid === selB);
+      if (!b || !duelPeutBloquer(s, b, c)) return;
+      const n = { ...blocs };
+      Object.keys(n).forEach((k) => { if (n[k] === selB) delete n[k]; });
+      n[c.uid] = selB;
+      setBlocs(n); setSelB(null);
+      return;
+    }
+    setFiche({ c, camp: 1 });
+  };
+  const clicMoi = (c) => {
+    if (mode === "attaque") {
+      if (!duelPeutAttaquer(s, 0, c)) return;
+      setChoisis(choisis.includes(c.uid) ? choisis.filter((u) => u !== c.uid) : [...choisis, c.uid]);
+      return;
+    }
+    if (mode === "blocage") {
+      const dejaA = Object.keys(blocs).find((k) => blocs[k] === c.uid);
+      if (dejaA) { const n = { ...blocs }; delete n[dejaA]; setBlocs(n); setSelB(null); return; }
+      if (duelParalyse(s, c)) return;
+      setSelB(selB === c.uid ? null : c.uid);
+      return;
+    }
+    setFiche({ c, camp: 0 });
+  };
+  const classeAdv = (c) => {
+    if (mode === "cible") return duelCibles(s, 0).some((x) => x.uid === c.uid) ? "cible" : "terne";
+    if (mode === "blocage") {
+      if (!attaquantsAdv.includes(c.uid)) return "terne";
+      const b = selB != null ? moi.plateau.find((x) => x.uid === selB) : null;
+      return b && duelPeutBloquer(s, b, c) ? "cible" : "attaque";
+    }
+    return "";
+  };
+  const classeMoi = (c) => {
+    if (mode === "attaque") return choisis.includes(c.uid) ? "choisi" : duelPeutAttaquer(s, 0, c) ? "peut" : "terne";
+    if (mode === "blocage") return selB === c.uid ? "choisi" : Object.values(blocs).includes(c.uid) ? "peut" : duelParalyse(s, c) ? "terne" : "";
+    if (monTour && duelPeutAttaquer(s, 0, c)) return "peut";
+    return "";
+  };
+  const nomDe = (uid, camp) => { const c = s.joueurs[camp].plateau.find((x) => x.uid === uid); return c ? c.nom : "?"; };
+  const totalEntrant = attaquantsAdv.filter((u) => blocs[u] == null).reduce((t, u) => { const c = adv.plateau.find((x) => x.uid === u); return t + (c ? duelForce(s, 1, c) : 0); }, 0);
+
+  return (
+    <div className="dl-ecran">
+      <style>{CSS_DUEL}</style>
+      <div className="dl-barre adv">
+        <span style={{ fontSize: 18 }}>🌿</span>
+        <span style={{ fontWeight: 700, flex: 1, minWidth: 0 }}>{adv.nom} <span style={{ color: C.papierSombre, fontWeight: 400 }}>· ✋{adv.main.length} · 🂠{adv.deck.length}</span></span>
+        {pips(adv)}
+        <span className={"dl-pv" + (adv.pv <= 5 ? " bas" : "")}>❤ {adv.pv}</span>
+      </div>
+      <div className="dl-rang">
+        {adv.plateau.map((c) => <MiniDuel key={c.uid} c={c} s={s} camp={1} photos={photos} classe={classeAdv(c)} onClick={() => clicAdv(c)}
+          badge={mode === "blocage" && blocs[c.uid] != null ? "🛡️" : null} />)}
+        {vides(adv.plateau.length)}
+      </div>
+      <div className="dl-terrain">Terrain : {terrain.emoji} {terrain.label} · 🏡 les créatures trouvées ici ont +1 Force</div>
+      <div className="dl-rang">
+        {moi.plateau.map((c) => <MiniDuel key={c.uid} c={c} s={s} camp={0} photos={photos} classe={classeMoi(c)} onClick={() => clicMoi(c)}
+          badge={mode === "blocage" && Object.values(blocs).includes(c.uid) ? "🛡️" : null} />)}
+        {vides(moi.plateau.length)}
+      </div>
+      <div className="dl-journal">
+        {s.journal.slice(-5).map((j, i, arr) => <div key={j.n} className={(i >= arr.length - 2 ? "recent " : "") + (j.camp === 1 ? "c1" : "")}>{j.t}</div>)}
+      </div>
+
+      {mode === "cible" && <div className="dl-bandeau">🎯 Touche la créature adverse à viser.</div>}
+      {mode === "attaque" && <div className="dl-bandeau">⚔️ Touche tes créatures qui attaquent ({choisis.length} choisie{choisis.length > 1 ? "s" : ""}).</div>}
+      {mode === "blocage" && (
+        <div className="dl-bandeau">
+          {moi.plateau.some((b) => attaquantsAdv.some((u) => { const a = adv.plateau.find((x) => x.uid === u); return a && duelPeutBloquer(s, b, a); }))
+            ? "🛡️ La nature attaque ! Touche une de tes créatures, puis l'attaquant qu'elle bloque."
+            : "🛡️ La nature attaque ! Tu n'as aucune créature capable de bloquer."}
+          {Object.keys(blocs).length > 0 && <div style={{ marginTop: 3, color: "#EDE6D2" }}>{Object.entries(blocs).map(([a, b]) => nomDe(Number(b), 0) + " bloque " + nomDe(Number(a), 1)).join(" · ")}</div>}
+          <div style={{ marginTop: 3, fontWeight: 800 }}>{totalEntrant ? "Dégâts sur toi si tu valides : −" + totalEntrant + " PV" : "Aucun dégât sur toi"}</div>
+        </div>
+      )}
+      {occupe && <div className="dl-bandeau" style={{ background: "#2A2116" }}>🌿 La nature réfléchit…</div>}
+
+      <div className="dl-barre moi" style={{ marginTop: 6 }}>
+        <span style={{ fontWeight: 700, flex: 1 }}>{prenom || "Toi"} <span style={{ color: C.papierSombre, fontWeight: 400 }}>· 🂠{moi.deck.length}</span></span>
+        {pips(moi)}
+        <span className={"dl-pv" + (moi.pv <= 5 ? " bas" : "")}>❤ {moi.pv}</span>
+      </div>
+      <div className="dl-main">
+        {moi.main.map((c) => (
+          <MiniDuel key={c.uid} c={c} s={null} camp={0} photos={photos} avecNom
+            classe={monTour && !mode && duelPeutJouer(s, 0, c) ? "peut" : mode ? "terne" : ""}
+            onClick={() => { if (!mode) setFiche({ c, camp: 0, main: true }); }} />
+        ))}
+        {!moi.main.length && <div style={{ fontSize: 12, color: C.papierSombre, padding: "30px 8px" }}>Main vide</div>}
+      </div>
+
+      <div className="dl-actions">
+        {mode === "cible" && <button className="dl-btn sec" onClick={() => { setMode(null); setEnAttente(null); }}>Annuler</button>}
+        {mode === "attaque" && <>
+          <button className="dl-btn sec" onClick={() => { setMode(null); setChoisis([]); }}>Annuler</button>
+          <button className="dl-btn rouge" disabled={!choisis.length} onClick={lancerAttaque}>Attaquer ({choisis.length})</button>
+        </>}
+        {mode === "blocage" && <button className="dl-btn prim" disabled={!blocagePret} onClick={validerBlocages}>Valider {Object.keys(blocs).length ? `(${Object.keys(blocs).length} blocage${Object.keys(blocs).length > 1 ? "s" : ""})` : "sans bloquer"}</button>}
+        {!mode && <>
+          <button className="dl-btn sec" style={{ flex: "0 0 auto" }} onClick={quitter} aria-label="Quitter">✕</button>
+          <button className="dl-btn rouge" disabled={!peutAttaquerQqn} onClick={() => { setMode("attaque"); setChoisis(moi.plateau.filter((c) => duelPeutAttaquer(s, 0, c)).map((c) => c.uid)); }}>⚔️ Attaquer</button>
+          <button className="dl-btn prim" disabled={!monTour} onClick={finTour}>Fin du tour</button>
+        </>}
+      </div>
+
+      {fiche && (
+        <FicheDuel c={fiche.c} s={s} camp={fiche.camp} photos={photos} onFermer={() => setFiche(null)}>
+          {fiche.main && (
+            <button className="dl-btn prim" disabled={!duelPeutJouer(s, 0, fiche.c)} onClick={() => demanderJouer(fiche.c)}>
+              {!monTour ? "Attends ton tour" : fiche.c.cout > moi.energie ? `Pas assez d'énergie (${moi.energie}/${fiche.c.cout})`
+                : fiche.c.kind === "creature" && moi.plateau.length >= DUEL_PLATEAU ? "Plateau plein (5 max)"
+                : (fiche.c.kind === "creature" ? "Poser" : "Jouer") + " · ⚡ " + fiche.c.cout}
+            </button>
+          )}
+          <button className="dl-btn sec" onClick={() => setFiche(null)}>Fermer</button>
+        </FicheDuel>
+      )}
+
+      {s.fini != null && (
+        <div className="dl-fin">
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center", maxWidth: 320 }}>
+            <div style={{ fontSize: 56 }}>{s.fini === 0 ? "🏆" : "🍂"}</div>
+            <div style={{ fontFamily: serif, fontSize: 26, color: C.papier }}>{s.fini === 0 ? "Victoire !" : "La nature l'emporte"}</div>
+            <div style={{ fontSize: 13.5, color: C.papierClair, lineHeight: 1.5 }}>
+              {s.fini === 0 ? `Gagné en ${Math.ceil(s.tour / 2)} tours, avec ${moi.pv} PV restants.` : "Elle a encore des ressources… Retente ta chance, le terrain et la pioche changent à chaque partie."}
+            </div>
+            <button className="dl-btn prim" style={{ width: "100%" }} onClick={lancer}>Rejouer</button>
+            <button className="dl-btn sec" style={{ width: "100%" }} onClick={quitter}>Retour</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ModeCartes({ cartes, onOuvrir, onRevelee, observations, prenom, onDefinirPrenom, onDefier, sousVueInitiale, onSyncXp, onRecordArene, mode }) {
   // v1.83 — Un seul niveau d'onglets : Cartes · Ligue · Arène · Quiz (avant : Jeu > Combat >
   // Défier la bande / Arène > Défier / Mes cartes / …). « combat » et « ligue » (retour après un
@@ -14329,7 +15140,8 @@ function ModeCartes({ cartes, onOuvrir, onRevelee, observations, prenom, onDefin
   // le Jeu (mode par défaut) garde Ligue · Arène · Quiz.
   const album = mode === "album";
   const ongletCombat = MUR_ACTIF ? "ligue" : "libre";
-  const normaliser = (v) => (album ? "galerie" : (v === "combat" || v === "ligue" || v === "galerie" || !v) ? ongletCombat : v);
+  // v2.15 — l'onglet Jeu s'ouvre sur le Duel (bêta) ; « combat » / « ligue » (retour de défi) gardent la Ligue.
+  const normaliser = (v) => (album ? "galerie" : (v === "galerie" || !v) ? "duel" : (v === "combat" || v === "ligue") ? ongletCombat : v);
   const [sousVue, setSousVueBrute] = useState(normaliser(sousVueInitiale || "galerie")); // galerie | ligue | libre | arene | quiz
   const setSousVue = (v) => setSousVueBrute(normaliser(v));
   const [fOrdreC, setFOrdreC] = useState("");
@@ -14359,7 +15171,7 @@ function ModeCartes({ cartes, onOuvrir, onRevelee, observations, prenom, onDefin
     else liste.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)); // récentes
     return liste;
   })();
-  const sousOnglets = [MUR_ACTIF ? ["ligue", "Ligue", "trophee"] : ["libre", "Combat", "epees"], ["arene", "Arène", "epees"], ["quiz", "Quiz", "ampoule"]];
+  const sousOnglets = [["duel", "Duel β", "eclair"], MUR_ACTIF ? ["ligue", "Ligue", "trophee"] : ["libre", "Combat", "epees"], ["arene", "Arène", "epees"], ["quiz", "Quiz", "ampoule"]];
   const vueCombat = sousVue === "ligue" || sousVue === "libre" || sousVue === "arene";
   return (
     <div style={album ? {} : { padding: 16, maxWidth: 560, margin: "0 auto" }}>
@@ -14412,6 +15224,7 @@ function ModeCartes({ cartes, onOuvrir, onRevelee, observations, prenom, onDefin
       {sousVue === "ligue" && MUR_ACTIF && (
         <Ligue embarque observations={observations} prenom={prenom} onDefinirPrenom={onDefinirPrenom} onDefier={onDefier} onSyncXp={onSyncXp} />
       )}
+      {sousVue === "duel" && <DuelBeta cartes={cartes} prenom={prenom} />}
       {sousVue === "arene" && <Combat cartes={cartes} modeInitial="arene" onRecordArene={onRecordArene} />}
       {sousVue === "libre" && <Combat cartes={cartes} modeInitial="libre" />}
 
