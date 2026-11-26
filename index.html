@@ -516,11 +516,13 @@
   .bd-membre.actif .bd-membre-rond { background: #C9A24B; box-shadow: 0 0 0 2px rgba(201,162,75,.35); }
   .bd-membre-nom { max-width: 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: -.1px; color: #A8A48F; }
   .bd-membre.actif .bd-membre-nom { color: #E4C878; }
-  .bd-semaine { position: relative; display: block; width: 100%; height: 160px; padding: 0; border-radius: 18px; overflow: hidden; cursor: pointer; border: 1px solid rgba(201,162,75,.55); box-shadow: 0 0 18px rgba(201,162,75,.18); }
-  .bd-semaine img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .bd-semaine-bas { position: absolute; left: 0; right: 0; bottom: 0; padding: 28px 12px 10px; text-align: left; background: linear-gradient(transparent, rgba(6,8,5,.92)); }
+  /* v2.12 — bandeau compact (la trouvaille apparaît déjà en grand dans le fil) */
+  .bd-semaine { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 12px 8px 8px; border-radius: 16px; cursor: pointer; border: 1px solid rgba(201,162,75,.55); background: linear-gradient(100deg, rgba(201,162,75,.16), rgba(201,162,75,.04)); box-shadow: 0 0 14px rgba(201,162,75,.12); }
+  .bd-semaine img { width: 58px; height: 58px; flex-shrink: 0; border-radius: 12px; object-fit: cover; display: block; border: 1px solid rgba(201,162,75,.5); }
+  .bd-semaine-bas { flex: 1; min-width: 0; text-align: left; }
   .bd-semaine-bas span { display: block; font: 800 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: .6px; text-transform: uppercase; color: #E4C878; }
-  .bd-semaine-bas b { display: block; font: 700 18px 'Fraunces', Georgia, serif; color: #EDE6D2; margin-top: 3px; }
+  .bd-semaine-bas b { display: block; font: 700 15.5px 'Fraunces', Georgia, serif; color: #EDE6D2; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bd-semaine::after { content: "›"; color: #E4C878; font: 700 20px sans-serif; }
   .bd-aider { width: 100%; display: flex; gap: 10px; align-items: center; margin-top: 10px; padding: 10px 12px; border-radius: 14px; cursor: pointer;
     border: 1px dashed rgba(166,204,130,.6); background: rgba(127,163,95,.08); font: 12.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   .bd-aider.actif { border-style: solid; background: rgba(127,163,95,.16); }
@@ -764,7 +766,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v2.11";
+const VERSION = "v2.12";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -1503,6 +1505,16 @@ function JaugeConfiance({ confiance, niveau, compact }) {
 }
 
 // Petit badge de pourcentage de confiance, coloré du rouge (bas) au vert (haut).
+// v2.12 — Sur le mur, un mot plutôt qu'un pourcentage, et seulement si l'IA hésitait.
+function BadgeHesitation({ confiance, style }) {
+  const pct = pourcentConfiance(confiance);
+  if (pct === null || pct >= 70) return null;
+  return (
+    <span title={`Confiance de l'IA : ${pct} %`} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: sans, fontSize: 11, fontWeight: 800, color: "#2A1F08", background: "#E0B074", borderRadius: 6, padding: "1px 6px", whiteSpace: "nowrap", ...style }}>
+      🤖 {pct < 45 ? "IA très hésitante" : "IA hésitante"}
+    </span>
+  );
+}
 function BadgePourcent({ confiance, style }) {
   const pct = pourcentConfiance(confiance);
   if (pct === null) return null;
@@ -2314,6 +2326,12 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.12", date: "2026-11", items: [
+    "🧱 Mur plus léger : chaque trouvaille prend moitié moins de place, on en voit plus d'un coup d'œil.",
+    "❤️ Les réactions, le doute 🤔 et les commentaires 💬 tiennent sur une seule ligne, avec « Untel et Untel ont réagi » juste dessous.",
+    "🤖 Fini le « 55 % » mystérieux : le mur dit simplement « IA hésitante » quand l'identification est incertaine.",
+    "🏆 La trouvaille de la semaine devient un bandeau compact au lieu d'une grande photo en double.",
+  ] },
   { v: "2.11", date: "2026-11", items: [
     "👆 Recadrage : la page défile enfin normalement quand ton doigt glisse sur la photo. Seuls le cadre doré et sa poignée réagissent au doigt.",
     "📏 Les photos en hauteur ne prennent plus tout l'écran pendant le recadrage.",
@@ -12900,9 +12918,9 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
           <div onClick={() => setPostDetail(p)} style={{ cursor: "pointer" }}>
             {/* En-tête auteur : ce qui rend le mur « social ». L'emblème est mis en médaillon
                 et teinté du thème choisi par la personne (v1.61). */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px 9px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px 8px" }}>
               <span onClick={(e) => { if (onOuvrirProfil && p.auteur) { e.stopPropagation(); onOuvrirProfil(p.auteur); } }}
-                style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22,
+                style={{ flexShrink: 0, width: 36, height: 36, borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22,
                   background: `linear-gradient(${th.c1}, ${th.c2})`, border: `1.5px solid ${th.bord}`, cursor: onOuvrirProfil ? "pointer" : "default" }}>
                 {emblemeDe(p.auteur, profils)}
               </span>
@@ -12915,117 +12933,96 @@ function MurCommun({ prenom, onDefinirPrenom, onMarquerReactionsVues, onOuvrirPr
                   {ti ? `${ti.emoji} ${ti.nom}` : "\u00A0"}
                 </span>
               </span>
-              <span style={{ flexShrink: 0, fontFamily: sans, fontSize: 12.5, color: C.papierSombre, textAlign: "right" }}
+              <span style={{ flexShrink: 0, maxWidth: "42%", fontFamily: sans, fontSize: 12.5, color: C.papierSombre, textAlign: "right" }}
                 title={publicationTardive(p) ? `Observé le ${dateAffichagePost(p).toLocaleDateString("fr-FR")}, partagé ${publicationTardive(p)} jours plus tard` : ""}>
-                {dateAffichagePost(p) ? dateAffichagePost(p).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}
-                {publicationTardive(p) > 0 && <span style={{ opacity: .8 }}> ↩</span>}
+                <span style={{ display: "block" }}>
+                  {dateAffichagePost(p) ? dateAffichagePost(p).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : ""}
+                  {publicationTardive(p) > 0 && <span style={{ opacity: .8 }}> ↩</span>}
+                </span>
+                {p.lieu && <span style={{ display: "block", fontSize: 11, color: C.lichen, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {(BIOTOPES.find((b) => b.label === p.lieu) || {}).emoji || "📍"} {p.lieu}
+                </span>}
               </span>
             </div>
 
-            {/* Photo avec le nom d'espèce en surimpression sur un dégradé */}
+            {/* v2.12 — Photo au format 4:3 (avant : jusqu'à 360 px de haut), nom et badges en surimpression */}
             {p.photo_url && (
               <div className="bd-post-photo" style={{ position: "relative", overflow: "hidden" }} onClick={(e) => toucherPhoto(e, p)}>
-                <img src={p.photo_url} alt={p.espece} loading="lazy" style={{ width: "100%", maxHeight: 360, objectFit: "cover", display: "block" }} />
+                <img src={p.photo_url} alt={p.espece} loading="lazy" style={{ width: "100%", aspectRatio: "4 / 3", objectFit: "cover", display: "block", background: "#0F130C" }} />
                 {eclat === p.id && <span className="bd-eclat-feu" aria-hidden="true">🔥</span>}
-                <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "26px 14px 10px", background: "linear-gradient(transparent, rgba(10,13,8,.88))" }}>
-                  <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }}>
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      {p.espece
-                        ? <span style={{ display: "block", fontFamily: serif, fontSize: 18, fontWeight: 700, color: "#F5EFE0", textShadow: "0 1px 4px rgba(0,0,0,.7)", lineHeight: 1.2 }}>{p.espece}</span>
-                        : <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "3px 10px", borderRadius: 18, background: "rgba(42,36,16,.9)", border: "1px solid #B8862E", color: "#E4C878" }}>❓ À identifier</span>}
-                      {p.espece_sci && <span style={{ display: "block", fontFamily: serif, fontStyle: "italic", fontSize: 12.5, color: "#D8C89A", textShadow: "0 1px 3px rgba(0,0,0,.7)" }}>{p.espece_sci}</span>}
-                    </span>
-                    <span style={{ flexShrink: 0, display: "flex", gap: 5, alignItems: "center" }}>
-                      <BadgePourcent confiance={p.confiance} />
+                <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "30px 14px 10px", background: "linear-gradient(transparent, rgba(10,13,8,.9))" }}>
+                  {(BadgeRarete({ count: raretes[cleEspeceMur(p)] }) || BadgeHesitation({ confiance: p.confiance })) && (
+                    <span style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 5 }}>
                       <BadgeRarete count={raretes[cleEspeceMur(p)]} />
+                      <BadgeHesitation confiance={p.confiance} />
                     </span>
-                  </div>
+                  )}
+                  {p.espece
+                    ? <span style={{ display: "block", fontFamily: serif, fontSize: 19, fontWeight: 700, color: "#F5EFE0", textShadow: "0 1px 4px rgba(0,0,0,.7)", lineHeight: 1.2 }}>{p.espece}</span>
+                    : <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "3px 10px", borderRadius: 18, background: "rgba(42,36,16,.9)", border: "1px solid #B8862E", color: "#E4C878" }}>❓ À identifier</span>}
+                  {p.espece_sci && <span style={{ display: "block", fontFamily: serif, fontStyle: "italic", fontSize: 12.5, color: "#D8C89A", textShadow: "0 1px 3px rgba(0,0,0,.7)" }}>{p.espece_sci}</span>}
                 </div>
               </div>
             )}
-
-            <div style={{ padding: "10px 14px 4px" }}>
-              {/* Sans photo, le nom reprend sa place normale */}
-              {!p.photo_url && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                  {p.espece
-                    ? <span style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.papier }}>{p.espece}</span>
-                    : <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "3px 10px", borderRadius: 18, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", color: "#E4C878" }}>❓ À identifier</span>}
-                  <BadgePourcent confiance={p.confiance} />
-                  <BadgeRarete count={raretes[cleEspeceMur(p)]} />
-                </div>
-              )}
-              {/* Biotope en pastille plutôt qu'en texte gris */}
-              {p.lieu && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 2, padding: "3px 10px", borderRadius: 14, background: C.fond, border: `1px solid ${C.bordure}`, fontFamily: sans, fontSize: 12.5, color: C.lichen }}>
-                  {(BIOTOPES.find((b) => b.label === p.lieu) || {}).emoji || "📍"} {p.lieu}
-                </span>
-              )}
-              {p.note && <div style={{ fontFamily: sans, fontSize: 12.5, color: C.papier, lineHeight: 1.5, marginTop: 8, fontStyle: "italic" }}>« {p.note} »</div>}
-            </div>
+            {/* Sans photo, le nom reprend sa place normale */}
+            {!p.photo_url && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "4px 14px 0" }}>
+                {p.espece
+                  ? <span style={{ fontFamily: serif, fontSize: 18, fontWeight: 600, color: C.papier }}>{p.espece}</span>
+                  : <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: sans, fontSize: 12.5, fontWeight: 700, padding: "3px 10px", borderRadius: 18, background: "linear-gradient(#2A2410, #221C0C)", border: "1px solid #B8862E", color: "#E4C878" }}>❓ À identifier</span>}
+                <BadgeRarete count={raretes[cleEspeceMur(p)]} />
+                <BadgeHesitation confiance={p.confiance} />
+              </div>
+            )}
+            {p.note && <div style={{ fontFamily: sans, fontSize: 13, color: C.papier, lineHeight: 1.5, padding: "8px 14px 0", fontStyle: "italic" }}>« {p.note} »</div>}
           </div>
           ); })()}
-          {/* Barre d'actions : commenter directement (ouvre le détail focalisé sur la zone commentaire) */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 14px 4px" }}>
-            <button onClick={() => { setDetailFocusCom(true); setPostDetail(p); }}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 18, cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: 600,
-                border: `1px solid ${comptesCom[p.id] > 0 ? "#6F9450" : C.bordure}`, background: comptesCom[p.id] > 0 ? "linear-gradient(#1E2A18, #1C2318)" : C.panneauClair, color: comptesCom[p.id] > 0 ? "#A6CC82" : C.papier }}>
-              <span style={{ fontSize: 16 }}>💬</span>
-              {comptesCom[p.id] > 0 ? `Commenter (${comptesCom[p.id]})` : "Commenter"}
-            </button>
-            <button onClick={() => { setDetailFocusCom(false); setPostDetail(p); }}
-              style={{ background: "none", border: "none", fontFamily: sans, fontSize: 12.5, color: C.ambre, cursor: "pointer", opacity: 0.85, padding: "6px 0" }}>
-              En savoir plus →
-            </button>
-          </div>
-          <div style={{ display: "flex", gap: 6, padding: "8px 14px 2px", flexWrap: "wrap" }}>
-            {REACTIONS.map((r) => {
-              const liste = (reactions[p.id] && reactions[p.id][r.type]) || [];
-              const n = liste.length;
-              const jaiReagi = prenom && liste.map((x) => x.toLowerCase()).includes(prenom.trim().toLowerCase());
-              return (
-                <button key={r.type} onClick={() => surReaction(p.id, r.type)} title={n > 0 ? liste.join(", ") : r.titre}
-                  style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 9px", borderRadius: 18, border: `1px solid ${jaiReagi ? C.ambre : (n > 0 ? "#A8863A" : C.bordure)}`, background: jaiReagi ? "linear-gradient(#3A4A2C, #2C3623)" : (n > 0 ? "linear-gradient(#2C3623, #232B1D)" : C.panneauClair), cursor: "pointer", fontFamily: sans, fontSize: 12.5 }}>
-                  <span style={{ fontSize: 16 }}>{r.emoji}</span>
-                  {n > 0 && <span style={{ fontWeight: 700, color: C.ambreClair, fontSize: 12.5 }}>{n}</span>}
-                </button>
-              );
-            })}
-          </div>
-          {/* Qui a réagi */}
+          {/* v2.12 — Une seule ligne d'actions : réactions, doute, commentaires.
+              (Toucher la publication l'ouvre en entier : plus besoin de « En savoir plus ».) */}
           {(() => {
             const parType = reactions[p.id] || {};
-            const lignes = REACTIONS.filter((r) => (parType[r.type] || []).length > 0);
-            if (lignes.length === 0) return null;
+            const moi = (prenom || "").trim().toLowerCase();
+            const qui = [...new Set(REACTIONS.flatMap((r) => parType[r.type] || []))];
+            const doutes = parType.doute || [];
+            const jeDoute = !!moi && doutes.map((x) => x.toLowerCase()).includes(moi);
+            const nCom = comptesCom[p.id] || 0;
+            const puce = (actif, rempli, extra) => ({ display: "inline-flex", alignItems: "center", gap: 3, height: 32, padding: "0 8px", borderRadius: 16, cursor: "pointer", fontFamily: sans, fontSize: 12.5,
+              border: `1px solid ${actif ? C.ambre : (rempli ? "#A8863A" : C.bordure)}`, background: actif ? "linear-gradient(#3A4A2C, #2C3623)" : (rempli ? "linear-gradient(#2C3623, #232B1D)" : C.panneauClair), color: C.papier, ...extra });
+            const texteQui = qui.length === 0 ? "" : qui.length === 1 ? `${qui[0]} a réagi`
+              : qui.length === 2 ? `${qui[0]} et ${qui[1]} ont réagi` : `${qui[0]}, ${qui[1]} et ${qui.length - 2} autre${qui.length > 3 ? "s" : ""} ont réagi`;
             return (
-              <div style={{ padding: "6px 14px 2px", display: "flex", flexWrap: "wrap", gap: "2px 10px" }}>
-                {lignes.map((r) => (
-                  <span key={r.type} style={{ fontFamily: sans, fontSize: 12.5, color: C.papierSombre }}>
-                    <span style={{ fontSize: 12.5 }}>{r.emoji}</span> {parType[r.type].join(", ")}
-                  </span>
-                ))}
-              </div>
-            );
-          })()}
-          {/* Doute sur l'identification : réaction spéciale, séparée des réactions positives.
-              Ouvre la discussion sans dénoncer. Masqué si la publication n'a pas de nom (rien à contester). */}
-          {p.espece && (() => {
-            const liste = (reactions[p.id] && reactions[p.id]["doute"]) || [];
-            const n = liste.length;
-            const jeDoute = prenom && liste.map((x) => x.toLowerCase()).includes(prenom.trim().toLowerCase());
-            return (
-              <div style={{ padding: "2px 14px 6px" }}>
-                <button onClick={() => surReaction(p.id, "doute")} title={n > 0 ? liste.join(", ") : "Signaler un doute sur l'identification"}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 18, cursor: "pointer", fontFamily: sans, fontSize: 12.5,
-                    border: `1px solid ${jeDoute ? "#C98A4B" : (n > 0 ? "#8A6E3A" : C.bordure)}`,
-                    background: jeDoute ? "linear-gradient(#3A2E1C, #2A2417)" : (n > 0 ? "linear-gradient(#2A2417, #201B12)" : C.panneauClair),
-                    color: n > 0 ? "#E0B074" : C.papierSombre }}>
-                  <span style={{ fontSize: 14 }}>🤔</span>
-                  {n > 0 ? <span style={{ fontWeight: 700 }}>{n} doute{n > 1 ? "nt" : ""} de l'ID</span> : <span>Je doute de l'ID</span>}
-                </button>
-                {n > 0 && (
-                  <div style={{ fontFamily: sans, fontSize: 11, color: C.papierSombre, marginTop: 4, fontStyle: "italic" }}>
-                    Une autre idée d'identification ? Ouvre la publication pour en discuter.
+              <div style={{ padding: "9px 12px 4px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                  {REACTIONS.map((r) => {
+                    const liste = parType[r.type] || [];
+                    const n = liste.length;
+                    const jaiReagi = !!moi && liste.map((x) => x.toLowerCase()).includes(moi);
+                    return (
+                      <button key={r.type} onClick={() => surReaction(p.id, r.type)} title={n > 0 ? liste.join(", ") : r.titre} aria-label={r.titre} style={puce(jaiReagi, n > 0)}>
+                        <span style={{ fontSize: 15 }}>{r.emoji}</span>
+                        {n > 0 && <span style={{ fontWeight: 700, color: C.ambreClair }}>{n}</span>}
+                      </button>
+                    );
+                  })}
+                  <span style={{ flex: 1 }} />
+                  {p.espece && (
+                    <button onClick={() => surReaction(p.id, "doute")} title={doutes.length > 0 ? "Doutent de l'ID : " + doutes.join(", ") : "Je doute de l'identification"} aria-label="Je doute de l'identification"
+                      style={puce(false, false, { borderStyle: jeDoute || doutes.length ? "solid" : "dashed", borderColor: jeDoute ? "#C98A4B" : (doutes.length ? "#8A6E3A" : C.bordure), background: jeDoute ? "linear-gradient(#3A2E1C, #2A2417)" : C.panneauClair, color: doutes.length ? "#E0B074" : C.papierSombre })}>
+                      <span style={{ fontSize: 15 }}>🤔</span>
+                      {doutes.length > 0 && <span style={{ fontWeight: 700 }}>{doutes.length}</span>}
+                    </button>
+                  )}
+                  <button onClick={() => { setDetailFocusCom(true); setPostDetail(p); }} title="Commenter" aria-label="Commenter"
+                    style={puce(false, nCom > 0, { borderColor: nCom > 0 ? "#6F9450" : C.bordure, background: nCom > 0 ? "linear-gradient(#1E2A18, #1C2318)" : C.panneauClair, color: nCom > 0 ? "#A6CC82" : C.papier })}>
+                    <span style={{ fontSize: 15 }}>💬</span>
+                    {nCom > 0 && <span style={{ fontWeight: 700 }}>{nCom}</span>}
+                  </button>
+                </div>
+                {(qui.length > 0 || doutes.length > 0) && (
+                  <div onClick={() => { setDetailFocusCom(false); setPostDetail(p); }}
+                    style={{ fontFamily: sans, fontSize: 12, color: C.papierSombre, marginTop: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}>
+                    {texteQui}
+                    {doutes.length > 0 && <span style={{ color: "#E0B074" }}>{qui.length > 0 ? " · " : ""}🤔 {doutes.length} doute{doutes.length > 1 ? "nt" : ""} de l'ID</span>}
                   </div>
                 )}
               </div>
