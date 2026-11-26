@@ -764,7 +764,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v2.10";
+const VERSION = "v2.11";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -2314,6 +2314,10 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.11", date: "2026-11", items: [
+    "👆 Recadrage : la page défile enfin normalement quand ton doigt glisse sur la photo. Seuls le cadre doré et sa poignée réagissent au doigt.",
+    "📏 Les photos en hauteur ne prennent plus tout l'écran pendant le recadrage.",
+  ] },
   { v: "2.10", date: "2026-11", items: [
     "🐞 BioDex reste fidèle aux insectes : un escargot, un oiseau ou une plante restent dans ton carnet, mais sans carte de collection. Un petit mot te l'explique et t'oriente vers iNaturalist.",
     "❓ Nouvelle question dans l'aide : « Pourquoi seulement les insectes ? »",
@@ -3253,23 +3257,28 @@ function SelecteurZone({ photoUrl, zone, onChange }) {
   const pct = (v) => `${v * 100}%`;
 
   return (
-    <div ref={boxRef} style={{ position: "relative", width: "100%", borderRadius: 10, overflow: "hidden", border: `1px solid ${C.bordure}`, touchAction: "none", userSelect: "none" }}>
-      <img src={photoUrl} alt="spécimen" style={{ width: "100%", display: "block", pointerEvents: "none" }} />
+    // v2.11 — Avant, toute la photo bloquait le défilement (touch-action: none) : sur une photo
+    // qui remplit l'écran, on ne pouvait plus faire défiler la page qu'en touchant les bords.
+    // Désormais seuls le cadre et sa poignée captent le doigt, et la photo est limitée en hauteur.
+    <div style={{ display: "flex", justifyContent: "center" }}>
+    <div ref={boxRef} style={{ position: "relative", maxWidth: "100%", borderRadius: 10, overflow: "hidden", border: `1px solid ${C.bordure}`, userSelect: "none", WebkitUserSelect: "none" }}>
+      <img src={photoUrl} alt="spécimen" draggable={false} style={{ maxWidth: "100%", maxHeight: "60vh", width: "auto", height: "auto", display: "block", pointerEvents: "none" }} />
       {/* Voile sombre autour de la zone */}
       <div style={{ position: "absolute", inset: 0, boxShadow: "0 0 0 9999px rgba(0,0,0,0.45)", clipPath: `polygon(0 0, 0 100%, ${pct(zone.x)} 100%, ${pct(zone.x)} ${pct(zone.y)}, ${pct(zone.x + zone.w)} ${pct(zone.y)}, ${pct(zone.x + zone.w)} ${pct(zone.y + zone.h)}, ${pct(zone.x)} ${pct(zone.y + zone.h)}, ${pct(zone.x)} 100%, 100% 100%, 100% 0)`, pointerEvents: "none" }} />
       {/* Cadre */}
       <div
         onMouseDown={(e) => debut("move", e)}
         onTouchStart={(e) => debut("move", e)}
-        style={{ position: "absolute", left: pct(zone.x), top: pct(zone.y), width: pct(zone.w), height: pct(zone.h), border: `2px solid ${C.ambre}`, boxSizing: "border-box", cursor: "move" }}
+        style={{ position: "absolute", left: pct(zone.x), top: pct(zone.y), width: pct(zone.w), height: pct(zone.h), border: `2px solid ${C.ambre}`, boxSizing: "border-box", cursor: "move", touchAction: "none" }}
       >
         {/* Poignée de redimensionnement (coin bas-droit) */}
         <div
           onMouseDown={(e) => debut("resize", e)}
           onTouchStart={(e) => debut("resize", e)}
-          style={{ position: "absolute", right: -12, bottom: -12, width: 28, height: 28, borderRadius: "50%", background: C.ambre, border: "2px solid #0F130C", cursor: "nwse-resize", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12.5 }}
+          style={{ position: "absolute", right: -14, bottom: -14, width: 32, height: 32, borderRadius: "50%", background: C.ambre, border: "2px solid #0F130C", cursor: "nwse-resize", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, touchAction: "none" }}
         >⤡</div>
       </div>
+    </div>
     </div>
   );
 }
