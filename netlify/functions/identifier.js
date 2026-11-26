@@ -368,7 +368,8 @@ exports.handler = async (event) => {
       "les proportions et la taille estimée, les couleurs et motifs. Déduis d'abord l'ordre, puis affine autant que l'image le permet. " +
       "Utilise le contexte de terrain comme un FILTRE BIOGÉOGRAPHIQUE : la région/zone climatique indiquée oriente vers la faune locale " +
       "(privilégie les espèces réellement présentes dans cette partie du monde ; une espèce européenne est improbable sous les tropiques, et inversement) ; " +
-      "la saison (mois) restreint les espèces au stade adulte visible à cette période — attention, les saisons sont inversées dans l'hémisphère sud ; " +
+      "la saison (mois) restreint les espèces au stade adulte visible à cette période (les œufs, larves, chrysalides et traces se voient, eux, toute l'année) — attention, les saisons sont inversées dans l'hémisphère sud ; " +
+      "La photo peut montrer une TRACE plutôt que l'animal (galle, mine dans une feuille, nid, exuvie, toile, galerie dans le bois) : identifie alors l'insecte ou l'araignée qui l'a produite, et donne l'ordre de cet auteur. " +
       "le biotope écarte les espèces au habitat incompatible. " +
       "Si aucune région n'est fournie, ne suppose aucune localisation particulière et raisonne uniquement sur les critères visuels. " +
       "SI PLUSIEURS PHOTOS te sont fournies, elles montrent le MÊME individu sous des angles différents (dessus, profil, détail...) : croise-les pour affiner ton identification, " +
@@ -386,6 +387,7 @@ exports.handler = async (event) => {
       '"note":"justification courte : critères visuels décisifs, ou pourquoi l\'ID reste incertaine",' +
       '"role":"UNE phrase courte et concrète (max ~15 mots) sur le rôle écologique / l\'utilité de cet arthropode : pollinisation, recyclage de matière, régulation d\'autres espèces, maillon alimentaire, aération du sol, etc. Formulation grand public, sans jargon. Vide si vraiment inconnu.",' +
       '"ordre":"le grand groupe d\'arthropodes, en UN seul mot parmi exactement : lepidopteres, coleopteres, hymenopteres, dipteres, hemipteres, orthopteres, odonates, arachnides, myriapodes. Si c\'est un arthropode d\'un autre groupe ou si tu hésites : autres. Si ce n\'est PAS un arthropode (escargot, limace, ver, oiseau, reptile, amphibien, mammifère, plante, champignon…) : hors.",' +
+      '"stade":"ce que montre la photo, en UN mot parmi exactement : adulte, oeuf (œufs, ponte, oothèque), larve (chenille, larve, nymphe d\'insecte sans métamorphose complète), nymphe (chrysalide, cocon, pupe), trace (galle, mine, nid, exuvie, toile, galerie)",' +
       '"inhabituel":"vide si de présence normale pour la zone ; SINON une phrase expliquant pourquoi cette observation est notable (ex : espèce invasive en expansion, hors de son aire habituelle, échappée...)",' +
       '"contact":"UN mot parmi exactement : inoffensif (se manipule sans risque), defensif (peut piquer, mordre ou pincer si on le manipule), douloureux (piqûre ou morsure douloureuse, ne pas manipuler), urticant (poils ou sécrétions irritants, ne pas toucher), inconnu. Sois prudent : dans le doute entre deux niveaux, choisis le plus élevé.",' +
       '"contact_note":"une phrase courte et concrète de conseil de manipulation (ex : Ne le prends pas dans la main, sa piqûre est douloureuse), vide si inoffensif",' +

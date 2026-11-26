@@ -809,7 +809,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v2.13";
+const VERSION = "v2.14";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -2125,10 +2125,38 @@ function missionsDe(saisonCle) {
     hiver: [
       { id: "hi_actif", emoji: "❄️", titre: "Chasseur d'hiver", desc: "Fais 3 observations cet hiver (pas si facile !)", cond: { type: "nombre", n: 3 } },
       { id: "hi_urbain", emoji: "🏙️", titre: "Refuges urbains", desc: "Observe un insecte en ville", cond: { type: "biotope", biotope: "urbain" } },
+      { id: "hi_dormeurs", emoji: "🛌", titre: "Dormeurs d'hiver", desc: "Trouve des œufs, une larve, une chrysalide ou un cocon (sous une écorce, dans un tas de bois…)", cond: { type: "stade", stades: ["oeuf", "larve", "nymphe"] } },
+      { id: "hi_detective", emoji: "🔍", titre: "Détective", desc: "Photographie une trace d'insecte : galle, mine dans une feuille, nid, exuvie, toile…", cond: { type: "stade", stades: ["trace"] } },
+      { id: "hi_enqueteur", emoji: "🕵️", titre: "Enquêteur des traces", desc: "Trouve 3 traces laissées par 3 insectes différents", cond: { type: "stade", stades: ["trace"], n: 3 } },
     ],
   };
   return [...(parSaison[type] || []), ...communes];
 }
+
+// v2.14 — Ce que montre la photo : l'adulte, une forme cachée (œufs, larve, chrysalide/cocon)
+// ou une trace laissée par l'insecte. Choisi à l'enregistrement (proposé par l'IA) ;
+// pour les anciennes fiches, on le devine d'après le nom.
+const STADES = [
+  { id: "adulte", label: "Adulte", emoji: "🐞" },
+  { id: "oeuf", label: "Œufs", emoji: "🥚" },
+  { id: "larve", label: "Larve / chenille", emoji: "🐛" },
+  { id: "nymphe", label: "Chrysalide / cocon", emoji: "🛌" },
+  { id: "trace", label: "Trace", emoji: "🔍" },
+];
+function stadeDe(o) {
+  if (!o) return "";
+  if (STADES.some((s) => s.id === o.stade)) return o.stade;
+  const n = sansAccents(o.nom || "");
+  if (!n) return "";
+  if (/\bportant\b/.test(n)) return ""; // ex. « Araignée-loup (femelle portant son cocon) » : c'est l'adulte
+  if (/\bcocons?\b/.test(n) && /araignee/.test(n)) return "oeuf"; // le cocon d'une araignée contient ses œufs
+  if (/\b(galles?|mines?|nids?|exuvies?|galeries?|toiles?|traces?|terriers?|cocons? de soie collectifs?)\b/.test(n)) return "trace";
+  if (/\b(oeufs?|pontes?|ootheques?)\b/.test(n)) return "oeuf";
+  if (/\b(chenilles?|larves?|asticots?|vers? blancs?)\b/.test(n)) return "larve";
+  if (/\b(chrysalides?|cocons?|pupes?|nymphes?)\b/.test(n)) return "nymphe";
+  return "";
+}
+const stadeInfo = (id) => STADES.find((s) => s.id === id) || null;
 
 // Vérifie si une mission est remplie par la collection, sur la fenêtre de la saison.
 function missionRemplie(mission, observations, saison) {
@@ -2148,7 +2176,13 @@ function missionRemplie(mission, observations, saison) {
     const cibles = Array.isArray(c.biotope) ? c.biotope : [c.biotope];
     return dansSaison.some((o) => cibles.includes(o.biotope));
   }
+  if (c.type === "stade") return compteStades(dansSaison, c) >= (c.n || 1);
   return false;
+}
+// v2.14 — Nombre d'espèces (ou de trouvailles sans nom) au(x) stade(s) demandé(s).
+function compteStades(liste, c) {
+  const ok = liste.filter((o) => c.stades.includes(stadeDe(o)));
+  return new Set(ok.map((o) => cleEspeceMur(o) || o.id)).size;
 }
 
 // Progression chiffrée (pour l'affichage "3/5")
@@ -2164,6 +2198,7 @@ function missionProgres(mission, observations, saison) {
     const set = new Set(dansSaison.map((o) => (o.nomSci || o.nom || "").trim().toLowerCase()).filter(Boolean));
     return { actuel: Math.min(set.size, c.n), cible: c.n };
   }
+  if (c.type === "stade" && c.n > 1) return { actuel: Math.min(compteStades(dansSaison, c), c.n), cible: c.n };
   return null; // biotope/notable : binaire, pas de barre
 }
 
@@ -2369,6 +2404,11 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.14", date: "2026-11", items: [
+    "❄️ Pack hiver : les insectes ne disparaissent pas, ils se cachent ! Œufs, chenilles, chrysalides, cocons… et leurs traces (galles, mines dans les feuilles, nids, exuvies, toiles) comptent maintenant comme de vraies trouvailles.",
+    "🔍 À l'enregistrement, indique ce que montre ta photo : adulte, œufs, larve, chrysalide ou trace. L'IA le propose toute seule, et la carte affiche le stade.",
+    "🎯 Trois nouvelles missions d'hiver : Dormeurs d'hiver, Détective et Enquêteur des traces.",
+  ] },
   { v: "2.13", date: "2026-11", items: [
     "🐞 Ton année en insectes : ton bilan de l'année à feuilleter comme des stories. Tes chiffres, ta première trouvaille, ton mois record, ton groupe chouchou, ta perle rare, ton terrain de jeu et la bande. À retrouver sur l'accueil et dans le menu jusqu'à fin janvier.",
   ] },
@@ -8320,6 +8360,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
   const [contact, setContact] = useState(base ? base.contact || "" : "");           // v1.77
   const [contactNote, setContactNote] = useState(base ? base.contactNote || "" : "");
   const [ordreIA, setOrdreIA] = useState(base ? base.ordre || "" : "");
+  const [stade, setStade] = useState(base ? base.stade || "" : ""); // v2.14
   const [biotope, setBiotope] = useState(base ? base.biotope || "" : "");
   const [moment, setMoment] = useState(base ? (base.moment || momentDepuisDate(base.date || Date.now())) : momentDepuisDate(new Date()));
   // Date d'observation, modifiable. Format local "YYYY-MM-DDTHH:mm" pour l'input datetime-local.
@@ -8632,6 +8673,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
     if (res.inhabituel && String(res.inhabituel).trim().length > 3) setNotable(String(res.inhabituel).trim());
     if (res.role && String(res.role).trim().length > 3) setRole(String(res.role).trim());
     if (res.ordre && String(res.ordre).trim()) setOrdreIA(String(res.ordre).trim().toLowerCase());
+    if (res.stade && stadeInfo(String(res.stade).trim().toLowerCase())) setStade(String(res.stade).trim().toLowerCase());
     if (res.contact && NIVEAUX_CONTACT[normaliserContact(res.contact)]) setContact(normaliserContact(res.contact));
     if (res.contact_note) setContactNote(String(res.contact_note).trim().slice(0, 200));
   }
@@ -8754,6 +8796,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
           notable: notable || "",
           role: role || "",
           ordre: ordreIA || "",
+          stade: stade || "",
           contact: contact || "",
           contactNote: contactNote || "",
           aideDemandee: !nom.trim() && !nomSci.trim() ? (aideForcee === true || aideDemandee) : false,
@@ -8780,6 +8823,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
           notable: notable || "",
           role: role || "",
           ordre: ordreIA || "",
+          stade: stade || "",
           contact: contact || "",
           contactNote: contactNote || "",
           aideDemandee: !nom.trim() && !nomSci.trim() ? (aideForcee === true || aideDemandee) : false,
@@ -8803,6 +8847,7 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
           notable: notable || "",
           role: role || "",
           ordre: ordreIA || "",
+          stade: stade || "",
           contact: contact || "",
           contactNote: contactNote || "",
           aideDemandee: !nom.trim() && !nomSci.trim() ? (aideForcee === true || aideDemandee) : false,
@@ -9409,6 +9454,24 @@ function NouvelleObservation({ onSauver, onAnnuler, base, mode, observations, on
         </div>
       </div>
 
+      {/* v2.14 — Ce que montre la photo (facultatif ; proposé par l'IA ou deviné d'après le nom) */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={libelle}>Ce que montre ta photo</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {STADES.map((s) => {
+            const actif = (stade || stadeDe({ nom }) || "adulte") === s.id;
+            return (
+              <button key={s.id} onClick={() => setStade(s.id)} className={"bd-puce" + (actif ? " actif" : "")}>
+                {s.emoji} {s.label}
+              </button>
+            );
+          })}
+        </div>
+        {(stade || stadeDe({ nom })) && (stade || stadeDe({ nom })) !== "adulte" && (
+          <div style={{ fontFamily: sans, fontSize: 12, color: C.lichen, marginTop: 6 }}>❄️ Compte pour les missions d'hiver (formes cachées et traces).</div>
+        )}
+      </div>
+
       {/* Détails du terrain — repliés par défaut pour alléger l'écran.
           Le résumé sous le titre montre ce qui est déjà rempli, sans avoir à ouvrir. */}
       <SectionPliable
@@ -9956,6 +10019,12 @@ function Detail({ obs, observations, onFermer, onSupprimer, onModifier, onMajFic
             <div style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "#A6CC82", marginBottom: 3 }}>À quoi il sert</div>
             <div style={{ fontFamily: sans, fontSize: 14, color: C.papier, lineHeight: 1.55 }}>{obs.role}</div>
           </div>
+        </div>
+      )}
+      {/* v2.14 — Stade (si ce n'est pas l'adulte) */}
+      {stadeInfo(stadeDe(obs)) && stadeDe(obs) !== "adulte" && (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, padding: "4px 11px", borderRadius: 14, border: "1px solid #5C7A8A", background: "linear-gradient(#1C2630, #141C22)", fontFamily: sans, fontSize: 12.5, color: "#BFD6E2" }}>
+          {stadeInfo(stadeDe(obs)).emoji} {stadeInfo(stadeDe(obs)).label}{stadeDe(obs) === "trace" ? " laissée par l'insecte" : " · forme cachée"}
         </div>
       )}
       {/* v1.77 — Ça pique ? (niveau de l'IA, relevé par la liste locale des espèces à risque ; par le nom seul pour les anciennes fiches) */}
@@ -12049,6 +12118,10 @@ function Aide({ onFermer, onImportTermine, ouvrirSauvegarde }) {
       <TitreEcran icone="aide" titre="Le guide BioDex" sous="Ton carnet de terrain, mode d'emploi. Touche une question pour lire la réponse." />
 
       <SectionPliable titre="Observer et identifier" ouvertParDefaut>
+        <QR q="Et en hiver, il n'y a plus rien à trouver ?">
+        <p style={{ ...p, marginBottom: 0 }}>
+          Si ! Les insectes ne disparaissent pas, ils se cachent. Cherche les <b>formes cachées</b> : œufs sur les branches, chenilles et larves sous les écorces ou dans le bois mort, chrysalides et cocons au coin des murs, coccinelles regroupées. Et les <b>traces</b> : galles sur les chênes et les rosiers, mines dans les feuilles, nids de guêpes abandonnés, exuvies, toiles d'araignées. À l'enregistrement, indique ce que montre ta photo : ça compte pour les missions d'hiver.
+        </p></QR>
         <QR q="Pourquoi seulement les insectes ?">
         <p style={{ ...p, marginBottom: 0 }}>
           Parce que c'est la raison d'être de BioDex : faire découvrir et aimer les insectes, souvent mal aimés alors qu'ils sont essentiels — ils pollinisent, recyclent, nourrissent les oiseaux… et disparaissent vite. Le jeu (cartes, combats, défis) est là pour donner envie de les regarder de plus près. Leurs proches cousins, araignées, mille-pattes et cloportes, sont aussi les bienvenus. Un escargot, un oiseau ou une plante ? Ta trouvaille reste dans ton carnet, mais sans carte. Pour eux, d'autres applis font ça très bien : <b>Pl@ntNet</b> pour les plantes, <b>Merlin</b> pour les oiseaux, et <b>iNaturalist</b> pour tout le vivant.
@@ -13506,6 +13579,11 @@ function CarteCollection({ obs, grand = false, suivreDoigt = false, vivante = fa
           <PhotoBlobRecadree blob={obs.photo} zone={obs.cadreCarte || obs.cadrePhoto} alt={obs.nom} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
           {vues > 1 && (
             <span style={{ position: "absolute", left: ".35em", bottom: ".35em", background: "rgba(20,18,10,.82)", color: "#F2E6C4", fontWeight: 800, fontSize: ".78em", padding: ".12em .45em", borderRadius: "1em" }}>👁 {vues}</span>
+          )}
+          {stadeInfo(stadeDe(obs)) && stadeDe(obs) !== "adulte" && (
+            <span style={{ position: "absolute", right: ".35em", bottom: ".35em", background: "rgba(20,30,38,.88)", color: "#CFE6F2", border: "1px solid #7FA6BA", fontWeight: 800, fontSize: ".7em", padding: ".12em .45em", borderRadius: "1em", textTransform: "uppercase", letterSpacing: ".03em" }}>
+              {stadeInfo(stadeDe(obs)).emoji} {stadeDe(obs) === "nymphe" ? "Chrysalide" : stadeDe(obs) === "larve" ? "Larve" : stadeInfo(stadeDe(obs)).label}
+            </span>
           )}
           {c.authentique === false && (
             <span title={c.authenticite_raison || "Authenticité douteuse"} style={{ position: "absolute", top: ".35em", left: ".35em", background: "rgba(140,40,30,.92)", color: "#FFDDD4", border: "1px solid #E5603E", fontWeight: 800, fontSize: ".68em", padding: ".1em .45em", borderRadius: "1em" }}>⚠ NON VÉRIFIÉE</span>
