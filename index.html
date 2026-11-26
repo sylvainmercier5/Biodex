@@ -523,6 +523,49 @@
   .bd-semaine-bas span { display: block; font: 800 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: .6px; text-transform: uppercase; color: #E4C878; }
   .bd-semaine-bas b { display: block; font: 700 15.5px 'Fraunces', Georgia, serif; color: #EDE6D2; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bd-semaine::after { content: "›"; color: #E4C878; font: 700 20px sans-serif; }
+  /* v2.13 — « Ton année en insectes » : bilan à feuilleter comme des stories */
+  .bd-annee { width: 100%; display: flex; align-items: center; gap: 13px; margin-top: 12px; padding: 12px 14px; border-radius: 16px; cursor: pointer; text-align: left;
+    border: 1px solid rgba(228,200,120,.55); background: linear-gradient(110deg, #3A2E12, #1C2318 72%); box-shadow: 0 0 18px rgba(228,200,120,.15); color: #EDE6D2; }
+  .bd-annee-an { flex-shrink: 0; width: 54px; height: 54px; border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-direction: column;
+    background: linear-gradient(#E4C878, #B8862E); color: #2A1F08; font: 800 17px 'Fraunces', Georgia, serif; line-height: 1; }
+  .bd-annee-an small { font: 700 9px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: .5px; margin-top: 3px; }
+  .bd-annee b { display: block; font: 700 16px 'Fraunces', Georgia, serif; color: #F5EFE0; }
+  .bd-annee-txt { display: block; font: 12.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #CFC8B2; margin-top: 2px; }
+  .bd-an { position: fixed; inset: 0; z-index: 1400; display: flex; flex-direction: column; color: #EDE6D2; user-select: none; -webkit-user-select: none; transition: background .6s ease; }
+  .bd-an-barres { display: flex; gap: 4px; padding: calc(10px + env(safe-area-inset-top)) 12px 0; }
+  .bd-an-barres i { flex: 1; height: 3px; border-radius: 2px; background: rgba(237,230,210,.22); transition: background .3s; }
+  .bd-an-barres i.fait { background: #E4C878; }
+  .bd-an-haut { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px 0 16px; font: 800 11.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: .7px; text-transform: uppercase; color: #E4C878; }
+  .bd-an-fermer { width: 40px; height: 40px; border-radius: 20px; border: none; background: rgba(0,0,0,.25); color: #EDE6D2; font-size: 20px; cursor: pointer; }
+  .bd-an-corps { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 10px 24px 16px; overflow: hidden; animation: bd-an-entree .45s ease-out both; }
+  @keyframes bd-an-entree { from { opacity: 0; transform: translateY(18px) scale(.98); } to { opacity: 1; transform: none; } }
+  .bd-an-gros { font: 800 68px 'Fraunces', Georgia, serif; color: #E4C878; line-height: 1; }
+  .bd-an-moyen { font: 800 44px 'Fraunces', Georgia, serif; color: #E4C878; line-height: 1; }
+  .bd-an-titre { font: 700 25px 'Fraunces', Georgia, serif; line-height: 1.2; margin: 10px 0 8px; color: #F5EFE0; }
+  .bd-an-texte { font: 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #D6CFB8; line-height: 1.5; max-width: 330px; }
+  .bd-an-petit { font: 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: rgba(237,230,210,.7); line-height: 1.45; max-width: 320px; }
+  .bd-an-photo { width: min(62vw, 250px, 34vh); height: min(62vw, 250px, 34vh); border-radius: 22px; border: 2px solid rgba(228,200,120,.65); box-shadow: 0 10px 40px rgba(0,0,0,.5); margin: 12px 0; overflow: hidden; }
+  .bd-an-emoji { font-size: 78px; line-height: 1; animation: bd-an-flotte 3s ease-in-out infinite; }
+  @keyframes bd-an-flotte { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-8px) rotate(4deg); } }
+  .bd-an-mois { display: flex; align-items: flex-end; gap: 5px; height: 130px; width: min(86vw, 330px); margin: 16px 0 4px; }
+  .bd-an-mois span { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; font: 700 10.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: rgba(237,230,210,.6); gap: 4px; }
+  .bd-an-mois span i { width: 100%; border-radius: 4px 4px 2px 2px; background: rgba(237,230,210,.22); min-height: 3px; }
+  .bd-an-mois span.top i { background: linear-gradient(#F0D488, #B8862E); }
+  .bd-an-mois span.top { color: #E4C878; }
+  .bd-an-ligne { display: flex; align-items: center; gap: 10px; width: min(86vw, 320px); margin-top: 8px; font: 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: left; }
+  .bd-an-ligne em { font-style: normal; font-size: 22px; width: 30px; text-align: center; }
+  .bd-an-ligne .jauge { flex: 1; height: 10px; border-radius: 5px; background: rgba(237,230,210,.14); overflow: hidden; }
+  .bd-an-ligne .jauge i { display: block; height: 100%; border-radius: 5px; background: linear-gradient(90deg, #8AAE6B, #E4C878); }
+  .bd-an-ligne b { width: 26px; text-align: right; color: #E4C878; }
+  .bd-an-grille { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: min(70vw, 260px, 36vh); margin: 12px 0; }
+  .bd-an-grille > * { aspect-ratio: 1; width: 100%; border-radius: 14px; overflow: hidden; border: 1px solid rgba(228,200,120,.45); }
+  .bd-an-chiffres { display: flex; justify-content: center; gap: 18px; margin: 4px 0 10px; font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: rgba(237,230,210,.7); }
+  .bd-an-chiffres b { display: block; font: 800 24px 'Fraunces', Georgia, serif; color: #E4C878; }
+  .bd-an-boutons { display: flex; gap: 10px; margin-top: 16px; }
+  .bd-an-boutons button { padding: 11px 18px; border-radius: 22px; font: 700 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; cursor: pointer; border: 1px solid rgba(228,200,120,.6); background: rgba(0,0,0,.25); color: #EDE6D2; }
+  .bd-an-boutons button.or { background: linear-gradient(#E4C878, #C9A24B); color: #2A1F08; border-color: #E4C878; }
+  .bd-an-bas { font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: rgba(237,230,210,.5); text-align: center; padding: 0 16px calc(14px + env(safe-area-inset-bottom)); }
+  @media (prefers-reduced-motion: reduce) { .bd-an-corps, .bd-an-emoji { animation: none; } }
   .bd-aider { width: 100%; display: flex; gap: 10px; align-items: center; margin-top: 10px; padding: 10px 12px; border-radius: 14px; cursor: pointer;
     border: 1px dashed rgba(166,204,130,.6); background: rgba(127,163,95,.08); font: 12.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   .bd-aider.actif { border-style: solid; background: rgba(127,163,95,.16); }
@@ -766,7 +809,7 @@ const bdRetour = (() => {
 
 // ============ BioDex v1.71 (PWA) ============
 
-const VERSION = "v2.12";
+const VERSION = "v2.13";
 
 // ============================================================
 // Lien de soutien (dons). Colle ici ton lien PayPal.me (ou Ko-fi, etc.).
@@ -2326,6 +2369,9 @@ async function devaliderMission(saisonCle, missionId, auteur) {
 }
 
 const NOUVEAUTES = [
+  { v: "2.13", date: "2026-11", items: [
+    "🐞 Ton année en insectes : ton bilan de l'année à feuilleter comme des stories. Tes chiffres, ta première trouvaille, ton mois record, ton groupe chouchou, ta perle rare, ton terrain de jeu et la bande. À retrouver sur l'accueil et dans le menu jusqu'à fin janvier.",
+  ] },
   { v: "2.12", date: "2026-11", items: [
     "🧱 Mur plus léger : chaque trouvaille prend moitié moins de place, on en voit plus d'un coup d'œil.",
     "❤️ Les réactions, le doute 🤔 et les commentaires 💬 tiennent sur une seule ligne, avec « Untel et Untel ont réagi » juste dessous.",
@@ -3864,6 +3910,222 @@ function filtrerObservations(liste, f) {
 }
 
 // ---------- Vue : statistiques ----------
+// v2.13 — « Ton année en insectes » : le bilan de l'année, à feuilleter comme des stories.
+// Proposé de fin novembre à fin janvier (en janvier, c'est l'année qui vient de se terminer).
+function anneeBilan(d = new Date()) { return d.getMonth() === 0 ? d.getFullYear() - 1 : d.getFullYear(); }
+function periodeBilan(d = new Date()) { const m = d.getMonth(); return m === 11 || m === 0 || (m === 10 && d.getDate() >= 20); }
+function obsDeLAnnee(observations, an) {
+  return (observations || []).filter((o) => o.statut !== "a_trier" && o.date && new Date(o.date).getFullYear() === an)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+const MOIS_BILAN = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+
+function PhotoBilan({ obs, style }) {
+  const url = useBlobUrl(obs && obs.photo);
+  if (!url) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 56, background: "#1C2318", ...style }}>{ordreInfo(deduireOrdre(obs || {})).emoji}</div>;
+  return <img src={url} alt={(obs && obs.nom) || ""} draggable={false} style={{ objectFit: "cover", display: "block", width: "100%", height: "100%", ...style }} />;
+}
+
+function AnneeInsectes({ observations, raretes, prenom, onFermer }) {
+  const an = anneeBilan();
+  const obs = obsDeLAnnee(observations, an);
+  const premiereDe = {}, vues = {};
+  obs.forEach((o) => { const k = cleEspeceMur(o); if (!k) return; vues[k] = (vues[k] || 0) + 1; if (!premiereDe[k]) premiereDe[k] = o; });
+  const especes = Object.values(premiereDe);
+  const parMois = Array(12).fill(0);
+  obs.forEach((o) => { parMois[new Date(o.date).getMonth()]++; });
+  const maxMois = Math.max(...parMois);
+  const moisRecord = parMois.indexOf(maxMois);
+  const groupes = {};
+  especes.forEach((o) => { const g = deduireOrdre(o); if (g !== "autres") groupes[g] = (groupes[g] || 0) + 1; });
+  const groupesTri = Object.entries(groupes).sort((a, b) => b[1] - a[1]);
+  const rares = especes.map((o) => ({ o, count: (raretes || {})[cleEspeceMur(o)] }))
+    .filter((x) => typeof x.count === "number" && niveauRarete(x.count) && niveauRarete(x.count).bonus > 0)
+    .sort((a, b) => a.count - b.count);
+  const perle = rares[0] || null;
+  const compter = (cle) => { const t = {}; obs.forEach((o) => { if (o[cle]) t[o[cle]] = (t[o[cle]] || 0) + 1; }); return Object.entries(t).sort((a, b) => b[1] - a[1])[0] || null; };
+  const bioTop = compter("biotope");
+  const momTop = compter("moment");
+  const moment = momTop ? MOMENTS.find((m) => m.id === momTop[0]) : null;
+  const premiere = obs[0], derniere = obs[obs.length - 1];
+  const jours = premiere && derniere ? Math.max(1, Math.round((new Date(derniere.date) - new Date(premiere.date)) / 864e5)) : 0;
+  // Les 4 photos de la fin : la perle rare, puis les espèces les plus revues.
+  const favoris = [];
+  if (perle) favoris.push(perle.o);
+  especes.filter((o) => o.photo).sort((a, b) => vues[cleEspeceMur(b)] - vues[cleEspeceMur(a)])
+    .forEach((o) => { if (favoris.length < 4 && !favoris.includes(o)) favoris.push(o); });
+  const dateLongue = (d) => new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+  const nomDe = (o) => (o && (o.nom || o.nomSci)) || "une bestiole mystère";
+
+  // La bande : ce qu'elle a partagé cette année sur le mur.
+  const [bande, setBande] = useState(null);
+  useEffect(() => {
+    if (!MUR_ACTIF) return;
+    let actif = true;
+    chargerMurSuivi().then((posts) => {
+      if (!actif) return;
+      const pa = (posts || []).filter((p) => dateTrouvaille(p).getFullYear() === an);
+      const clesAutres = new Set(pa.filter((p) => !estAMoi(p)).map((p) => cleEspeceMur(p)).filter(Boolean));
+      const parAuteur = {};
+      pa.forEach((p) => { const a = (p.auteur || "").trim(), k = cleEspeceMur(p); if (a && k) (parAuteur[a] = parAuteur[a] || new Set()).add(k); });
+      setBande({
+        publis: pa.length,
+        especes: new Set(pa.map((p) => cleEspeceMur(p)).filter(Boolean)).size,
+        membres: Object.keys(parAuteur).length,
+        rienQuaMoi: especes.filter((o) => !clesAutres.has(cleEspeceMur(o))).length,
+        podium: Object.entries(parAuteur).map(([a, s]) => [a, s.size]).sort((x, y) => y[1] - x[1]).slice(0, 3),
+      });
+    }).catch(() => {});
+    return () => { actif = false; };
+  }, [an]);
+
+  const slides = [];
+  if (obs.length === 0) {
+    slides.push({ fond: "linear-gradient(160deg, #1C2318, #0F130C)", etiquette: "Ton année " + an, corps: (
+      <React.Fragment>
+        <div className="bd-an-emoji">🌱</div>
+        <div className="bd-an-titre">Pas encore de trouvaille en {an}</div>
+        <div className="bd-an-texte">Ton carnet t'attend ! Même en hiver, des insectes se cachent sous les écorces, dans les tas de bois ou au coin des fenêtres.</div>
+      </React.Fragment>) });
+  } else {
+    slides.push({ fond: "radial-gradient(circle at 50% 30%, #3A2E12, #0F130C 70%)", etiquette: "BioDex", corps: (
+      <React.Fragment>
+        <div className="bd-an-emoji">🐞</div>
+        <div className="bd-an-gros" style={{ marginTop: 16 }}>{an}</div>
+        <div className="bd-an-titre">Ton année en insectes</div>
+        <div className="bd-an-texte">{prenom ? prenom.trim() + ", on" : "On"} a fouillé ton carnet. Voici ce que tu as vu cette année.</div>
+      </React.Fragment>) });
+    slides.push({ fond: "linear-gradient(160deg, #23301C, #0F130C)", etiquette: "En chiffres", corps: (
+      <React.Fragment>
+        <div className="bd-an-gros">{obs.length}</div>
+        <div className="bd-an-texte" style={{ marginBottom: 18 }}>trouvaille{obs.length > 1 ? "s" : ""} dans ton carnet</div>
+        <div className="bd-an-moyen">{especes.length}</div>
+        <div className="bd-an-texte" style={{ marginBottom: 18 }}>espèce{especes.length > 1 ? "s" : ""} différente{especes.length > 1 ? "s" : ""}</div>
+        {groupesTri.length > 0 && <React.Fragment><div className="bd-an-moyen">{groupesTri.length}</div><div className="bd-an-texte">groupe{groupesTri.length > 1 ? "s" : ""} d'insectes et de proches</div></React.Fragment>}
+        {especes.length >= 3 && jours >= especes.length && <div className="bd-an-petit" style={{ marginTop: 18 }}>Soit une nouvelle espèce tous les {Math.round(jours / especes.length)} jours en moyenne.</div>}
+      </React.Fragment>) });
+    slides.push({ fond: "linear-gradient(160deg, #2B3A22, #11160E)", etiquette: "Le début", corps: (
+      <React.Fragment>
+        <div className="bd-an-titre">Tout a commencé le {dateLongue(premiere.date)}…</div>
+        <div className="bd-an-photo"><PhotoBilan obs={premiere} /></div>
+        <div className="bd-an-texte">avec <b style={{ color: "#F5EFE0" }}>{nomDe(premiere)}</b>.</div>
+        {derniere !== premiere && <div className="bd-an-petit" style={{ marginTop: 12 }}>Ta dernière trouvaille : {nomDe(derniere)}, le {dateLongue(derniere.date)}.</div>}
+      </React.Fragment>) });
+    slides.push({ fond: "linear-gradient(160deg, #3A2E12, #141A10)", etiquette: "Ton rythme", corps: (
+      <React.Fragment>
+        <div className="bd-an-petit">Ton mois record</div>
+        <div className="bd-an-titre" style={{ fontSize: 32, textTransform: "capitalize" }}>{MOIS_BILAN[moisRecord]}</div>
+        <div className="bd-an-texte">{maxMois} trouvaille{maxMois > 1 ? "s" : ""} en un mois !</div>
+        <div className="bd-an-mois">
+          {parMois.map((n, i) => (
+            <span key={i} className={i === moisRecord ? "top" : ""}>
+              <i style={{ height: (maxMois ? Math.round(100 * n / maxMois) : 0) + "%" }} />
+              {MOIS_BILAN[i].charAt(0).toUpperCase()}
+            </span>
+          ))}
+        </div>
+      </React.Fragment>) });
+    if (groupesTri.length > 0) {
+      const g = ordreInfo(groupesTri[0][0]);
+      slides.push({ fond: "linear-gradient(160deg, #1E2C2A, #0F130C)", etiquette: "Ton groupe chouchou", corps: (
+        <React.Fragment>
+          <div className="bd-an-emoji">{g.emoji}</div>
+          <div className="bd-an-titre">Les {g.court.toLowerCase()} !</div>
+          <div className="bd-an-texte" style={{ marginBottom: 10 }}>{groupesTri[0][1]} espèce{groupesTri[0][1] > 1 ? "s" : ""} rien que pour eux.</div>
+          {groupesTri.slice(0, 5).map(([id, n]) => (
+            <div key={id} className="bd-an-ligne">
+              <em>{ordreInfo(id).emoji}</em>
+              <span className="jauge"><i style={{ width: Math.round(100 * n / groupesTri[0][1]) + "%" }} /></span>
+              <b>{n}</b>
+            </div>
+          ))}
+        </React.Fragment>) });
+    }
+    if (perle) {
+      const niv = niveauRarete(perle.count);
+      slides.push({ fond: "radial-gradient(circle at 50% 35%, #2E2A4A, #0F130C 72%)", etiquette: "Ta perle rare", corps: (
+        <React.Fragment>
+          <div className="bd-an-petit">Ta trouvaille la plus rare</div>
+          <div className="bd-an-photo"><PhotoBilan obs={perle.o} /></div>
+          <div className="bd-an-titre" style={{ margin: "4px 0 2px" }}>{nomDe(perle.o)}</div>
+          {perle.o.nomSci && <div style={{ fontFamily: serif, fontStyle: "italic", color: "#D8C89A", marginBottom: 10 }}>{perle.o.nomSci}</div>}
+          <div className="bd-an-texte"><b style={{ color: niv.couleur }}>{niv.emoji} {niv.label}</b> : à peine {perle.count.toLocaleString("fr-FR")} observations en France sur iNaturalist.</div>
+        </React.Fragment>) });
+    }
+    if (bioTop || moment) {
+      const b = bioTop ? biotopeOf(bioTop[0]) : null;
+      slides.push({ fond: "linear-gradient(160deg, #26331D, #0F130C)", etiquette: "Ton terrain de jeu", corps: (
+        <React.Fragment>
+          {b && <React.Fragment>
+            <div className="bd-an-emoji">{b.emoji}</div>
+            <div className="bd-an-titre">{b.label}</div>
+            <div className="bd-an-texte">{bioTop[1]} trouvaille{bioTop[1] > 1 ? "s" : ""} dans ce milieu, ton coin préféré.</div>
+          </React.Fragment>}
+          {moment && <div className="bd-an-texte" style={{ marginTop: 22 }}>Et tu chasses surtout <b style={{ color: "#E4C878" }}>{moment.emoji} {moment.label.toLowerCase()}</b>.</div>}
+        </React.Fragment>) });
+    }
+    if (bande && bande.publis > 0) {
+      slides.push({ fond: "linear-gradient(160deg, #2A2236, #0F130C)", etiquette: "Et la bande ?", corps: (
+        <React.Fragment>
+          <div className="bd-an-emoji">🤝</div>
+          <div className="bd-an-titre">{bande.especes} espèces partagées</div>
+          <div className="bd-an-texte">par {bande.membres} chasseur{bande.membres > 1 ? "s" : ""}, en {bande.publis} trouvailles sur le mur cette année.</div>
+          {bande.podium.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              {bande.podium.map(([a, n], i) => (
+                <div key={a} className="bd-an-ligne"><em>{["🥇", "🥈", "🥉"][i]}</em><span style={{ flex: 1 }}>{a}</span><b style={{ width: "auto" }}>{n} esp.</b></div>
+              ))}
+            </div>
+          )}
+          {bande.rienQuaMoi > 0 && <div className="bd-an-texte" style={{ marginTop: 18 }}>Et <b style={{ color: "#E4C878" }}>{bande.rienQuaMoi} espèce{bande.rienQuaMoi > 1 ? "s" : ""}</b> que personne d'autre de la bande n'a partagée{bande.rienQuaMoi > 1 ? "s" : ""} : rien qu'à toi !</div>}
+        </React.Fragment>) });
+    }
+    const texteParte = `Mon année ${an} en insectes sur BioDex : ${obs.length} trouvailles, ${especes.length} espèces${perle ? ", et ma perle rare : " + nomDe(perle.o) : ""} 🐞 https://lucanus.netlify.app`;
+    const partager = async (e) => {
+      e.stopPropagation();
+      try { if (navigator.share) { await navigator.share({ title: "Mon année en insectes", text: texteParte }); return; } } catch { return; }
+      try { await navigator.clipboard.writeText(texteParte); alert("Texte copié : colle-le où tu veux !"); } catch {}
+    };
+    slides.push({ fond: "radial-gradient(circle at 50% 25%, #3A2E12, #0F130C 75%)", etiquette: "Ton " + an, corps: (
+      <React.Fragment>
+        <div className="bd-an-titre" style={{ marginTop: 0 }}>Ton {an} en un coup d'œil</div>
+        {favoris.length >= 2 && <div className="bd-an-grille">{favoris.slice(0, favoris.length >= 4 ? 4 : 2).map((o) => <div key={o.id}><PhotoBilan obs={o} /></div>)}</div>}
+        <div className="bd-an-chiffres">
+          <span><b>{obs.length}</b>trouvailles</span>
+          <span><b>{especes.length}</b>espèces</span>
+          <span><b>{groupesTri.length}</b>groupes</span>
+        </div>
+        <div className="bd-an-petit">L'hiver, les insectes se cachent, mais ne disparaissent pas. Cherche-les sous les écorces et dans les recoins… et rendez-vous au printemps ! 🌱</div>
+        <div className="bd-an-boutons">
+          <button className="or" onClick={partager}>📤 Partager</button>
+          <button onClick={(e) => { e.stopPropagation(); onFermer(); }}>Fermer</button>
+        </div>
+      </React.Fragment>) });
+  }
+
+  const [i, setI] = useState(0);
+  const n = slides.length;
+  const aller = (d) => setI((x) => Math.max(0, Math.min(n - 1, x + d)));
+  useEffect(() => {
+    const k = (e) => { if (e.key === "ArrowRight" || e.key === " ") aller(1); else if (e.key === "ArrowLeft") aller(-1); else if (e.key === "Escape") onFermer(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  });
+  const s = slides[Math.min(i, n - 1)];
+  return (
+    <div className="bd-an" style={{ background: s.fond }} role="dialog" aria-label={"Ton année " + an + " en insectes"}
+      onClick={(e) => { if (e.clientX < window.innerWidth * 0.3) aller(-1); else if (i < n - 1) { aller(1); vibrer(4); } }}>
+      <div className="bd-an-barres">{slides.map((_, j) => <i key={j} className={j <= i ? "fait" : ""} />)}</div>
+      <div className="bd-an-haut">
+        <span>{s.etiquette}</span>
+        <button className="bd-an-fermer" aria-label="Fermer" onClick={(e) => { e.stopPropagation(); onFermer(); }}>✕</button>
+      </div>
+      <div className="bd-an-corps" key={i}>{s.corps}</div>
+      <div className="bd-an-bas">{i < n - 1 ? "Touche à droite pour continuer · à gauche pour revenir" : "\u00A0"}</div>
+    </div>
+  );
+}
+
 function Stats({ observations, raretes, onFermer }) {
   // v2.05 — Onglet retenu d'une visite à l'autre, et groupe d'insectes déplié.
   const [onglet, setOnglet] = useState(() => {
@@ -10520,6 +10782,7 @@ function MenuPrincipal({ utilisateur, missionsNouv, ideesNouv, onFermer, onAller
         </div>
         <div style={{ overflowY: "auto", overscrollBehavior: "contain", WebkitOverflowScrolling: "touch", flex: 1 }}>
         {/* v2.03 — L'aide quitte l'en-tête (un « ? » de plus à côté de la cloche) et ouvre le menu. */}
+        {periodeBilan() && item("etoile", `Ton année ${anneeBilan()} en insectes`, "Ton bilan de l'année, à feuilleter", () => onAller("annee"), 0)}
         {item("bulleQ", "Aide et questions", "Comment ça marche, en questions-réponses", () => onAller("aide"), 0)}
         {/* v1.76 — Réordonné par ce qu'un utilisateur cherche. Apprendre en premier :
             c'est ce qui distingue BioDex. Le suivi des espèces (phénologie) rejoint
@@ -13930,6 +14193,17 @@ function Accueil({ prenom, observations, aTrier, notifs, carrousel, onNouvelle, 
         </span>
       </button>
 
+      {periodeBilan() && obsDeLAnnee(observations, anneeBilan()).length > 0 && (
+        <button className="bd-annee" onClick={() => onAller("annee")}>
+          <span className="bd-annee-an">{anneeBilan()}<small>BILAN</small></span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <b>Ton année en insectes</b>
+            <span className="bd-annee-txt">{obsDeLAnnee(observations, anneeBilan()).length} trouvailles à revivre, en quelques écrans</span>
+          </span>
+          <span style={{ color: "#E4C878", fontSize: 22, fontWeight: 700 }}>›</span>
+        </button>
+      )}
+
       {tuiles.length > 0 && (
         <div className="bd-tuiles">
           {tuiles.slice(0, 4).map((t) => (
@@ -16100,6 +16374,9 @@ function BioDex() {
       )}
       {vue === "suivi" && (
         <SuiviEspeces onFermer={() => setVue("accueil")} observations={observations} />
+      )}
+      {vue === "annee" && (
+        <AnneeInsectes observations={observations} raretes={raretesGlobal} prenom={prenom} onFermer={() => setVue("accueil")} />
       )}
       {vue === "admin" && estAdmin && (
         <Administration onFermer={() => setVue("accueil")} />
